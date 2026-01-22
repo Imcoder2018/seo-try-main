@@ -46,62 +46,81 @@ export const contentGeneratorTask = task({
     combinations: ContentCombination[];
     userId: string;
     generateImages: boolean;
+    singlePage?: boolean;
   }) => {
-    logger.log(`Starting bulk content generation for ${payload.combinations.length} combinations`);
+    const mode = payload.singlePage ? "Single Page" : "Bulk";
+    logger.log(`Starting ${mode.toLowerCase()} content generation for ${payload.combinations.length} combination${payload.combinations.length === 1 ? '' : 's'}`);
     
     const results: GeneratedContent[] = [];
     
-    for (let i = 0; i < payload.combinations.length; i++) {
-      const combination = payload.combinations[i];
-      
-      // Update progress
-      logger.log(`Processing combination ${i + 1}/${payload.combinations.length}: ${combination.topic.title} for ${combination.location}`);
-      
-      try {
-        const content = await generateContentForCombination(combination);
-        const imageUrl = payload.generateImages ? await generateImageForContent(combination) : undefined;
-        
-        const generatedContent: GeneratedContent = {
-          id: `content_${Date.now()}_${i}`,
-          title: combination.topic.title,
-          location: combination.location,
-          contentType: combination.topic.contentType,
-          content: content,
-          imageUrl: imageUrl,
-          wordCount: content.length,
-          keywords: [...combination.topic.primaryKeywords, ...combination.topic.secondaryKeywords],
-          status: "completed"
-        };
-        
-        results.push(generatedContent);
-        
-        logger.log(`Successfully generated content for: ${combination.topic.title} (${combination.location})`);
-        
-      } catch (error) {
-        logger.error(`Failed to generate content for ${combination.topic.title} (${combination.location}):`, error);
-        
-        results.push({
-          id: `content_${Date.now()}_${i}`,
-          title: combination.topic.title,
-          location: combination.location,
-          contentType: combination.topic.contentType,
-          content: "",
-          wordCount: 0,
-          keywords: [],
-          status: "failed"
-        });
-      }
+    // Process combinations in parallel for better performance (but limit concurrency)
+    const concurrencyLimit = payload.singlePage ? 1 : 3; // Single page: sequential, Bulk: parallel with limit
+    const chunks = [];
+    
+    for (let i = 0; i < payload.combinations.length; i += concurrencyLimit) {
+      chunks.push(payload.combinations.slice(i, i + concurrencyLimit));
     }
     
-    logger.log(`Bulk content generation completed. ${results.filter(r => r.status === "completed").length}/${results.length} successful`);
+    for (const chunk of chunks) {
+      const chunkPromises = chunk.map(async (combination, index) => {
+        const globalIndex = payload.combinations.indexOf(combination);
+        
+        logger.log(`Processing combination ${globalIndex + 1}/${payload.combinations.length}: ${combination.topic.title} for ${combination.location}`);
+        
+        try {
+          // Generate content and image in parallel for better performance
+          const [content, imageUrl] = await Promise.all([
+            generateContentForCombination(combination),
+            payload.generateImages ? generateImageForContent(combination) : Promise.resolve(undefined)
+          ]);
+          
+          const generatedContent: GeneratedContent = {
+            id: `content_${Date.now()}_${globalIndex}`,
+            title: combination.topic.title,
+            location: combination.location,
+            contentType: combination.topic.contentType,
+            content: content,
+            imageUrl: imageUrl,
+            wordCount: content.length,
+            keywords: [...combination.topic.primaryKeywords, ...combination.topic.secondaryKeywords],
+            status: "completed"
+          };
+          
+          logger.log(`Successfully generated content for: ${combination.topic.title} (${combination.location})`);
+          return generatedContent;
+          
+        } catch (error) {
+          logger.error(`Failed to generate content for ${combination.topic.title} (${combination.location}):`, { error: String(error) });
+          
+          return {
+            id: `content_${Date.now()}_${globalIndex}`,
+            title: combination.topic.title,
+            location: combination.location,
+            contentType: combination.topic.contentType,
+            content: "",
+            wordCount: 0,
+            keywords: [],
+            status: "failed" as const
+          };
+        }
+      });
+      
+      const chunkResults = await Promise.all(chunkPromises);
+      results.push(...chunkResults);
+    }
+    
+    const completed = results.filter(r => r.status === "completed").length;
+    const failed = results.filter(r => r.status === "failed").length;
+    
+    logger.log(`${mode} content generation completed. ${completed}/${results.length} successful, ${failed} failed`);
     
     return {
       success: true,
       results,
       summary: {
         total: results.length,
-        completed: results.filter(r => r.status === "completed").length,
-        failed: results.filter(r => r.status === "failed").length,
+        completed,
+        failed,
       }
     };
   },

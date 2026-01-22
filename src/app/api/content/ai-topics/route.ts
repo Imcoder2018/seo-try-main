@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { openai } from "@ai-sdk/openai";
-import { generateText } from "ai";
+import OpenAI from "openai";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +25,10 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("[AI Topics] Generating topics for service:", selectedService);
+
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     // Create comprehensive prompt for topic generation
     const prompt = `You are a content strategy expert for a technology company. 
@@ -72,22 +75,36 @@ Return ONLY a valid JSON object with this structure:
   ]
 }`;
 
-    const result = await generateText({
-      model: openai('gpt-4-turbo'),
-      prompt,
+    const response = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: "You are a content strategy expert. Always respond with valid JSON only."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
       temperature: 0.7,
-      maxTokens: 2000,
+      max_tokens: 2000,
     });
 
-    console.log("[AI Topics] Generated response length:", result.text.length);
+    const result = response.choices[0]?.message?.content;
+    if (!result) {
+      throw new Error("No response from OpenAI");
+    }
+
+    console.log("[AI Topics] Generated response length:", result.length);
 
     // Parse the JSON response
     let topicsData;
     try {
-      topicsData = JSON.parse(result.text);
+      topicsData = JSON.parse(result);
     } catch (parseError) {
       console.error("[AI Topics] JSON parse error:", parseError);
-      console.log("[AI Topics] Raw response:", result.text);
+      console.log("[AI Topics] Raw response:", result);
       throw new Error("Failed to parse AI response as JSON");
     }
 

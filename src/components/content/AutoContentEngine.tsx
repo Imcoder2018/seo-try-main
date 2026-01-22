@@ -73,6 +73,7 @@ export default function AutoContentEngine() {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<string>("");
 
   const steps = [
     { id: 1, title: "Auto-Discovery", icon: Search, description: "Analyze your website" },
@@ -96,10 +97,15 @@ export default function AutoContentEngine() {
       
       if (data.success) {
         setDiscoveryData(data.data);
-        console.log('[Auto-Content] Discovery data loaded:', data.data);
+        setDataSource(data.source || 'unknown');
+        console.log('[Auto-Content] Discovery data loaded from:', data.source);
+        console.log('[Auto-Content] Discovery data:', data.data);
+      } else {
+        throw new Error(data.error || 'Failed to load discovery data');
       }
-    } catch (err) {
-      console.error('[Auto-Content] Failed to load discovery data:', err);
+    } catch (error) {
+      console.error('[Auto-Content] Error loading discovery data:', error);
+      setError('Failed to load discovery data');
     } finally {
       setLoading(false);
     }
@@ -117,7 +123,7 @@ export default function AutoContentEngine() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           selectedService,
-          locations: discoveryData.locations,
+          locations: selectedLocations,
           existingContent: discoveryData.existingPages,
           brandTone: discoveryData.brandTone,
           targetAudience: discoveryData.targetAudience,
@@ -161,17 +167,18 @@ export default function AutoContentEngine() {
           targetAudience: discoveryData.targetAudience,
           aboutSummary: discoveryData.aboutSummary,
           generateImages: true,
+          singlePage: true, // Generate only one page instead of multiple
         }),
       });
 
       const data = await response.json();
       
       if (data.success) {
-        console.log('[Auto-Content] Bulk generation started:', data);
+        console.log('[Auto-Content] Content generation started:', data);
         setCurrentStep(6); // Move to review step
         
-        // Simulate progress updates
-        simulateProgress(data.taskId, data.totalCombinations);
+        // Simulate progress updates for single page
+        simulateProgress(data.taskId, 1);
       } else {
         setError(data.error);
         setIsGenerating(false);
@@ -179,7 +186,7 @@ export default function AutoContentEngine() {
     } catch (err) {
       setError('Failed to start content generation');
       setIsGenerating(false);
-      console.error('[Auto-Content] Bulk generation error:', err);
+      console.error('[Auto-Content] Content generation error:', err);
     }
   };
 
@@ -242,7 +249,7 @@ export default function AutoContentEngine() {
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
-        return <DiscoveryStep discoveryData={discoveryData} loading={loading} />;
+        return <DiscoveryStep discoveryData={discoveryData} loading={loading} dataSource={dataSource} />;
       case 2:
         return <ServiceSelectionStep 
           services={discoveryData?.services || []}
@@ -403,7 +410,7 @@ export default function AutoContentEngine() {
 }
 
 // Step Components
-function DiscoveryStep({ discoveryData, loading }: { discoveryData: DiscoveryData | null; loading: boolean }) {
+function DiscoveryStep({ discoveryData, loading, dataSource }: { discoveryData: DiscoveryData | null; loading: boolean; dataSource: string }) {
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -422,32 +429,67 @@ function DiscoveryStep({ discoveryData, loading }: { discoveryData: DiscoveryDat
           <span className="ml-3 text-slate-600 dark:text-slate-400">Discovering your website context...</span>
         </div>
       ) : discoveryData ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              <h3 className="font-medium text-slate-900 dark:text-slate-100">Services Found</h3>
+        <div>
+          {/* Data Source Indicator */}
+          {dataSource && (
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span className="text-sm text-blue-700 dark:text-blue-300">
+                  {dataSource === 'content-analysis' 
+                    ? '✅ Using data from your latest Content Analysis' 
+                    : '⚡ Using auto-discovered data'}
+                </span>
+              </div>
             </div>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{discoveryData.services.length}</p>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Services identified</p>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-medium text-slate-900 dark:text-slate-100">Services Found</h3>
+              </div>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{discoveryData.services.length}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Services identified</p>
+            </div>
+
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <MapPin className="w-5 h-5 text-green-600 dark:text-green-400" />
+                <h3 className="font-medium text-slate-900 dark:text-slate-100">Locations</h3>
+              </div>
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{discoveryData.locations.length}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Target areas found</p>
+            </div>
+
+            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <h3 className="font-medium text-slate-900 dark:text-slate-100">Existing Pages</h3>
+              </div>
+              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{discoveryData.existingPages.length}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Pages analyzed</p>
+            </div>
           </div>
 
-          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <MapPin className="w-5 h-5 text-green-600 dark:text-green-400" />
-              <h3 className="font-medium text-slate-900 dark:text-slate-100">Locations</h3>
+          {/* Brand Context Summary */}
+          <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+            <h4 className="font-medium text-slate-900 dark:text-slate-100 mb-3">Brand Context</h4>
+            <div className="space-y-2 text-sm">
+              <div>
+                <span className="font-medium text-slate-700 dark:text-slate-300">Target Audience:</span>
+                <p className="text-slate-600 dark:text-slate-400">{discoveryData.targetAudience}</p>
+              </div>
+              <div>
+                <span className="font-medium text-slate-700 dark:text-slate-300">Brand Tone:</span>
+                <p className="text-slate-600 dark:text-slate-400">{discoveryData.brandTone}</p>
+              </div>
+              <div>
+                <span className="font-medium text-slate-700 dark:text-slate-300">About:</span>
+                <p className="text-slate-600 dark:text-slate-400">{discoveryData.aboutSummary}</p>
+              </div>
             </div>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400">{discoveryData.locations.length}</p>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Target areas found</p>
-          </div>
-
-          <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              <h3 className="font-medium text-slate-900 dark:text-slate-100">Existing Pages</h3>
-            </div>
-            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{discoveryData.existingPages.length}</p>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Pages analyzed</p>
           </div>
         </div>
       ) : null}
@@ -739,6 +781,64 @@ function ReviewStep({
   selectedTopics: Topic[]; 
   selectedLocations: string[]; 
 }) {
+  const [expandedContent, setExpandedContent] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState<string | null>(null);
+  const [editedText, setEditedText] = useState<string>("");
+  const [publishing, setPublishing] = useState<string | null>(null);
+
+  const handleViewFullContent = (contentId: string) => {
+    setExpandedContent(expandedContent === contentId ? null : contentId);
+  };
+
+  const handleEdit = (content: GeneratedContent) => {
+    setEditingContent(content.id);
+    setEditedText(content.content);
+  };
+
+  const handleSaveEdit = (contentId: string) => {
+    // Update the content in the generatedContent array
+    const updatedContent = generatedContent.map(content => 
+      content.id === contentId 
+        ? { ...content, content: editedText }
+        : content
+    );
+    // This would normally update state, but for now we'll just close the editor
+    setEditingContent(null);
+    setEditedText("");
+  };
+
+  const handlePublishToWordPress = async (content: GeneratedContent) => {
+    try {
+      setPublishing(content.id);
+      
+      const response = await fetch('/api/wordpress/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: content.title,
+          content: content.content,
+          featuredImage: content.imageUrl,
+          location: content.location,
+          contentType: content.contentType,
+          tags: selectedTopics[0]?.primaryKeywords || [],
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Content "${content.title}" published successfully to WordPress!`);
+      } else {
+        alert(`Failed to publish: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Publish error:', error);
+      alert('Failed to publish to WordPress');
+    } finally {
+      setPublishing(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -780,21 +880,59 @@ function ReviewStep({
                   <span>{content.contentType}</span>
                 </div>
 
-                <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
-                  {content.content}
-                </p>
-
-                <div className="flex items-center gap-2 mt-3">
-                  <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm">
-                    View Full Content
-                  </button>
-                  <button className="px-3 py-1 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm">
-                    Edit
-                  </button>
-                  <button className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm">
-                    Publish to WordPress
-                  </button>
-                </div>
+                {/* Content Display */}
+                {editingContent === content.id ? (
+                  <div className="mb-3">
+                    <textarea
+                      value={editedText}
+                      onChange={(e) => setEditedText(e.target.value)}
+                      className="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 resize-none"
+                      rows={6}
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => handleSaveEdit(content.id)}
+                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingContent(null)}
+                        className="px-3 py-1 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                      {expandedContent === content.id ? content.content : `${content.content.substring(0, 200)}...`}
+                    </p>
+                    
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleViewFullContent(content.id)}
+                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
+                      >
+                        {expandedContent === content.id ? 'Show Less' : 'View Full Content'}
+                      </button>
+                      <button 
+                        onClick={() => handleEdit(content)}
+                        className="px-3 py-1 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm"
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => handlePublishToWordPress(content)}
+                        disabled={publishing === content.id}
+                        className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors text-sm"
+                      >
+                        {publishing === content.id ? 'Publishing...' : 'Publish to WordPress'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

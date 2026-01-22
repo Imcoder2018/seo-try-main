@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
       brandTone,
       targetAudience,
       aboutSummary,
-      generateImages = false
+      generateImages = false,
+      singlePage = true // New parameter to generate only one page
     } = body;
 
     if (!selectedTopics || selectedTopics.length === 0) {
@@ -32,47 +33,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("[Bulk Generate] Starting bulk generation:", {
+    console.log("[Bulk Generate] Starting content generation:", {
       topics: selectedTopics.length,
       locations: selectedLocations.length,
       service,
+      singlePage,
     });
 
-    // Create all topic-location combinations
-    const combinations = [];
-    for (const topic of selectedTopics) {
-      for (const location of selectedLocations) {
-        combinations.push({
-          topic,
-          location,
-          service,
-          brandTone,
-          targetAudience,
-          aboutSummary,
-          generateImages,
-        });
+    // If singlePage is true, only generate one combination (first topic + first location)
+    let combinations = [];
+    if (singlePage) {
+      // Generate only one page using the first topic and first location
+      combinations = [{
+        topic: selectedTopics[0],
+        location: selectedLocations[0],
+        service,
+        brandTone,
+        targetAudience,
+        aboutSummary,
+        generateImages,
+      }];
+      console.log("[Bulk Generate] Single page mode: generating 1 piece of content");
+    } else {
+      // Create all topic-location combinations (original behavior)
+      for (const topic of selectedTopics) {
+        for (const location of selectedLocations) {
+          combinations.push({
+            topic,
+            location,
+            service,
+            brandTone,
+            targetAudience,
+            aboutSummary,
+            generateImages,
+          });
+        }
       }
+      console.log("[Bulk Generate] Bulk mode: generating", combinations.length, "pieces of content");
     }
 
-    console.log("[Bulk Generate] Created", combinations.length, "topic-location combinations");
-
-    // Trigger bulk content generation task
+    // Trigger content generation task
     const handle = await tasks.trigger("content-generator", {
       combinations,
       userId: user.id,
       generateImages,
+      singlePage,
     });
 
     return NextResponse.json({
       success: true,
       taskId: handle.id,
       totalCombinations: combinations.length,
-      message: `Started generating ${combinations.length} pieces of content`,
+      message: `Started generating ${combinations.length} piece${combinations.length === 1 ? '' : 's'} of content`,
     });
   } catch (error) {
     console.error("[Bulk Generate] Error:", error);
     return NextResponse.json(
-      { error: "Failed to start bulk generation", details: String(error) },
+      { error: "Failed to start content generation", details: String(error) },
       { status: 500 }
     );
   }
