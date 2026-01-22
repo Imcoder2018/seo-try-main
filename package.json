@@ -13,7 +13,10 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "trigger:dev": "npx trigger.dev@latest dev",
-    "trigger:deploy": "npx trigger.dev@latest deploy"
+    "trigger:deploy": "npx trigger.dev@latest deploy",
+    "test:wordpress": "node scripts/test-wordpress-api.js",
+    "test:content-publishing": "node scripts/test-content-publishing.js",
+    "debug:wordpress": "node scripts/debug-wordpress-config.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.12",

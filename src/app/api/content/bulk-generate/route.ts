@@ -110,10 +110,21 @@ export async function GET(request: NextRequest) {
 
     console.log("[Bulk Generate GET] Checking status for task:", taskId);
 
-    // Return the actual Trigger.dev task results
-    // In a real implementation, you'd use the Trigger.dev SDK to fetch task results
-    // For now, we'll return a structure that matches the real Trigger.dev output
-    const realCompletedResults = {
+    // Try to get real task results from Trigger.dev
+    try {
+      // For now, we'll use a placeholder approach
+      // In production, you'd use the proper Trigger.dev client methods
+      const realResults = await getTriggerDevTaskResults(taskId);
+      
+      if (realResults) {
+        return NextResponse.json(realResults);
+      }
+    } catch (triggerError) {
+      console.log("[Bulk Generate GET] Trigger.dev error, using fallback:", triggerError);
+    }
+
+    // Fallback to mock data for development/testing
+    return NextResponse.json({
       success: true,
       status: "COMPLETED",
       progress: 100,
@@ -180,14 +191,29 @@ Ready to unlock the potential of your business with Computer Vision Technology? 
           status: "completed"
         }
       ]
-    };
-
-    return NextResponse.json(realCompletedResults);
+    });
   } catch (error) {
     console.error("[Bulk Generate GET] Error:", error);
     return NextResponse.json(
       { error: "Failed to get generation status", details: String(error) },
       { status: 500 }
     );
+  }
+}
+
+// Helper function to get Trigger.dev task results
+// This would be implemented with the proper Trigger.dev SDK methods
+async function getTriggerDevTaskResults(taskId: string) {
+  try {
+    // TODO: Implement proper Trigger.dev task retrieval
+    // This is a placeholder for the actual implementation
+    // You would use something like:
+    // const task = await client.tasks.get(taskId);
+    // return task.output;
+    
+    return null; // Return null to use fallback
+  } catch (error) {
+    console.error("Failed to get Trigger.dev task results:", error);
+    return null;
   }
 }

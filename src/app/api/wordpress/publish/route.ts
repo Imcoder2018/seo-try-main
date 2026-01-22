@@ -3,6 +3,10 @@ import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+// WordPress configuration - you should store these in environment variables
+const WORDPRESS_URL = process.env.WORDPRESS_URL || "https://your-wordpress-site.com";
+const API_KEY = process.env.WORDPRESS_API_KEY || "";
+
 export async function POST(request: NextRequest) {
   try {
     const user = await requireAuth();
@@ -29,44 +33,80 @@ export async function POST(request: NextRequest) {
       location,
       contentType,
       status,
+      hasImage: !!imageUrl,
     });
 
-    // Mock WordPress API call - in production, this would use the user's WordPress credentials
-    const mockWordPressResponse = {
-      id: 12345,
-      title: {
-        rendered: title
+    // Check if WordPress is configured
+    if (!WORDPRESS_URL || WORDPRESS_URL === "https://your-wordpress-site.com") {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: "WordPress URL not configured. Please set WORDPRESS_URL in your environment variables." 
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!API_KEY) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: "WordPress API key not configured. Please set WORDPRESS_API_KEY in your environment variables." 
+        },
+        { status: 400 }
+      );
+    }
+
+    // Call the real WordPress plugin API
+    const wordpressResponse = await fetch(`${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-SEO-AutoFix-Key": API_KEY,
       },
-      content: {
-        rendered: content
-      },
-      status: status,
-      slug: title.toLowerCase().replace(/\s+/g, '-'),
-      link: `https://example.com/${title.toLowerCase().replace(/\s+/g, '-')}`,
-      date: new Date().toISOString(),
-      featured_media: imageUrl || 0,
-      meta: {
-        primary_keywords: primaryKeywords || [],
-        location: location,
-        content_type: contentType,
-        generated_by: "auto-content-engine"
+      body: JSON.stringify({
+        title,
+        content,
+        location,
+        contentType,
+        imageUrl,
+        primaryKeywords,
+        status,
+      }),
+    });
+
+    console.log("[WordPress Publish] API response status:", wordpressResponse.status);
+
+    if (!wordpressResponse.ok) {
+      const errorText = await wordpressResponse.text();
+      console.error("[WordPress Publish] API error response:", errorText);
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        throw new Error(errorData.error || `WordPress API error: ${wordpressResponse.status}`);
+      } catch {
+        throw new Error(`WordPress API error: ${wordpressResponse.status} - ${errorText}`);
       }
-    };
+    }
 
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    console.log("[WordPress Publish] Successfully published:", mockWordPressResponse.id);
+    const responseData = await wordpressResponse.json();
+    console.log("[WordPress Publish] Full API response:", JSON.stringify(responseData, null, 2));
+    console.log("[WordPress Publish] Post ID:", responseData.post?.id);
+    console.log("[WordPress Publish] Response structure:", Object.keys(responseData));
 
     return NextResponse.json({
       success: true,
-      post: mockWordPressResponse,
-      message: `Content published as ${status}`,
+      post: responseData.post,
+      message: responseData.message || `Content published as ${status}`,
     });
   } catch (error) {
     console.error("[WordPress Publish] Error:", error);
     return NextResponse.json(
-      { error: "Failed to publish to WordPress", details: String(error) },
+      { 
+        success: false,
+        error: "Failed to publish to WordPress", 
+        details: String(error) 
+      },
       { status: 500 }
     );
   }
@@ -78,45 +118,29 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const postId = searchParams.get("postId");
 
-    if (postId) {
-      // Get specific post
-      const mockPost = {
-        id: parseInt(postId),
-        title: { rendered: "Sample Generated Post" },
-        content: { rendered: "This is sample content..." },
-        status: "draft",
-        date: new Date().toISOString(),
-        link: "https://example.com/sample-post"
-      };
+    // Call the real WordPress plugin API
+    const wordpressUrl = postId 
+      ? `${WORDPRESS_URL}/wp-json/seo-autofix/v1/content?postId=${postId}`
+      : `${WORDPRESS_URL}/wp-json/seo-autofix/v1/content`;
 
-      return NextResponse.json({
-        success: true,
-        post: mockPost,
-      });
-    } else {
-      // Get all posts by this user
-      const mockPosts = [
-        {
-          id: 12345,
-          title: { rendered: "Web Development Trends in Islamabad" },
-          status: "draft",
-          date: new Date().toISOString(),
-          link: "https://example.com/web-development-trends-islamabad"
-        },
-        {
-          id: 12346,
-          title: { rendered: "SEO Services for Lahore Businesses" },
-          status: "published",
-          date: new Date(Date.now() - 86400000).toISOString(),
-          link: "https://example.com/seo-services-lahore"
-        }
-      ];
+    const wordpressResponse = await fetch(wordpressUrl, {
+      method: "GET",
+      headers: {
+        "X-SEO-AutoFix-Key": API_KEY,
+      },
+    });
 
-      return NextResponse.json({
-        success: true,
-        posts: mockPosts,
-      });
+    if (!wordpressResponse.ok) {
+      const errorData = await wordpressResponse.json().catch(() => ({}));
+      throw new Error(errorData.error || `WordPress API error: ${wordpressResponse.status}`);
     }
+
+    const responseData = await wordpressResponse.json();
+
+    return NextResponse.json({
+      success: true,
+      ...(postId ? { post: responseData.post } : { posts: responseData.posts }),
+    });
   } catch (error) {
     console.error("[WordPress Publish GET] Error:", error);
     return NextResponse.json(

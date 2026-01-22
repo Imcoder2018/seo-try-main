@@ -985,23 +985,26 @@ function ReviewStep({
         body: JSON.stringify({
           title: content.title,
           content: content.content,
-          featuredImage: content.imageUrl,
-          location: content.location,
-          contentType: content.contentType,
-          tags: selectedTopics[0]?.primaryKeywords || [],
+          imageUrl: content.imageUrl || content.featuredImage, // Use real image URL from content generator
+          location: content.metadata?.targetLocation || content.location || '',
+          contentType: content.metadata?.contentType || content.contentType || 'blog post',
+          primaryKeywords: content.metadata?.keywords || selectedTopics[0]?.primaryKeywords || [],
+          status: 'draft', // Default to draft for review
         }),
       });
 
       const data = await response.json();
       
-      if (data.success) {
-        alert(`Content "${content.title}" published successfully to WordPress!`);
+      if (data.success && data.post) {
+        alert(`Content "${content.title}" published successfully to WordPress! Post ID: ${data.post.id}`);
+      } else if (data.success && !data.post) {
+        alert(`Content "${content.title}" published successfully, but no post data returned.`);
       } else {
-        alert(`Failed to publish: ${data.error}`);
+        alert(`Failed to publish: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Publish error:', error);
-      alert('Failed to publish to WordPress');
+      alert('Failed to publish to WordPress. Check your WordPress configuration.');
     } finally {
       setPublishing(null);
     }
