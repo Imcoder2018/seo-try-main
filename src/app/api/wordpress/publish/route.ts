@@ -91,12 +91,37 @@ export async function POST(request: NextRequest) {
 
     const responseData = await wordpressResponse.json();
     console.log("[WordPress Publish] Full API response:", JSON.stringify(responseData, null, 2));
-    console.log("[WordPress Publish] Post ID:", responseData.post?.id);
+    console.log("[WordPress Publish] Post ID:", responseData.post?.id || responseData.postId);
     console.log("[WordPress Publish] Response structure:", Object.keys(responseData));
+
+    // Handle both old and new response formats for backward compatibility
+    let postData;
+    if (responseData.post) {
+      // New format: { success: true, post: { id: 123, ... } }
+      postData = responseData.post;
+    } else if (responseData.postId) {
+      // Old format: { success: true, postId: 123, url: "...", status: "..." }
+      postData = {
+        id: responseData.postId,
+        link: responseData.url,
+        status: responseData.status,
+        title: { rendered: title || "Published Content" },
+        content: { rendered: "" },
+        slug: responseData.url?.split('/')?.filter(Boolean)?.pop() || "",
+        date: new Date().toISOString(),
+        featured_media: 0,
+        meta: {
+          generated_by: "auto-content-engine"
+        }
+      };
+    } else {
+      console.error("[WordPress Publish] No post data found in response");
+      postData = null;
+    }
 
     return NextResponse.json({
       success: true,
-      post: responseData.post,
+      post: postData,
       message: responseData.message || `Content published as ${status}`,
     });
   } catch (error) {

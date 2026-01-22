@@ -405,3 +405,52 @@ enum AnalysisStatus {
   COMPLETED
   FAILED
 }
+
+// WordPress Publishing History - tracks all content published to WordPress
+model WordPressPublish {
+  id                String   @id @default(cuid())
+  
+  // Content details
+  title             String
+  content           String   @db.Text
+  excerpt           String?
+  wordCount         Int?
+  
+  // Publishing details
+  wordpressPostId   Int      // The actual WordPress post ID
+  wordpressUrl      String   // The permalink to the published post
+  wordpressEditUrl  String?  // The WordPress admin edit URL
+  status            String   // draft, publish, pending, etc.
+  
+  // Content metadata
+  location          String?
+  contentType       String?  // blog post, landing page, etc.
+  primaryKeywords   Json?    // Array of primary keywords
+  imageUrl          String?  // Featured image URL
+  imageDownloaded   Boolean  @default(false) // Whether image was successfully downloaded
+  
+  // WordPress site details
+  wordpressUrl      String   // The WordPress site URL
+  wordpressApiUrl   String   // The API endpoint used
+  
+  // User and tracking
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Publishing metadata
+  publishResponse   Json?    // Full response from WordPress API
+  publishError      String?  // Any error that occurred during publishing
+  publishedAt       DateTime @default(now())
+  
+  // Relations to original content
+  contentAnalysisId String?  // Link to the original content analysis if available
+  crawlRequestId    String?  // Link to the crawl request if available
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([wordpressPostId])
+  @@index([publishedAt])
+  @@index([wordpressUrl])
+}
