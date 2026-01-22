@@ -10,6 +10,7 @@ import {
   FileText, 
   TrendingUp,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   Clock,
   ArrowRight,
@@ -961,24 +962,66 @@ export default function ContentStrategyDashboard({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Gap Visualizer */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-                    Content Gap Analysis
-                  </h2>
-                  <p className="text-slate-600 dark:text-slate-400">
-                    These are topics you should be covering but aren't. Click a gap to filter suggestions.
-                  </p>
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                      Content Gap Analysis
+                    </h2>
+                    <p className="text-slate-600 dark:text-slate-400">
+                      These are topics you should be covering but aren't. Click a gap to filter suggestions.
+                    </p>
+                  </div>
+                  {selectedGap && (
+                    <button
+                      onClick={() => setSelectedGap(null)}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                      Clear Filter
+                    </button>
+                  )}
                 </div>
-                {selectedGap && (
-                  <button
-                    onClick={() => setSelectedGap(null)}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                    Clear Filter
-                  </button>
-                )}
+
+                {/* Gap Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      <h3 className="font-medium text-red-900 dark:text-red-100">High Priority</h3>
+                    </div>
+                    <p className="text-2xl font-bold text-red-900 dark:text-red-100">
+                      {contentContext.contentGaps.filter(g => g.toLowerCase().includes('no case studies') || g.toLowerCase().includes('lack of')).length}
+                    </p>
+                    <p className="text-sm text-red-700 dark:text-red-300">
+                      Critical gaps needing immediate attention
+                    </p>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                      <h3 className="font-medium text-amber-900 dark:text-amber-100">Medium Priority</h3>
+                    </div>
+                    <p className="text-2xl font-bold text-amber-900 dark:text-amber-100">
+                      {contentContext.contentGaps.filter(g => !(g.toLowerCase().includes('no case studies') || g.toLowerCase().includes('lack of'))).length}
+                    </p>
+                    <p className="text-sm text-amber-700 dark:text-amber-300">
+                      Opportunities for content improvement
+                    </p>
+                  </div>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Lightbulb className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <h3 className="font-medium text-blue-900 dark:text-blue-100">Total Suggestions</h3>
+                    </div>
+                    <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                      {aiSuggestions.length}
+                    </p>
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      AI-generated content ideas ready
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {selectedGap && (
@@ -995,6 +1038,10 @@ export default function ContentStrategyDashboard({
               <div className="space-y-4">
                 {contentContext.contentGaps.map((gap, index) => {
                   const isSelected = selectedGap === gap;
+                  // Determine gap severity based on keywords
+                  const isHighPriority = gap.toLowerCase().includes('no case studies') || gap.toLowerCase().includes('lack of');
+                  const gapIcon = isHighPriority ? AlertTriangle : AlertCircle;
+                  
                   return (
                     <div
                       key={index}
@@ -1002,15 +1049,37 @@ export default function ContentStrategyDashboard({
                       className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${
                         isSelected
                           ? "bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-400"
+                          : isHighPriority
+                          ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30"
                           : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30"
                       }`}
                     >
-                      <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
-                        isSelected ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400"
+                      <gapIcon className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
+                        isSelected 
+                          ? "text-blue-600 dark:text-blue-400" 
+                          : isHighPriority 
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-amber-600 dark:text-amber-400"
                       }`} />
-                      <p className="text-sm text-slate-900 dark:text-slate-100 flex-1">
-                        {gap}
-                      </p>
+                      <div className="flex-1">
+                        <p className="text-sm text-slate-900 dark:text-slate-100 mb-2">
+                          {gap}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                            isHighPriority
+                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                          }`}>
+                            {isHighPriority ? "High Priority" : "Medium Priority"}
+                          </span>
+                          {isSelected && (
+                            <span className="text-xs text-blue-600 dark:text-blue-400">
+                              {filteredSuggestions.length} suggestions available
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       {isSelected && (
                         <CheckCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                       )}

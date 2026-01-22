@@ -151,9 +151,23 @@ export default function PlannerView({
   });
 
   useEffect(() => {
-    loadEvents();
-    loadContentAnalysis();
-  }, [currentDate, view]);
+    const gaps: DraggableItem[] = (contentGaps || []).map((gap, i) => ({
+      id: `gap-${Date.now()}-${i}`,
+      type: "gap",
+      title: gap,
+    }));
+
+    const suggestions: DraggableItem[] = (aiSuggestions || []).map((s, i) => ({
+      id: `suggestion-${Date.now()}-${i}`,
+      type: "suggestion",
+      title: s.title,
+      keywords: s.targetKeywords,
+      suggestionType: s.type,
+      reason: s.reason,
+    }));
+
+    setDraggableItems([...gaps, ...suggestions]);
+  }, [contentGaps, aiSuggestions]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -502,17 +516,46 @@ export default function PlannerView({
               {item.title}
             </div>
             {item.suggestionType && (
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {item.suggestionType}
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                  item.type === 'gap' 
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    : item.suggestionType === 'Blog Post'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                    : item.suggestionType === 'Whitepaper'
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                    : item.suggestionType === 'Case Study'
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                    : item.suggestionType === 'Guide'
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                    : 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
+                }`}>
+                  {item.type === 'gap' ? 'Gap' : item.suggestionType}
+                </span>
+                {item.type === 'suggestion' && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    AI Suggestion
+                  </span>
+                )}
+              </div>
+            )}
+            {item.reason && (
+              <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">
+                {item.reason}
               </div>
             )}
             {item.keywords && item.keywords.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {item.keywords.slice(0, 2).map((kw, ki) => (
-                  <span key={ki} className="text-xs px-1.5 py-0.5 bg-slate-200 dark:bg-slate-500 rounded text-slate-700 dark:text-slate-300">
+              <div className="flex flex-wrap gap-1 mt-2">
+                {item.keywords.slice(0, 3).map((kw, ki) => (
+                  <span key={ki} className="text-xs px-1.5 py-0.5 bg-slate-100 dark:bg-slate-600 rounded text-slate-600 dark:text-slate-300">
                     {kw}
                   </span>
                 ))}
+                {item.keywords.length > 3 && (
+                  <span className="text-xs px-1.5 py-0.5 text-slate-500 dark:text-slate-400">
+                    +{item.keywords.length - 3} more
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -687,26 +730,39 @@ export default function PlannerView({
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
                   Your schedule is clear
                 </h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 max-w-md">
-                  Drag ideas from the Content Tray or click <strong>Auto-Plan Month</strong> to generate your content schedule.
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 max-w-md">
+                  Start planning your content with {draggableItems.length} available ideas:
                 </p>
-                <Button
-                  onClick={handleAutoPlanMonth}
-                  disabled={isAutoPlanning}
-                  className="flex items-center gap-2"
-                >
-                  {isAutoPlanning ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Planning...
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4" />
-                      Auto-Plan Month
-                    </>
-                  )}
-                </Button>
+                <div className="flex flex-wrap gap-2 justify-center mb-6">
+                  <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full text-sm">
+                    {contentGaps?.length || 0} Content Gaps
+                  </span>
+                  <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm">
+                    {aiSuggestions?.length || 0} AI Suggestions
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Drag items from the tray to the calendar or:
+                  </p>
+                  <Button
+                    onClick={handleAutoPlanMonth}
+                    disabled={isAutoPlanning}
+                    className="flex items-center gap-2"
+                  >
+                    {isAutoPlanning ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Planning...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4" />
+                        Auto-Plan Month
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             ) : (
               <Calendar
