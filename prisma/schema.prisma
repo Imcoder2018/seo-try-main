@@ -20,6 +20,7 @@ model User {
   scheduledContent ScheduledContent[]
   contentAnalyses  ContentAnalysis[]
   crawlRequests    CrawlRequest[]
+  wordpressPublishes WordPressPublish[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -418,7 +419,7 @@ model WordPressPublish {
   
   // Publishing details
   wordpressPostId   Int      // The actual WordPress post ID
-  wordpressUrl      String   // The permalink to the published post
+  permalink         String   // The permalink to the published post
   wordpressEditUrl  String?  // The WordPress admin edit URL
   status            String   // draft, publish, pending, etc.
   

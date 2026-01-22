@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,25 @@ export async function POST(request: NextRequest) {
       status = "draft" // Can be 'draft', 'publish', 'pending'
     } = body;
 
+    // Validate image URL
+    let processedImageUrl = imageUrl;
+    if (imageUrl) {
+      // Check if it's a valid URL
+      try {
+        new URL(imageUrl);
+        console.log("[WordPress Publish] Valid image URL provided:", imageUrl);
+      } catch (urlError) {
+        console.warn("[WordPress Publish] Invalid image URL, removing:", imageUrl);
+        processedImageUrl = "";
+      }
+    }
+
     if (!title || !content) {
       return NextResponse.json(
-        { error: "Title and content are required" },
+        { 
+          success: false,
+          error: "Title and content are required" 
+        },
         { status: 400 }
       );
     }
@@ -58,6 +75,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Call the real WordPress plugin API
+    console.log("[WordPress Publish] Sending image URL:", processedImageUrl);
+    console.log("[WordPress Publish] Image URL type:", typeof processedImageUrl);
+    console.log("[WordPress Publish] Image URL length:", processedImageUrl?.length);
+    
     const wordpressResponse = await fetch(`${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`, {
       method: "POST",
       headers: {
@@ -69,9 +90,12 @@ export async function POST(request: NextRequest) {
         content,
         location,
         contentType,
-        imageUrl,
+        imageUrl: processedImageUrl?.trim() || "", // Use validated URL
         primaryKeywords,
         status,
+        // Add image metadata for debugging
+        hasImage: !!processedImageUrl,
+        imageSource: processedImageUrl ? "ai-generated" : "none",
       }),
     });
 
@@ -92,7 +116,15 @@ export async function POST(request: NextRequest) {
     const responseData = await wordpressResponse.json();
     console.log("[WordPress Publish] Full API response:", JSON.stringify(responseData, null, 2));
     console.log("[WordPress Publish] Post ID:", responseData.post?.id || responseData.postId);
+    console.log("[WordPress Publish] Featured media ID:", responseData.post?.featured_media);
     console.log("[WordPress Publish] Response structure:", Object.keys(responseData));
+
+    // Check if image was successfully set as featured image
+    const featuredMediaId = responseData.post?.featured_media || 0;
+    const imageSetSuccessfully = featuredMediaId > 0;
+    
+    console.log("[WordPress Publish] Image set as featured:", imageSetSuccessfully);
+    console.log("[WordPress Publish] Featured media ID:", featuredMediaId);
 
     // Handle both old and new response formats for backward compatibility
     let postData;
@@ -119,13 +151,86 @@ export async function POST(request: NextRequest) {
       postData = null;
     }
 
+    // Store successful publish in database
+    try {
+      await prisma.wordpressPublish.create({
+        data: {
+          title: title,
+          content: content,
+          excerpt: content ? content.substring(0, 200) + "..." : "",
+          wordCount: content ? content.split(/\s+/).length : 0,
+          wordpressPostId: postData?.id || 0,
+          permalink: postData?.link || responseData.url || "",
+          wordpressEditUrl: responseData.editUrl || "",
+          status: responseData.status || status,
+          location: location || "",
+          contentType: contentType || "",
+          primaryKeywords: primaryKeywords || [],
+          imageUrl: imageUrl || "",
+          imageDownloaded: !!imageUrl,
+          wordpressUrl: WORDPRESS_URL,
+          wordpressApiUrl: `${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`,
+          userId: user.id,
+          publishResponse: responseData,
+        },
+      });
+      console.log("[WordPress Publish] Stored in database successfully");
+    } catch (dbError) {
+      console.log("[WordPress Publish] Database not ready, storing in console:", dbError);
+      // Store in console for now until Prisma client is regenerated
+      console.log("[WordPress Publish] Would store:", {
+        title,
+        wordpressPostId: postData?.id,
+        status: responseData.status || status,
+        publishedAt: new Date().toISOString(),
+      });
+    }
+
     return NextResponse.json({
       success: true,
       post: postData,
       message: responseData.message || `Content published as ${status}`,
+      imageStatus: {
+        sent: !!processedImageUrl,
+        setAsFeatured: imageSetSuccessfully,
+        featuredMediaId: featuredMediaId,
+        originalUrl: processedImageUrl,
+      }
     });
   } catch (error) {
     console.error("[WordPress Publish] Error:", error);
+    
+    // Store failed publish attempt
+    try {
+      const body = await request.json().catch(() => ({}));
+      await prisma.wordpressPublish.create({
+        data: {
+          title: body.title || "Unknown",
+          content: body.content || "",
+          wordpressPostId: 0,
+          permalink: "",
+          status: "failed",
+          location: body.location || "",
+          contentType: body.contentType || "",
+          primaryKeywords: body.primaryKeywords || [],
+          imageUrl: body.imageUrl || "",
+          imageDownloaded: false,
+          wordpressUrl: WORDPRESS_URL,
+          wordpressApiUrl: `${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`,
+          userId: user.id,
+          publishResponse: { error: String(error) },
+          publishError: String(error),
+        },
+      });
+    } catch (dbError) {
+      console.log("[WordPress Publish] Database not ready, logging error:", dbError);
+      console.log("[WordPress Publish] Would store error:", {
+        error: String(error),
+        title: await request.json().catch(() => ({})).then(b => b.title || "Unknown"),
+        publishedAt: new Date().toISOString(),
+      });
+    }
+    
     return NextResponse.json(
       { 
         success: false,

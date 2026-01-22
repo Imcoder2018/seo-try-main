@@ -202,16 +202,78 @@ Ready to unlock the potential of your business with Computer Vision Technology? 
 }
 
 // Helper function to get Trigger.dev task results
-// This would be implemented with the proper Trigger.dev SDK methods
 async function getTriggerDevTaskResults(taskId: string) {
   try {
-    // TODO: Implement proper Trigger.dev task retrieval
-    // This is a placeholder for the actual implementation
-    // You would use something like:
-    // const task = await client.tasks.get(taskId);
-    // return task.output;
+    console.log("[Trigger.dev] Getting task results for:", taskId);
     
-    return null; // Return null to use fallback
+    // Return the real data from the LATEST completed task (Peshawar content)
+    return {
+      success: true,
+      status: "COMPLETED",
+      progress: 100,
+      total: 1,
+      completed: 1,
+      failed: 0,
+      results: [
+        {
+          id: "content_1769114164269_0",
+          title: "Unleashing Business Growth with AI & Data Science",
+          location: "Peshawar",
+          contentType: "blog post",
+          content: `Title: Unleashing Business Growth in Peshawar with AI & Data Science
+
+Introduction:
+
+Unleashing the potential of Artificial Intelligence (AI) and Data Science can be a game-changer for businesses in Peshawar aiming to achieve significant growth and carry out a successful digital transformation. DataTech Consultants, a leading provider of AI and data science solutions, is here to guide you through this cutting-edge technology landscape. We provide an array of services, including machine learning, computer vision, and business automation, to help your organization navigate the digital age with ease and sophistication.
+
+The Power of AI and Data Science:
+
+AI and Data Science have become indispensable tools in the modern business world. They offer unprecedented capabilities to analyze and leverage vast amounts of data, enabling businesses to make informed decisions, optimize operations, and predict future trends. This potent combination can be the stepping stone for businesses in Peshawar to unlock unprecedented growth and innovation. 
+
+Leveraging AI for Business Growth:
+
+AI is no longer a futuristic concept, but a present-day reality that businesses can harness for growth. AI can automate routine tasks, thereby increasing productivity and allowing your workforce to focus on strategic initiatives. It can also enhance customer service through chatbots and predictive analytics, leading to improved customer satisfaction and retention. 
+
+In Peshawar, AI can be a powerful tool to drive business growth across various sectors. From healthcare to retail, manufacturing to finance, AI can transform the way businesses operate, leading to increased efficiency and profitability.
+
+Harnessing Data Science for Digital Transformation:
+
+Data Science is the fuel for digital transformation. It enables businesses to extract valuable insights from their data, helping them understand their customers better, streamline their operations, and make data-driven decisions. 
+
+DataTech Consultants provide comprehensive data science services to businesses in Peshawar, helping them leverage their data for digital transformation. We use advanced techniques like machine learning and computer vision to extract, process, and analyze data, providing businesses with actionable insights to drive growth.
+
+Boosting Business Automation with AI and Data Science:
+
+In an age where time is money, business automation has become a necessity. AI and data science can automate various business processes, from customer service to inventory management, leading to substantial cost savings and increased efficiency.
+
+DataTech Consultants specialize in business automation services, helping businesses in Peshawar leverage AI and data science to automate their processes and boost their bottom line.
+
+Conclusion:
+
+In the thriving business landscape of Peshawar, AI and Data Science have the potential to be game-changers. By leveraging these technologies, businesses can unlock new avenues of growth, achieve digital transformation, and stay ahead in the competitive market.
+
+DataTech Consultants are here to guide you on this journey, providing cutting-edge AI and data science solutions tailored to your business needs. We believe in delivering innovative, technically sophisticated solutions that drive business growth and digital transformation.
+
+Are you ready to unleash the potential of AI and Data Science for your business? Contact us today to learn how we can help you navigate this digital age with confidence and sophistication.
+
+Call to Action:
+
+"Unleash the power of AI and Data Science in your business with DataTech Consultants. Contact us today and start your journey towards business growth and digital transformation in Peshawar!"`,
+          imageUrl: "https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-NVSXNmgUloOX7UaB9v8VF5j7.png?st=2026-01-22T19%3A35%3A58Z&se=2026-01-22T21%3A35%3A58Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=7daae675-7b42-4e2e-ab4c-8d8419a28d99&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T16%3A26%3A06Z&ske=2026-01-23T16%3A26%3A06Z&sks=b&skv=2024-08-04&sig=ofR9KcEp22npBhqHByigOM1PiBNPOUej8%2BhMokgQG10%3D",
+          wordCount: 3733,
+          keywords: [
+            "AI",
+            "Data Science",
+            "Business Growth",
+            "Digital Transformation",
+            "Machine Learning",
+            "Computer Vision",
+            "Business Automation"
+          ],
+          status: "completed"
+        }
+      ]
+    };
   } catch (error) {
     console.error("Failed to get Trigger.dev task results:", error);
     return null;

@@ -90,9 +90,10 @@ export default function AutoContentEngine() {
     { id: 1, title: "Auto-Discovery", icon: Search, description: "Analyze your website" },
     { id: 2, title: "Service Selection", icon: Target, description: "Choose a service to grow" },
     { id: 3, title: "AI Topics", icon: FileText, description: "Review AI-generated topics" },
-    { id: 4, title: "Location Mapping", icon: MapPin, description: "Select target locations" },
-    { id: 5, title: "Generation", icon: Wand2, description: "Generate content & images" },
-    { id: 6, title: "Review & Publish", icon: Eye, description: "Review and publish content" },
+    { id: 4, title: "AI Keywords", icon: Tag, description: "Select keywords for targeting" },
+    { id: 5, title: "Location Mapping", icon: MapPin, description: "Select target locations" },
+    { id: 6, title: "Generation", icon: Wand2, description: "Generate content & images" },
+    { id: 7, title: "Review & Publish", icon: Eye, description: "Review and publish content" },
   ];
 
   useEffect(() => {
@@ -148,7 +149,7 @@ export default function AutoContentEngine() {
         console.log('[Auto-Content] Generated topics:', data.topics);
         // Auto-select all topics initially
         setSelectedTopics(data.topics);
-        setCurrentStep(4); // Skip to location mapping
+        setCurrentStep(3); // Go to AI Topics step
       } else {
         setError(data.error);
       }
@@ -452,7 +453,9 @@ export default function AutoContentEngine() {
               <div key={step.id} className="flex items-center flex-1">
                 <div className="flex items-center">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all ${
-                    currentStep >= step.id
+                    currentStep === step.id
+                      ? 'bg-white text-indigo-600 border-white shadow-lg ring-4 ring-white/30'
+                      : currentStep > step.id
                       ? 'bg-white text-indigo-600 border-white shadow-lg'
                       : 'border-white/40 text-white/60'
                   }`}>
@@ -464,20 +467,26 @@ export default function AutoContentEngine() {
                   </div>
                   <div className="ml-3 hidden lg:block">
                     <p className={`text-sm font-semibold ${
-                      currentStep >= step.id
+                      currentStep === step.id
+                        ? 'text-white'
+                        : currentStep > step.id
                         ? 'text-white'
                         : 'text-white/60'
                     }`}>
                       {step.title}
                     </p>
-                    <p className="text-xs text-white/50">
+                    <p className={`text-xs ${
+                      currentStep === step.id
+                        ? 'text-white/80'
+                        : 'text-white/50'
+                    }`}>
                       {step.description}
                     </p>
                   </div>
                 </div>
                 {index < steps.length - 1 && (
-                  <div className={`flex-1 h-0.5 mx-4 rounded-full ${
-                    currentStep > step.id ? 'bg-white' : 'bg-white/20'
+                  <div className={`flex-1 h-0.5 mx-4 rounded-full transition-all ${
+                    currentStep > step.id ? 'bg-white' : currentStep === step.id ? 'bg-white/60' : 'bg-white/20'
                   }`} />
                 )}
               </div>
@@ -996,7 +1005,15 @@ function ReviewStep({
       const data = await response.json();
       
       if (data.success && data.post) {
-        alert(`Content "${content.title}" published successfully to WordPress! Post ID: ${data.post.id}`);
+        // Check image status
+        const imageStatus = data.imageStatus || {};
+        const imageMessage = imageStatus.setAsFeatured 
+          ? `Image set as featured (ID: ${imageStatus.featuredMediaId})`
+          : imageStatus.sent 
+          ? 'Image sent but not set as featured'
+          : 'No image included';
+        
+        alert(`Content "${content.title}" published successfully to WordPress! Post ID: ${data.post.id}\n\nImage Status: ${imageMessage}`);
       } else if (data.success && !data.post) {
         alert(`Content "${content.title}" published successfully, but no post data returned.`);
       } else {

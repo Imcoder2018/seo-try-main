@@ -19,6 +19,7 @@ import GapAnalysisCard from "@/components/content/GapAnalysisCard";
 import PriorityMatrix from "@/components/content/PriorityMatrix";
 import DraftSolutionModal from "@/components/content/DraftSolutionModal";
 import StrategyHeader from "@/components/content/StrategyHeader";
+import WordPressPublishHistory from "@/components/content/WordPressPublishHistory";
 import ConfirmationModal from "@/components/ui/ConfirmationModal";
 import { useToast } from "@/components/ui/Toast";
 import { useContentStrategy } from "@/contexts/ContentStrategyContext";
@@ -934,22 +935,32 @@ export default function ContentStrategyPage() {
 
   const renderHistoryView = () => {
     return (
-      <div className="py-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-              Analysis History
-            </h2>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">
-              View and load previous content analyses
-            </p>
+      <div className="py-8 space-y-8">
+        {/* Analysis History Section */}
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                Analysis History
+              </h2>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">
+                View and load previous content analyses
+              </p>
+            </div>
+          </div>
+          <HistoryPanel
+            onSelectCrawlHistory={handleCrawlHistorySelect}
+            onSelectAnalysisHistory={handleAnalysisHistorySelect}
+            currentDomain={currentDomain || undefined}
+          />
+        </div>
+
+        {/* WordPress Publishing History Section */}
+        <div>
+          <div className="border-t border-slate-200 dark:border-slate-700 pt-8">
+            <WordPressPublishHistory />
           </div>
         </div>
-        <HistoryPanel
-          onSelectCrawlHistory={handleCrawlHistorySelect}
-          onSelectAnalysisHistory={handleAnalysisHistorySelect}
-          currentDomain={currentDomain || undefined}
-        />
       </div>
     );
   };
