@@ -78,6 +78,7 @@ export default function AutoContentEngine() {
   const [discoveryData, setDiscoveryData] = useState<DiscoveryData | null>(null);
   const [selectedService, setSelectedService] = useState<string>("");
   const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
+  const [generatedTopics, setGeneratedTopics] = useState<Topic[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -147,6 +148,8 @@ export default function AutoContentEngine() {
       
       if (data.success) {
         console.log('[Auto-Content] Generated topics:', data.topics);
+        // Store generated topics separately
+        setGeneratedTopics(data.topics);
         // Auto-select all topics initially
         setSelectedTopics(data.topics);
         setCurrentStep(3); // Go to AI Topics step
@@ -380,9 +383,10 @@ export default function AutoContentEngine() {
       case 1: return discoveryData !== null;
       case 2: return selectedService !== "";
       case 3: return selectedTopics.length > 0;
-      case 4: return selectedLocations.length > 0;
-      case 5: return !isGenerating;
-      case 6: return generatedContent.length > 0;
+      case 4: return selectedTopics.length > 0; // Keywords step - just need topics selected
+      case 5: return selectedLocations.length > 0;
+      case 6: return !isGenerating;
+      case 7: return generatedContent.length > 0;
       default: return false;
     }
   };
@@ -399,25 +403,30 @@ export default function AutoContentEngine() {
         />;
       case 3:
         return <TopicsStep 
-          topics={selectedTopics}
+          topics={generatedTopics}
           selectedTopics={selectedTopics}
           onToggleTopic={toggleTopicSelection}
           loading={loading}
         />;
       case 4:
+        return <KeywordsStep 
+          selectedTopics={selectedTopics}
+          onContinue={() => setCurrentStep(5)}
+        />;
+      case 5:
         return <LocationMappingStep 
           locations={discoveryData?.locations || []}
           selectedLocations={selectedLocations}
           onToggleLocation={toggleLocationSelection}
         />;
-      case 5:
+      case 6:
         return <GenerationStep 
           isGenerating={isGenerating}
           progress={generationProgress}
           totalCombinations={selectedTopics.length * selectedLocations.length}
           onStartGeneration={startBulkGeneration}
         />;
-      case 6:
+      case 7:
         return <ReviewStep 
           generatedContent={generatedContent}
           selectedTopics={selectedTopics}
@@ -538,7 +547,36 @@ export default function AutoContentEngine() {
                 </button>
               )}
               
+              {currentStep === 3 && (
+                <button
+                  onClick={() => setCurrentStep(4)}
+                  disabled={selectedTopics.length === 0 || loading}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 transition-all font-medium"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Tag className="w-4 h-4" />
+                      Select Keywords
+                    </>
+                  )}
+                </button>
+              )}
               {currentStep === 4 && (
+                <button
+                  onClick={() => setCurrentStep(5)}
+                  disabled={selectedTopics.length === 0}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 transition-all font-medium"
+                >
+                  <MapPin className="w-4 h-4" />
+                  Select Locations
+                </button>
+              )}
+              {currentStep === 5 && (
                 <button
                   onClick={startBulkGeneration}
                   disabled={selectedTopics.length === 0 || selectedLocations.length === 0 || isGenerating}
@@ -547,20 +585,20 @@ export default function AutoContentEngine() {
                   {isGenerating ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Generating Content...
+                      Generating...
                     </>
                   ) : (
                     <>
                       <Wand2 className="w-4 h-4" />
-                      Start Generation
+                      Generate Content
                     </>
                   )}
                 </button>
               )}
 
-              {currentStep !== 2 && currentStep !== 4 && currentStep !== 5 && (
+              {currentStep !== 2 && currentStep !== 3 && currentStep !== 4 && currentStep !== 5 && (
                 <button
-                  onClick={() => setCurrentStep(Math.min(6, currentStep + 1))}
+                  onClick={() => setCurrentStep(Math.min(7, currentStep + 1))}
                   disabled={!canProceed() || loading}
                   className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/25 transition-all font-medium"
                 >
@@ -571,7 +609,7 @@ export default function AutoContentEngine() {
                     </>
                   ) : (
                     <>
-                      Next Step
+                      Continue
                       <ChevronRight className="w-4 h-4" />
                     </>
                   )}
@@ -812,6 +850,111 @@ function TopicsStep({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function KeywordsStep({ 
+  selectedTopics, 
+  onContinue 
+}: { 
+  selectedTopics: Topic[]; 
+  onContinue: () => void;
+}) {
+  // Collect all keywords from selected topics
+  const allPrimaryKeywords = selectedTopics.flatMap(topic => topic.primaryKeywords);
+  const allSecondaryKeywords = selectedTopics.flatMap(topic => topic.secondaryKeywords);
+  
+  // Remove duplicates and sort
+  const uniquePrimaryKeywords = [...new Set(allPrimaryKeywords)].sort();
+  const uniqueSecondaryKeywords = [...new Set(allSecondaryKeywords)].sort();
+  
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <Tag className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+          AI Keywords Selection
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400 mb-6">
+          Review the keywords that will be used for content generation
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Primary Keywords */}
+        <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+            Primary Keywords ({uniquePrimaryKeywords.length})
+          </h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {uniquePrimaryKeywords.map((keyword, index) => (
+              <div key={index} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0"></div>
+                <span className="text-sm font-medium text-blue-900 dark:text-blue-100">{keyword}</span>
+                <span className="text-xs text-blue-600 dark:text-blue-400 ml-auto">Primary</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Secondary Keywords */}
+        <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <div className="w-2 h-2 bg-purple-600 rounded-full"></div>
+            Secondary Keywords ({uniqueSecondaryKeywords.length})
+          </h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {uniqueSecondaryKeywords.map((keyword, index) => (
+              <div key={index} className="flex items-center gap-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                <div className="w-2 h-2 bg-purple-600 rounded-full flex-shrink-0"></div>
+                <span className="text-sm font-medium text-purple-900 dark:text-purple-100">{keyword}</span>
+                <span className="text-xs text-purple-600 dark:text-purple-400 ml-auto">Secondary</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">Content Summary</h3>
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span className="text-slate-600 dark:text-slate-400">{selectedTopics.length} Topics</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Tag className="w-4 h-4 text-purple-600" />
+              <span className="text-slate-600 dark:text-slate-400">{uniquePrimaryKeywords.length + uniqueSecondaryKeywords.length} Keywords</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="space-y-2">
+          <h4 className="font-medium text-slate-800 dark:text-slate-200">Selected Topics:</h4>
+          <div className="flex flex-wrap gap-2">
+            {selectedTopics.map((topic, index) => (
+              <span key={index} className="px-3 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-full text-sm">
+                {topic.title}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Continue Button */}
+      <div className="flex justify-center">
+        <button
+          onClick={onContinue}
+          className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-lg shadow-blue-500/25 transition-all font-medium"
+        >
+          Continue to Location Selection
+          <MapPin className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
