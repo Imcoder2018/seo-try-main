@@ -118,63 +118,48 @@ export default function AutoContentEngineSplit() {
     setGeneratedContent(null);
 
     try {
-      const response = await fetch("/api/content/generate-article", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: customTopic || `${selectedService} Services`,
-          service: selectedService,
-          locations: selectedLocations,
-          tone: selectedTone,
-          keywords: customKeywords.split(",").map((k) => k.trim()).filter(Boolean),
-          brandContext: discoveryData?.aboutSummary,
-          targetAudience: discoveryData?.targetAudience,
-          stream: true, // Enable streaming
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to start content generation");
-      }
-
-      // Handle streaming response
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Streaming not supported");
-      }
-
-      const decoder = new TextDecoder();
-      let accumulatedContent = "";
-      
       setPreviewMode("content");
       setGeneratedContent({
         id: `content_${Date.now()}`,
         title: customTopic || `${selectedService} Services`,
-        content: "",
+        content: "Generating content...",
         wordCount: 0,
         status: "generating",
       });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      const response = await fetch("/api/content/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate_full_content",
+          keyword: customTopic || selectedService,
+          businessType: discoveryData?.services?.[0] || "Technology Consulting",
+          businessName: "DataTech Consultants",
+          services: discoveryData?.services || [selectedService],
+          location: selectedLocations[0] || "Australia",
+          tone: selectedTone,
+          targetWordCount: 1500,
+        }),
+      });
 
-        const chunk = decoder.decode(value);
-        accumulatedContent += chunk;
-        
-        // Update content in real-time
-        setGeneratedContent(prev => prev ? {
-          ...prev,
-          content: accumulatedContent,
-          wordCount: accumulatedContent.split(/\s+/).length,
-        } : null);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to start content generation");
       }
 
-      // Mark as completed
-      setGeneratedContent(prev => prev ? {
-        ...prev,
-        status: "completed",
-      } : null);
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setGeneratedContent({
+          id: `content_${Date.now()}`,
+          title: result.data.title || customTopic || `${selectedService} Services`,
+          content: result.data.content || "Content generated successfully",
+          wordCount: result.data.wordCount || 0,
+          status: "completed",
+        });
+      } else {
+        throw new Error(result.error || "Failed to generate content");
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate content");
