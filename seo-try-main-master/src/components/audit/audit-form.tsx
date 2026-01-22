@@ -1,0 +1,480 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Search, Loader2, Globe, FileSearch, CheckCircle, XCircle } from "lucide-react";
+import { PageSelector } from "./page-selector";
+
+interface CrawlResult {
+  baseUrl: string;
+  pagesFound: number;
+  pages: Array<{
+    url: string;
+    status: number;
+    title?: string;
+    links: string[];
+    error?: string;
+    depth: number;
+    internalLinkCount: number;
+    isNavigation: boolean;
+  }>;
+  urlGroups: {
+    core: string[];
+    blog: string[];
+    product: string[];
+    service: string[];
+    category: string[];
+    other: string[];
+  };
+  topLinkedPages: Array<{ url: string; linkCount: number }>;
+  sitemapUrls: string[];
+  errors: string[];
+}
+
+export function AuditForm() {
+  const [url, setUrl] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCrawling, setIsCrawling] = useState(false);
+  const [crawlTaskId, setCrawlTaskId] = useState<string | null>(null);
+  const [crawlPublicToken, setCrawlPublicToken] = useState<string | null>(null);
+  const [crawlProgress, setCrawlProgress] = useState(0);
+  const [crawlStatus, setCrawlStatus] = useState("");
+  const [pagesFound, setPagesFound] = useState(0);
+  const [crawlResult, setCrawlResult] = useState<CrawlResult | null>(null);
+  const [showPageSelector, setShowPageSelector] = useState(false);
+  const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
+  const [isRunningAudit, setIsRunningAudit] = useState(false);
+  const [error, setError] = useState("");
+  const [auditMode, setAuditMode] = useState<"quick" | "deep">("quick");
+  const router = useRouter();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!url.trim()) {
+      setError("Please enter a website URL");
+      return;
+    }
+
+    let cleanUrl = url.trim();
+    if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+      cleanUrl = `https://${cleanUrl}`;
+    }
+
+    try {
+      new URL(cleanUrl);
+    } catch {
+      setError("Please enter a valid URL");
+      return;
+    }
+
+    if (auditMode === "deep") {
+      await startDeepCrawl(cleanUrl);
+    } else {
+      await startQuickAudit(cleanUrl);
+    }
+  };
+
+  const startQuickAudit = async (cleanUrl: string) => {
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: cleanUrl }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to start audit");
+      }
+
+      const data = await response.json();
+      const domain = new URL(cleanUrl).hostname;
+      
+      sessionStorage.setItem(`audit_${data.id}`, JSON.stringify(data));
+      
+      router.push(`/${domain}?id=${data.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start audit. Please try again.");
+      setIsLoading(false);
+    }
+  };
+
+  const startDeepCrawl = async (cleanUrl: string) => {
+    console.log("[Deep Crawl] Starting deep crawl for:", cleanUrl);
+    setIsCrawling(true);
+    setCrawlProgress(0);
+    setCrawlStatus("Starting crawl...");
+    setPagesFound(0);
+    setCrawlResult(null);
+
+    try {
+      console.log("[Deep Crawl] Sending POST request to /api/crawl");
+      const response = await fetch("/api/crawl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: cleanUrl, maxPages: 50 }),
+      });
+
+      console.log("[Deep Crawl] POST response status:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[Deep Crawl] POST error response:", errorData);
+        throw new Error(errorData.error || "Failed to start crawl");
+      }
+
+      const data = await response.json();
+      console.log("[Deep Crawl] POST response data:", { runId: data.runId, publicToken: data.publicToken ? "exists" : "missing" });
+      
+      setCrawlTaskId(data.runId);
+      setCrawlPublicToken(data.publicToken);
+
+      console.log("[Deep Crawl] Starting polling for run:", data.runId);
+      // Start polling for status
+      pollCrawlStatus(data.runId, data.publicToken, cleanUrl);
+    } catch (err) {
+      console.error("[Deep Crawl] Error:", err);
+      setError(err instanceof Error ? err.message : "Failed to start crawl");
+      setIsCrawling(false);
+    }
+  };
+
+  const handleSelectionChange = (urls: string[]) => {
+    setSelectedUrls(urls);
+  };
+
+  const [auditProgress, setAuditProgress] = useState(0);
+  const [auditStatus, setAuditStatus] = useState("");
+
+  const handleRunAudit = async () => {
+    if (!crawlResult || selectedUrls.length === 0) {
+      setError("Please select at least one page to audit");
+      return;
+    }
+
+    setIsRunningAudit(true);
+    setAuditProgress(0);
+    setAuditStatus("Starting smart audit...");
+    
+    try {
+      const auditResponse = await fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: crawlResult.baseUrl,
+          selectedUrls,
+          crawlData: crawlResult
+        }),
+      });
+
+      if (!auditResponse.ok) {
+        const auditErr = await auditResponse.json();
+        setError(`Audit failed: ${auditErr.error}`);
+        setIsRunningAudit(false);
+        return;
+      }
+
+      const auditData = await auditResponse.json();
+      
+      // If audit is running in background (multi-page), poll for status
+      if (auditData.status === "RUNNING" && auditData.runId) {
+        console.log("[Smart Audit] Audit started in background, polling for status...");
+        await pollAuditStatus(auditData.runId, auditData.publicToken, auditData.id);
+      } else if (auditData.status === "COMPLETED") {
+        // Single page audit completed immediately
+        const domain = new URL(crawlResult.baseUrl).hostname;
+        sessionStorage.setItem(`audit_${auditData.id}`, JSON.stringify(auditData));
+        router.push(`/${domain}?id=${auditData.id}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run audit");
+      setIsRunningAudit(false);
+    }
+  };
+
+  const pollAuditStatus = async (runId: string, publicToken: string, auditId: string) => {
+    let pollAttempts = 0;
+    const maxPollAttempts = 180; // 6 minutes at 2 second intervals
+    
+    const poll = async () => {
+      pollAttempts++;
+      console.log(`[Smart Audit Poll] Attempt ${pollAttempts}/${maxPollAttempts}`);
+      
+      if (pollAttempts > maxPollAttempts) {
+        setError("Audit is taking longer than expected. Please check back later.");
+        setIsRunningAudit(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/audit?runId=${runId}&publicToken=${publicToken}&auditId=${auditId}`, {
+          cache: 'no-cache',
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch audit status");
+        }
+        
+        const data = await response.json();
+        console.log(`[Smart Audit Poll] Status: ${data.status}`);
+
+        // Update progress from metadata
+        if (data.metadata?.status) {
+          setAuditProgress(data.metadata.status.progress ?? 0);
+          setAuditStatus(data.metadata.status.label ?? "Analyzing pages...");
+        }
+
+        if (data.status === "COMPLETED" && data.output) {
+          console.log("[Smart Audit Poll] Audit completed!");
+          const domain = new URL(crawlResult!.baseUrl).hostname;
+          sessionStorage.setItem(`audit_${auditId}`, JSON.stringify(data.output));
+          console.log("[Smart Audit Poll] Redirecting to:", `/${domain}?id=${auditId}`);
+          // Use window.location for more reliable redirect
+          window.location.href = `/${domain}?id=${auditId}`;
+        } else if (data.status === "FAILED" || data.status === "CRASHED") {
+          setError("Audit failed. Please try again.");
+          setIsRunningAudit(false);
+        } else {
+          // Continue polling
+          setTimeout(poll, 2000);
+        }
+      } catch (err) {
+        console.error("[Smart Audit Poll] Error:", err);
+        setTimeout(poll, 3000);
+      }
+    };
+
+    poll();
+  };
+
+  const pollCrawlStatus = useCallback(async (taskId: string, publicToken: string, originalUrl: string) => {
+    let pollAttempts = 0;
+    const maxPollAttempts = 150; // 5 minutes at 2 second intervals
+    const poll = async () => {
+      pollAttempts++;
+      console.log(`[Deep Crawl Poll] Attempt ${pollAttempts}/${maxPollAttempts} for task:`, taskId);
+      
+      // Safety check to prevent infinite polling
+      if (pollAttempts > maxPollAttempts) {
+        console.error("[Deep Crawl Poll] Max attempts reached, aborting");
+        setError("Crawl is taking longer than expected. Please check back later.");
+        setIsCrawling(false);
+        return;
+      }
+
+      try {
+        console.log(`[Deep Crawl Poll] Fetching status from /api/crawl...`);
+        const response = await fetch(`/api/crawl?runId=${taskId}&publicToken=${publicToken}`, {
+          cache: 'no-cache',
+        });
+        
+        console.log(`[Deep Crawl Poll] Response status:`, response.status);
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("[Deep Crawl Poll] Error response:", errorData);
+          throw new Error(errorData.error || "Failed to fetch status");
+        }
+        
+        const data = await response.json();
+        console.log(`[Deep Crawl Poll] Response data - status: ${data.status}, hasOutput: ${!!data.output}, hasMetadata: ${!!data.metadata}`);
+
+        // Update progress from metadata
+        if (data.metadata?.status) {
+          const oldProgress = crawlProgress;
+          const newProgress = data.metadata.status.progress ?? 0;
+          const newStatus = data.metadata.status.label ?? "Initializing crawl...";
+          const newPages = data.metadata.status.pagesFound ?? 0;
+          
+          setCrawlProgress(newProgress);
+          setCrawlStatus(newStatus);
+          setPagesFound(newPages);
+          
+          console.log(`[Deep Crawl Poll] Progress updated: ${oldProgress}% -> ${newProgress}%, Status: "${newStatus}", Pages: ${newPages}`);
+          
+          // Log any errors from metadata
+          if (data.metadata.status.lastError) {
+            console.warn("[Deep Crawl Poll] Crawl warning:", data.metadata.status.lastError);
+          }
+        }
+
+        // Check if completed
+        if (data.status === "COMPLETED" && data.output) {
+          console.log("[Deep Crawl Poll] Crawl completed successfully!");
+          setCrawlResult(data.output);
+          setShowPageSelector(true);
+          setIsCrawling(false);
+        } else if (data.status === "FAILED" || data.status === "CRASHED") {
+          console.error("[Deep Crawl Poll] Crawl failed with status:", data.status);
+          setError("Crawl failed. Please try again.");
+          setIsCrawling(false);
+        } else if (data.status === "TIMED_OUT" || data.status === "EXPIRED") {
+          console.error("[Deep Crawl Poll] Crawl timed out with status:", data.status);
+          setError("Crawl timed out. The website might be too large or blocking crawlers. Try the Quick Audit instead.");
+          setIsCrawling(false);
+        } else {
+          console.log(`[Deep Crawl Poll] Still running (${data.status}), polling again in 2s...`);
+          // Continue polling
+          setTimeout(poll, 2000);
+        }
+      } catch (err) {
+        console.error("[Deep Crawl Poll] Error:", err);
+        // Don't stop polling on network errors, just retry after a delay
+        if (pollAttempts < maxPollAttempts) {
+          console.log(`[Deep Crawl Poll] Retrying in 3s (attempt ${pollAttempts + 1}/${maxPollAttempts})...`);
+          setTimeout(poll, 3000);
+        } else {
+          console.error("[Deep Crawl Poll] Max attempts reached after error, giving up");
+          setError("Failed to check crawl status after multiple attempts. Please try again.");
+          setIsCrawling(false);
+        }
+      }
+    };
+
+    poll();
+  }, [router, crawlProgress]);
+
+  if (isCrawling) {
+    return (
+      <div className="w-full max-w-2xl mx-auto">
+        <div className="bg-white dark:bg-gray-900 rounded-xl border shadow-lg p-8">
+          <div className="text-center mb-6">
+            <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Globe className="w-10 h-10 text-blue-600 animate-pulse" />
+            </div>
+            <h2 className="text-2xl font-bold">Deep Crawling Website</h2>
+            <p className="text-muted-foreground mt-2">Discovering and analyzing all pages...</p>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium">Progress</span>
+              <span className="text-sm font-medium text-blue-600">{crawlProgress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+              <div 
+                className="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all duration-500"
+                style={{ width: `${crawlProgress}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Status */}
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+              <span>{crawlStatus}</span>
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4 text-center">
+              <FileSearch className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{pagesFound}</p>
+              <p className="text-sm text-blue-600 dark:text-blue-400">Pages Found</p>
+            </div>
+            <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-4 text-center">
+              <Globe className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-purple-700 dark:text-purple-400">Active</p>
+              <p className="text-sm text-purple-600 dark:text-purple-400">Status</p>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground text-center mt-6">
+            This may take 1-2 minutes depending on the size of your website.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show PageSelector after crawl completes
+  if (showPageSelector && crawlResult) {
+    return (
+      <div className="w-full max-w-6xl mx-auto">
+        <PageSelector
+          crawlResult={crawlResult}
+          onSelectionChange={handleSelectionChange}
+          onRunAudit={handleRunAudit}
+          isRunningAudit={isRunningAudit}
+          auditProgress={auditProgress}
+          auditStatus={auditStatus}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full max-w-2xl mx-auto">
+      {/* Audit Mode Toggle */}
+      <div className="flex justify-center gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => setAuditMode("quick")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            auditMode === "quick"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted hover:bg-muted/80"
+          }`}
+        >
+          ⚡ Quick Audit
+        </button>
+        <button
+          type="button"
+          onClick={() => setAuditMode("deep")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            auditMode === "deep"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted hover:bg-muted/80"
+          }`}
+        >
+          🔍 Deep Crawl
+        </button>
+      </div>
+      
+      <p className="text-center text-sm text-muted-foreground mb-4">
+        {auditMode === "quick" 
+          ? "Analyze your homepage quickly (30 seconds)"
+          : "Crawl all pages for comprehensive analysis (1-2 minutes)"
+        }
+      </p>
+
+      <form onSubmit={handleSubmit}>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Enter website URL (e.g., example.com)"
+              className="w-full pl-12 pr-4 py-4 rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={isLoading}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="px-8 py-4 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              "Analyze"
+            )}
+          </button>
+        </div>
+        {error && <p className="mt-3 text-destructive text-sm">{error}</p>}
+      </form>
+    </div>
+  );
+}
