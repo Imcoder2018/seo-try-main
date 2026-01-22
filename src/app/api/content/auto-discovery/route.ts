@@ -94,26 +94,48 @@ export async function GET(request: NextRequest) {
             "Business Automation Services"
           ];
           
-          // Extract locations from content analysis or use defaults
-          const locations = analysisOutput?.locations || [
-            "Islamabad",
-            "Rawalpindi", 
-            "Lahore",
-            "Karachi",
-            "Peshawar"
-          ];
-          
-          // Extract other data from analysis
-          const aboutSummary = analysisOutput?.aboutSummary || "Professional technology services provider";
-          const targetAudience = analysisOutput?.targetAudience || "Businesses seeking digital solutions";
-          const brandTone = analysisOutput?.brandTone || "Professional and innovative";
-          
           // Extract existing pages
           const existingPages = analysisOutput?.pages?.slice(0, 10).map((p: any) => ({
             url: p.url,
             type: p.type || 'page',
             title: p.title || p.url
           })) || [];
+          
+          // Extract locations from content analysis or use defaults
+          const locations = analysisOutput?.locations || 
+            analysisOutput?.targetLocations ||
+            analysisOutput?.serviceAreas ||
+            [
+              "Islamabad", "Rawalpindi", "Lahore", "Karachi", "Peshawar",
+              "Faisalabad", "Multan", "Gujranwala", "Sialkot", "Quetta"
+            ];
+          
+          // Log what we're extracting for debugging
+          console.log("[Auto-Discovery] Extracted data:", {
+            servicesCount: services.length,
+            locationsCount: locations.length,
+            pagesCount: existingPages.length,
+            hasAboutSummary: !!analysisOutput?.aboutSummary,
+            hasTargetAudience: !!analysisOutput?.targetAudience,
+            hasBrandTone: !!analysisOutput?.brandTone,
+            analysisKeys: Object.keys(analysisOutput || {})
+          });
+          
+          // Extract other data from analysis with better fallbacks
+          const aboutSummary = analysisOutput?.aboutSummary || 
+            analysisOutput?.companyDescription || 
+            analysisOutput?.businessDescription ||
+            "DataTech Consultants - Leading provider of AI and data science solutions including machine learning, computer vision, and business automation services";
+
+          const targetAudience = analysisOutput?.targetAudience || 
+            analysisOutput?.audiencePersona?.targetAudience ||
+            analysisOutput?.idealCustomer ||
+            "Enterprises, startups, and organizations seeking to leverage AI, machine learning, and data science for digital transformation and business growth";
+
+          const brandTone = analysisOutput?.brandTone || 
+            analysisOutput?.tone ||
+            analysisOutput?.communicationStyle ||
+            "Professional, innovative, and technically sophisticated with a focus on delivering cutting-edge AI and data science solutions";
 
           const discoveryData = {
             services,
@@ -157,34 +179,26 @@ export async function GET(request: NextRequest) {
         "Business Automation Services"
       ],
       locations: [
-        "Islamabad",
-        "Rawalpindi", 
-        "Lahore",
-        "Karachi",
-        "Peshawar",
-        "Wah Cantt",
-        "Faisalabad",
-        "Multan",
-        "Quetta",
-        "Gujranwala"
+        "Islamabad", "Rawalpindi", "Lahore", "Karachi", "Peshawar",
+        "Faisalabad", "Multan", "Gujranwala", "Sialkot", "Quetta"
       ],
-      aboutSummary: "Leading technology solutions provider specializing in custom software development, digital transformation, and innovative IT consulting services. With over 10 years of experience, we help businesses leverage cutting-edge technology to achieve their goals.",
-      targetAudience: "Small to medium businesses, startups, and enterprises looking for digital transformation and technology solutions",
-      brandTone: "Professional, innovative, reliable, and customer-focused",
+      aboutSummary: "DataTech Consultants is a premier technology company specializing in cutting-edge AI and data science solutions. We provide comprehensive services including machine learning, computer vision, natural language processing, data visualization, and business automation. Our team of expert data scientists and AI engineers helps enterprises transform their operations through intelligent automation and data-driven decision making.",
+      targetAudience: "Enterprises, startups, and government organizations seeking to leverage artificial intelligence, machine learning, and data science for digital transformation, operational efficiency, and competitive advantage. We serve clients across various industries including finance, healthcare, retail, manufacturing, and technology sectors.",
+      brandTone: "Professional, innovative, and technically sophisticated. We communicate complex AI concepts in clear, business-focused language while maintaining our position as thought leaders in the data science and AI industry. Our approach is consultative, solution-oriented, and committed to delivering measurable business value.",
       contactInfo: {
         email: "info@datatechconsultants.com.au",
         phone: "+92-300-1234567",
         address: "123 Business Park, Islamabad, Pakistan"
       },
       existingPages: [
-        { url: "/services/web-development", type: "service", title: "Web Development Services" },
-        { url: "/services/seo", type: "service", title: "SEO Services" },
-        { url: "/services/mobile-app-development", type: "service", title: "Mobile App Development" },
-        { url: "/services/digital-marketing", type: "service", title: "Digital Marketing" },
-        { url: "/about", type: "page", title: "About Us" },
+        { url: "/services/data-science-services", type: "service", title: "Data Science Services" },
+        { url: "/services/ai-programming-services", type: "service", title: "AI Programming Services" },
+        { url: "/services/machine-learning-services", type: "service", title: "Machine Learning Services" },
+        { url: "/services/computer-vision-services", type: "service", title: "Computer Vision Services" },
+        { url: "/services/cybersecurity-services", type: "service", title: "Cybersecurity Services" },
+        { url: "/about", type: "page", title: "About DataTech Consultants" },
         { url: "/contact", type: "page", title: "Contact Us" },
-        { url: "/blog", type: "blog", title: "Blog" },
-        { url: "/", type: "homepage", title: "Home" }
+        { url: "/blog", type: "blog", title: "AI and Data Science Blog" }
       ]
     };
 
