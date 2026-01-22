@@ -488,7 +488,7 @@ export default function ContentStrategyDashboard({
     );
   }
 
-  const { contentContext, aiSuggestions, pages, extractionData } = analysisOutput;
+  const { contentContext, aiSuggestions, pages, extractionData } = analysisOutput || {};
 
   // Debug data flow
   console.log('All Pages:', pages);
@@ -521,11 +521,11 @@ export default function ContentStrategyDashboard({
 
   // Filter suggestions based on selected gap
   const filteredSuggestions = selectedGap
-    ? aiSuggestions.filter(suggestion => 
+    ? aiSuggestions?.filter(suggestion => 
         suggestion.reason.toLowerCase().includes(selectedGap.toLowerCase()) ||
         suggestion.targetKeywords.some(kw => kw.toLowerCase().includes(selectedGap.toLowerCase()))
-      )
-    : aiSuggestions;
+      ) || []
+    : aiSuggestions || [];
 
   // Generate outline for draft modal
   const generateOutline = (suggestion: AISuggestion) => {
@@ -736,19 +736,19 @@ export default function ContentStrategyDashboard({
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
-                      <p className="text-3xl font-bold">{extractionData.pagesProcessed}</p>
+                      <p className="text-3xl font-bold">{extractionData?.pagesProcessed || 0}</p>
                       <p className="text-sm text-indigo-100">Pages Processed</p>
                     </div>
                     <div>
-                      <p className="text-3xl font-bold">{extractionData.totalWordCount.toLocaleString()}</p>
+                      <p className="text-3xl font-bold">{extractionData?.totalWordCount?.toLocaleString() || 0}</p>
                       <p className="text-sm text-indigo-100">Total Words</p>
                     </div>
                     <div>
-                      <p className="text-3xl font-bold">{extractionData.aggregatedContent.services.length}</p>
+                      <p className="text-3xl font-bold">{extractionData?.aggregatedContent?.services?.length || 0}</p>
                       <p className="text-sm text-indigo-100">Service Pages</p>
                     </div>
                     <div>
-                      <p className="text-3xl font-bold">{extractionData.aggregatedContent.blogs.length}</p>
+                      <p className="text-3xl font-bold">{extractionData?.aggregatedContent?.blogs?.length || 0}</p>
                       <p className="text-sm text-indigo-100">Blog Posts</p>
                     </div>
                   </div>
@@ -1075,7 +1075,7 @@ export default function ContentStrategyDashboard({
                           </span>
                           {isSelected && (
                             <span className="text-xs text-blue-600 dark:text-blue-400">
-                              {filteredSuggestions.length} suggestions available
+                              {filteredSuggestions?.length || 0} suggestions available
                             </span>
                           )}
                         </div>
@@ -1085,7 +1085,7 @@ export default function ContentStrategyDashboard({
                             onClick={(e) => {
                               e.stopPropagation();
                               // Find a matching suggestion or create a draft directly
-                              const matchingSuggestion = aiSuggestions.find(s => 
+                              const matchingSuggestion = aiSuggestions?.find(s => 
                                 s.reason.toLowerCase().includes(gap.toLowerCase().split(' ').slice(0, 3).join(' '))
                               );
                               if (matchingSuggestion) {
@@ -1801,7 +1801,7 @@ export default function ContentStrategyDashboard({
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredSuggestions.map((suggestion, index) => (
+              {filteredSuggestions?.map((suggestion, index) => (
                 <div
                   key={index}
                   className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border-2 transition-all cursor-pointer hover:shadow-md ${
