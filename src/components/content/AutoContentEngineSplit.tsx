@@ -23,6 +23,10 @@ import {
   User,
   Tag,
   ExternalLink,
+  X,
+  Check,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import SearchResultPreview from "./SearchResultPreview";
@@ -81,11 +85,17 @@ export default function AutoContentEngineSplit() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [customTopic, setCustomTopic] = useState<string>("");
   const [customKeywords, setCustomKeywords] = useState<string>("");
+  const [generatedKeywords, setGeneratedKeywords] = useState<string[]>([]);
+  const [selectedGeneratedKeywords, setSelectedGeneratedKeywords] = useState<string[]>([]);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<"skeleton" | "outline" | "content">("skeleton");
+  const [useBackendGeneration, setUseBackendGeneration] = useState(false);
 
   const toneOptions = [
     { value: "professional", label: "Professional", desc: "Formal and business-focused" },
@@ -120,6 +130,77 @@ export default function AutoContentEngineSplit() {
     }
   };
 
+  const handleGenerateKeywords = async () => {
+    if (!customTopic && !selectedService) {
+      setError("Please enter a topic or select a service first");
+      return;
+    }
+
+    setIsGeneratingKeywords(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/content/ai-topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedService: customTopic || selectedService,
+          locations: selectedLocations.length > 0 ? selectedLocations : [discoveryData?.locations?.[0] || "Pakistan"],
+          brandTone: selectedTone,
+          targetAudience: discoveryData?.targetAudience || "Business professionals",
+          aboutSummary: discoveryData?.aboutSummary || "Professional services",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to generate keywords");
+      }
+
+      const result = await response.json();
+      
+      if (result.success && result.topics && result.topics.length > 0) {
+        const keywords = result.topics.flatMap((topic: any) => [
+          ...topic.primaryKeywords,
+          ...topic.secondaryKeywords,
+        ]).filter((k: string, i: number, a: string[]) => a.indexOf(k) === i).slice(0, 10);
+        
+        setGeneratedKeywords(keywords);
+        setSelectedGeneratedKeywords(keywords); // Auto-select all
+        setCustomKeywords(keywords.join(", "));
+      } else {
+        throw new Error(result.error || "No keywords generated");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate keywords");
+    } finally {
+      setIsGeneratingKeywords(false);
+    }
+  };
+
+  const handleToggleKeyword = (keyword: string) => {
+    setSelectedGeneratedKeywords(prev =>
+      prev.includes(keyword)
+        ? prev.filter(k => k !== keyword)
+        : [...prev, keyword]
+    );
+    setCustomKeywords(
+      selectedGeneratedKeywords.includes(keyword)
+        ? selectedGeneratedKeywords.filter(k => k !== keyword).join(", ")
+        : [...selectedGeneratedKeywords, keyword].join(", ")
+    );
+  };
+
+  const handleSelectAllKeywords = () => {
+    setSelectedGeneratedKeywords(generatedKeywords);
+    setCustomKeywords(generatedKeywords.join(", "));
+  };
+
+  const handleDeselectAllKeywords = () => {
+    setSelectedGeneratedKeywords([]);
+    setCustomKeywords("");
+  };
+
   const handleGenerate = async () => {
     if (!customTopic && !selectedService) {
       setError("Please enter a topic or select a service");
@@ -132,73 +213,177 @@ export default function AutoContentEngineSplit() {
     setGeneratedContent(null);
 
     try {
-      setPreviewMode("content");
-      setGeneratedContent({
-        id: `content_${Date.now()}`,
-        title: customTopic || `${selectedService} Services`,
-        content: "Generating content...",
-        wordCount: 0,
-        status: "generating",
-        featuredImage: undefined,
-        imageUrl: undefined,
-        imagePrompt: undefined,
-        metadata: {
-          keywords: customKeywords.split(",").map(k => k.trim()).filter(Boolean),
-          targetLocation: selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
-          tone: selectedTone,
-          contentType: "blog post"
-        }
-      });
-
-      const response = await fetch("/api/content/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "generate_full_content",
-          keyword: customTopic || selectedService,
-          businessType: discoveryData?.services?.[0] || "Technology Consulting",
-          businessName: "DataTech Consultants",
-          services: discoveryData?.services || [selectedService],
-          location: selectedLocations[0] || "Australia",
-          tone: selectedTone,
-          targetWordCount: 1500,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to start content generation");
-      }
-
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        setGeneratedContent({
-          id: `content_${Date.now()}`,
-          title: result.data.title || customTopic || `${selectedService} Services`,
-          content: result.data.content || "Content generated successfully",
-          wordCount: result.data.wordCount || 0,
-          status: "completed",
-          featuredImage: result.data.featuredImage || result.data.imageUrl || `https://picsum.photos/1200/600?random=${Math.random()}`,
-          imageUrl: result.data.imageUrl || `https://picsum.photos/800/600?random=${Math.random()}`,
-          imagePrompt: result.data.imagePrompt || `AI-generated image for ${result.data.title}`,
-          metadata: {
-            keywords: result.data.keywords || customKeywords.split(",").map(k => k.trim()).filter(Boolean),
-            targetLocation: selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
-            tone: selectedTone,
-            contentType: result.data.contentType || "blog post"
-          }
-        });
+      if (useBackendGeneration) {
+        // Use Trigger.dev backend generation
+        await handleBackendGenerate();
       } else {
-        throw new Error(result.error || "Failed to generate content");
+        // Use frontend generation
+        await handleFrontendGenerate();
       }
-
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate content");
       setPreviewMode("skeleton");
       setGeneratedContent(null);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleFrontendGenerate = async () => {
+    setPreviewMode("content");
+    setGeneratedContent({
+      id: `content_${Date.now()}`,
+      title: customTopic || `${selectedService} Services`,
+      content: "Generating content...",
+      wordCount: 0,
+      status: "generating",
+      featuredImage: undefined,
+      imageUrl: undefined,
+      imagePrompt: undefined,
+      metadata: {
+        keywords: customKeywords.split(",").map(k => k.trim()).filter(Boolean),
+        targetLocation: selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
+        tone: selectedTone,
+        contentType: "blog post"
+      }
+    });
+
+    const response = await fetch("/api/content/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "generate_full_content",
+        keyword: customTopic || selectedService,
+        businessType: discoveryData?.services?.[0] || "Technology Consulting",
+        businessName: "DataTech Consultants",
+        services: discoveryData?.services || [selectedService],
+        location: selectedLocations[0] || "Australia",
+        tone: selectedTone,
+        targetWordCount: 1500,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to start content generation");
+    }
+
+    const result = await response.json();
+    
+    if (result.success && result.data) {
+      setGeneratedContent({
+        id: `content_${Date.now()}`,
+        title: result.data.title || customTopic || `${selectedService} Services`,
+        content: result.data.content || "Content generated successfully",
+        wordCount: result.data.wordCount || 0,
+        status: "completed",
+        featuredImage: result.data.featuredImage || result.data.imageUrl || `https://picsum.photos/1200/600?random=${Math.random()}`,
+        imageUrl: result.data.imageUrl || `https://picsum.photos/800/600?random=${Math.random()}`,
+        imagePrompt: result.data.imagePrompt || `AI-generated image for ${result.data.title}`,
+        metadata: {
+          keywords: result.data.keywords || customKeywords.split(",").map(k => k.trim()).filter(Boolean),
+          targetLocation: selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
+          tone: selectedTone,
+          contentType: result.data.contentType || "blog post"
+        }
+      });
+    } else {
+      throw new Error(result.error || "Failed to generate content");
+    }
+  };
+
+  const handleBackendGenerate = async () => {
+    setPreviewMode("content");
+    setGeneratedContent({
+      id: `content_${Date.now()}`,
+      title: customTopic || `${selectedService} Services`,
+      content: "Generating content via Trigger.dev...",
+      wordCount: 0,
+      status: "generating",
+      featuredImage: undefined,
+      imageUrl: undefined,
+      imagePrompt: undefined,
+      metadata: {
+        keywords: customKeywords.split(",").map(k => k.trim()).filter(Boolean),
+        targetLocation: selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
+        tone: selectedTone,
+        contentType: "blog post"
+      }
+    });
+
+    const response = await fetch("/api/content/bulk-generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selectedTopics: [{
+          title: customTopic || selectedService,
+          primaryKeywords: customKeywords.split(",").map(k => k.trim()).filter(Boolean),
+          secondaryKeywords: [],
+          contentType: "blog post",
+          description: customTopic || `Content about ${selectedService}`,
+          searchIntent: "informational",
+        }],
+        selectedLocations: selectedLocations.length > 0 ? selectedLocations : [discoveryData?.locations?.[0] || "Pakistan"],
+        service: selectedService || customTopic,
+        brandTone: selectedTone,
+        targetAudience: discoveryData?.targetAudience || "Business professionals",
+        aboutSummary: discoveryData?.aboutSummary || "Professional services",
+        generateImages: true,
+        singlePage: true,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to start content generation");
+    }
+
+    const result = await response.json();
+    const taskId = result.taskId;
+
+    // Poll for task completion
+    await pollForTaskCompletion(taskId);
+  };
+
+  const pollForTaskCompletion = async (taskId: string) => {
+    const maxAttempts = 60;
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      attempts++;
+      
+      try {
+        const response = await fetch(`/api/content/bulk-generate?taskId=${taskId}`);
+        const data = await response.json();
+        
+        if (data.success && data.results && data.results.length > 0) {
+          const content = data.results[0];
+          setGeneratedContent({
+            id: content.id,
+            title: content.title,
+            content: content.content,
+            wordCount: content.wordCount || 0,
+            status: "completed",
+            featuredImage: content.imageUrl,
+            imageUrl: content.imageUrl,
+            imagePrompt: undefined,
+            metadata: {
+              keywords: content.keywords || customKeywords.split(",").map(k => k.trim()).filter(Boolean),
+              targetLocation: content.location || selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
+              tone: selectedTone,
+              contentType: content.contentType || "blog post"
+            }
+          });
+          return;
+        } else if (data.status === "FAILED" || data.status === "CRASHED") {
+          throw new Error(data.error || "Content generation failed");
+        }
+      } catch (error) {
+        if (attempts === maxAttempts) {
+          throw new Error("Content generation timed out");
+        }
+      }
     }
   };
 
@@ -213,6 +398,45 @@ export default function AutoContentEngineSplit() {
     setPreviewMode("skeleton");
     setCustomTopic("");
     setCustomKeywords("");
+    setPublishStatus(null);
+  };
+
+  const handlePublishToWordPress = async () => {
+    if (!generatedContent) {
+      setError("No content to publish");
+      return;
+    }
+
+    setIsPublishing(true);
+    setPublishStatus(null);
+
+    try {
+      const response = await fetch("/api/wordpress/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: generatedContent.title,
+          content: generatedContent.content,
+          location: generatedContent.metadata?.targetLocation || "Pakistan",
+          contentType: generatedContent.metadata?.contentType || "blog post",
+          imageUrl: generatedContent.imageUrl || generatedContent.featuredImage,
+          primaryKeywords: generatedContent.metadata?.keywords || [],
+          status: "draft",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to publish to WordPress");
+      }
+
+      const result = await response.json();
+      setPublishStatus(result.message || "Content published successfully!");
+    } catch (err) {
+      setPublishStatus(err instanceof Error ? err.message : "Failed to publish to WordPress");
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const canGenerate = (customTopic || selectedService) && !isGenerating;
@@ -299,9 +523,28 @@ export default function AutoContentEngineSplit() {
 
               {/* Keywords */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Target Keywords (comma separated)
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Target Keywords (comma separated)
+                  </label>
+                  <button
+                    onClick={handleGenerateKeywords}
+                    disabled={isGeneratingKeywords || (!customTopic && !selectedService)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isGeneratingKeywords ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-3 h-3" />
+                        Generate AI Keywords
+                      </>
+                    )}
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={customKeywords}
@@ -309,6 +552,47 @@ export default function AutoContentEngineSplit() {
                   placeholder="e.g., SEO, digital marketing, content strategy"
                   className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
                 />
+                
+                {/* Generated Keywords Selection */}
+                {generatedKeywords.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSelectAllKeywords}
+                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-slate-300 dark:text-slate-600">|</span>
+                      <button
+                        onClick={handleDeselectAllKeywords}
+                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {generatedKeywords.map((keyword) => (
+                        <button
+                          key={keyword}
+                          onClick={() => handleToggleKeyword(keyword)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all ${
+                            selectedGeneratedKeywords.includes(keyword)
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                          }`}
+                        >
+                          {selectedGeneratedKeywords.includes(keyword) ? (
+                            <Check className="w-3 h-3" />
+                          ) : (
+                            <X className="w-3 h-3 opacity-0" />
+                          )}
+                          {keyword}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Location Selection */}
@@ -349,6 +633,32 @@ export default function AutoContentEngineSplit() {
                 </div>
               )}
 
+              {/* Generation Method Toggle */}
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Generation Method
+                  </span>
+                </div>
+                <button
+                  onClick={() => setUseBackendGeneration(!useBackendGeneration)}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                >
+                  {useBackendGeneration ? (
+                    <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                      <ToggleRight className="w-5 h-5" />
+                      <span>Backend (Trigger.dev)</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                      <ToggleLeft className="w-5 h-5" />
+                      <span>Frontend</span>
+                    </div>
+                  )}
+                </button>
+              </div>
+
               {/* Generate Button */}
               <button
                 onClick={handleGenerate}
@@ -358,12 +668,12 @@ export default function AutoContentEngineSplit() {
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Generating Content...
+                    {useBackendGeneration ? "Generating via Trigger.dev..." : "Generating Content..."}
                   </>
                 ) : (
                   <>
                     <Zap className="w-5 h-5" />
-                    Generate Content
+                    {useBackendGeneration ? "Generate via Backend" : "Generate Content"}
                   </>
                 )}
               </button>
@@ -390,6 +700,24 @@ export default function AutoContentEngineSplit() {
                   <Copy className="w-4 h-4" />
                 </button>
                 <button
+                  onClick={handlePublishToWordPress}
+                  disabled={isPublishing}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                  title="Publish to WordPress"
+                >
+                  {isPublishing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Publishing...
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="w-4 h-4" />
+                      Publish to WordPress
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={handleReset}
                   className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                   title="Reset"
@@ -399,6 +727,17 @@ export default function AutoContentEngineSplit() {
               </div>
             )}
           </div>
+
+          {/* Publish Status */}
+          {publishStatus && (
+            <div className={`mb-4 p-3 rounded-lg border ${
+              publishStatus.includes("successfully") 
+                ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
+                : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300"
+            }`}>
+              <p className="text-sm">{publishStatus}</p>
+            </div>
+          )}
 
           {/* Skeleton State with Search Result Preview */}
           {previewMode === "skeleton" && !isGenerating && (

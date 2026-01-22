@@ -191,15 +191,9 @@ export async function POST(request: NextRequest) {
       postData = null;
     }
 
-    // Store successful publish in database with better error handling
+    // Store successful publish in database
     let dbStored = false;
     try {
-      // Keep database storage disabled until Prisma client is fully working
-      console.log("[WordPress Publish] Database storage temporarily disabled - Prisma client still has issues");
-      dbStored = false;
-      
-      // TODO: Re-enable this after Prisma client is fully regenerated and working
-      /*
       if (prisma && prisma.wordpressPublish) {
         await prisma.wordpressPublish.create({
           data: {
@@ -225,23 +219,32 @@ export async function POST(request: NextRequest) {
         });
         console.log("[WordPress Publish] Stored in database successfully");
         dbStored = true;
-      } else {
-        throw new Error("Prisma client or wordpressPublish model not available");
       }
-      */
     } catch (dbError) {
-      console.log("[WordPress Publish] Database storage disabled:", dbError);
+      console.error("[WordPress Publish] Database storage error:", dbError);
+      // Continue even if database storage fails
     }
+
+    // Format image status message
+    const imageStatusMessage = processedImageUrl
+      ? imageSetSuccessfully
+        ? "Image set as featured"
+        : "Image sent but not set as featured"
+      : "No image included";
+
+    const message = `Content "${title}" published successfully to WordPress! Post ID: ${postData?.id || responseData.postId}\n\nImage Status: ${imageStatusMessage}`;
 
     return NextResponse.json({
       success: true,
       post: postData,
-      message: responseData.message || `Content published as ${status}`,
+      message: message,
+      postId: postData?.id || responseData.postId,
       imageStatus: {
         sent: !!processedImageUrl,
         setAsFeatured: imageSetSuccessfully,
         featuredMediaId: featuredMediaId,
         originalUrl: processedImageUrl,
+        message: imageStatusMessage
       }
     });
   } catch (error) {
@@ -249,12 +252,8 @@ export async function POST(request: NextRequest) {
     
     // Store failed publish attempt
     try {
-      // Skip database storage for now until Prisma client is regenerated
-      console.log("[WordPress Publish] Skipping failed publish database storage until Prisma client is fixed");
-      
-      // TODO: Re-enable this after running: npx prisma generate
-      /*
-      const body = await request.json().catch(() => ({}));
+      const body = await request.clone().json().catch(() => ({}));
+      const currentUser = await requireAuth();
       await prisma.wordpressPublish.create({
         data: {
           title: body.title || "Unknown",
@@ -269,19 +268,13 @@ export async function POST(request: NextRequest) {
           imageDownloaded: false,
           wordpressUrl: WORDPRESS_URL,
           wordpressApiUrl: `${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`,
-          userId: user.id,
+          userId: currentUser.id,
           publishResponse: { error: String(error) },
           publishError: String(error),
         },
       });
-      */
     } catch (dbError) {
-      console.log("[WordPress Publish] Database storage for failed publish skipped:", dbError);
-      console.log("[WordPress Publish] Would store error:", {
-        error: String(error),
-        title: await request.json().catch(() => ({})).then(b => b.title || "Unknown"),
-        publishedAt: new Date().toISOString(),
-      });
+      console.error("[WordPress Publish] Failed to store error in database:", dbError);
     }
     
     return NextResponse.json(
