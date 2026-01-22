@@ -120,15 +120,17 @@ export default function ContentStrategyPage() {
   }, [baseUrl, setCurrentDomain]);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY_ANALYSIS);
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        if (data.analysisOutput && Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
-          setAnalysisOutput(data.analysisOutput);
+    const savedAnalysis = localStorage.getItem(STORAGE_KEY_ANALYSIS);
+    if (savedAnalysis) {
+      const parsed = JSON.parse(savedAnalysis);
+      if (parsed.analysisOutput && parsed.timestamp > Date.now() - 24 * 60 * 60 * 1000) {
+        // Handle nested json structure
+        let outputData = parsed.analysisOutput;
+        if (outputData.json) {
+          outputData = outputData.json;
         }
-      } catch (e) {
-        console.error("Failed to restore analysis:", e);
+        setAnalysisOutput(outputData);
+        setBaseUrl(parsed.baseUrl || baseUrl);
       }
     }
 
@@ -146,6 +148,7 @@ export default function ContentStrategyPage() {
     }
 
     loadRecentAnalyses();
+    loadLatestAnalysis();
   }, []);
 
   const loadRecentAnalyses = async () => {
@@ -165,6 +168,40 @@ export default function ContentStrategyPage() {
       }
     } catch (e) {
       console.error("Failed to load recent analyses:", e);
+    }
+  };
+
+  const loadLatestAnalysis = async () => {
+    try {
+      console.log("[Content Strategy] Loading latest analysis from database...");
+      const response = await fetch("/api/content/history?limit=1");
+      if (response.ok) {
+        const data = await response.json();
+        console.log("[Content Strategy] API response:", data);
+        const latestAnalysis = data.analyses?.[0];
+        console.log("[Content Strategy] Latest analysis:", latestAnalysis);
+        if (latestAnalysis?.analysisOutput) {
+          console.log("[Content Strategy] Found analysisOutput, setting state");
+          console.log("[Content Strategy] analysisOutput keys:", Object.keys(latestAnalysis.analysisOutput));
+          
+          // Handle nested json structure
+          let outputData = latestAnalysis.analysisOutput;
+          if (outputData.json) {
+            console.log("[Content Strategy] Unwrapping nested json structure");
+            outputData = outputData.json;
+          }
+          
+          console.log("[Content Strategy] Final output keys:", Object.keys(outputData));
+          setAnalysisOutput(outputData);
+          setBaseUrl(latestAnalysis.baseUrl);
+        } else {
+          console.log("[Content Strategy] No analysisOutput found in latest analysis");
+        }
+      } else {
+        console.error("[Content Strategy] Failed to fetch history:", response.status);
+      }
+    } catch (e) {
+      console.error("Failed to load latest analysis:", e);
     }
   };
 
@@ -325,13 +362,23 @@ export default function ContentStrategyPage() {
         }
 
         if (pollData.isComplete && pollData.analysisOutput) {
+          console.log("[Content Strategy] Analysis complete, setting output");
+          console.log("[Content Strategy] analysisOutput keys:", Object.keys(pollData.analysisOutput));
           setAnalysisProgress(100);
           setAnalysisStep(3);
-          setAnalysisOutput(pollData.analysisOutput);
+          
+          // Handle nested json structure
+          let outputData = pollData.analysisOutput;
+          if (outputData.json) {
+            console.log("[Content Strategy] Unwrapping nested json structure from Trigger.dev");
+            outputData = outputData.json;
+          }
+          
+          setAnalysisOutput(outputData);
           localStorage.setItem(
             STORAGE_KEY_ANALYSIS,
             JSON.stringify({
-              analysisOutput: pollData.analysisOutput,
+              analysisOutput: outputData,
               timestamp: Date.now(),
             })
           );
@@ -350,6 +397,14 @@ export default function ContentStrategyPage() {
     }
   };
 
+  // Refresh analysis from database
+  const handleRefreshAnalysis = async () => {
+    console.log("[Content Strategy] Refreshing analysis from database...");
+    await loadLatestAnalysis();
+    loadRecentAnalyses();
+  };
+
+  
   const handleCrawlHistorySelect = (crawlItem: any) => {
     if (crawlItem.pagesData) {
       const transformedPages = crawlItem.pagesData.map((page: any) => ({
@@ -532,7 +587,7 @@ export default function ContentStrategyPage() {
         <ContentStrategyDashboardV2
           analysisOutput={analysisOutput}
           isLoading={isLoading}
-          onRefresh={handleAnalysis}
+          onRefresh={handleRefreshAnalysis}
           onGenerateContent={handleGenerateFromGap}
           onOpenPlanner={() => setActiveView("planner")}
         />
@@ -794,7 +849,7 @@ export default function ContentStrategyPage() {
         <ContentStrategyDashboardV2
           analysisOutput={analysisOutput}
           isLoading={isLoading}
-          onRefresh={handleAnalysis}
+          onRefresh={handleRefreshAnalysis}
           onGenerateContent={handleGenerateFromGap}
           onOpenPlanner={() => setActiveView("planner")}
         />

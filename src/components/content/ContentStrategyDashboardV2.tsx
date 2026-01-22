@@ -193,6 +193,14 @@ export default function ContentStrategyDashboardV2({
   const [isGeneratingContent, setIsGeneratingContent] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // Debug logging
+  console.log("[DashboardV2] Rendering with analysisOutput:", analysisOutput ? "EXISTS" : "NULL");
+  if (analysisOutput) {
+    console.log("[DashboardV2] analysisOutput keys:", Object.keys(analysisOutput));
+    console.log("[DashboardV2] contentContext:", analysisOutput.contentContext);
+    console.log("[DashboardV2] pages count:", analysisOutput.pages?.length || 0);
+  }
+
   const sections = [
     { id: "overview", label: "Overview", icon: BarChart3 },
     { id: "persona", label: "Target Persona", icon: Users },
