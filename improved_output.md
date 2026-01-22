@@ -4,20 +4,14 @@
 
 ```text
 .
-├── src/app/api/content/analyze/route.ts
-├── src/app/api/content/auto-plan/route.ts
-├── src/app/api/content/bulk-generate/route.ts
-├── src/app/api/content/cron/route.ts
-├── src/app/api/content/editor/route.ts
-├── src/app/api/content/generate-image/route.ts
-├── src/app/api/content/generate-outline/route.ts
-├── src/app/api/content/generate/route.ts
-├── src/app/api/content/history/route.ts
-├── src/app/api/content/keywords/route.ts
-├── src/app/api/content/schedule/route.ts
-├── src/app/api/content/sites/route.ts
-├── src/app/content-strategy/page.tsx
+                ├── route.ts
+                ├── route.ts
+                ├── route.ts
+                    ├── route.ts
             ├── page.tsx
+            ├── page.tsx
+            ├── page.tsx
+        ├── page.tsx
             ├── AutoContentEngine.tsx
             ├── HistoryPanel.tsx
             ├── PlannerView.tsx
@@ -30,23 +24,19 @@
 
 ## 2. File Contents
 
-### src/app/api/content/analyze/route.ts
+### src\app\api\ai-strategy\route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
-import { tasks, configure, runs } from "@trigger.dev/sdk/v3";
-import type { contentExtractorTask } from "@/trigger/content/content-extractor";
-import type { contentAnalyzerTask } from "@/trigger/content/content-analyzer";
+import { tasks, runs, configure } from "@trigger.dev/sdk/v3";
+import type { generateRankingStrategy } from "@/../../trigger/ai/ranking-strategy";
 import { getRunOutput } from "@/lib/trigger-utils";
-import { requireAuth } from "@/lib/auth";
-import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 // CRITICAL: Configure SDK with secret key at module level
-// This ensures all SDK operations use the secret key by default
+// The SDK will automatically use TRIGGER_SECRET_KEY if set, but we configure explicitly
 // Do NOT call configure() inside handlers as it causes conflicts in warm serverless functions
 if (process.env.TRIGGER_SECRET_KEY) {
   configure({ secretKey: process.env.TRIGGER_SECRET_KEY });
@@ -54,228 +44,85 @@ if (process.env.TRIGGER_SECRET_KEY) {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("[Analyze POST] Starting request");
+    console.log("[AI Strategy POST] Starting request");
     
-    // Get authenticated user
-    const user = await requireAuth();
-    
-    const body = await request.json();
-    const { baseUrl, pages, maxPages = 50, targetAudience, crawlRequestId } = body;
-
-    if (!baseUrl || !pages) {
-      return NextResponse.json(
-        { error: "Missing required fields: baseUrl and pages" },
-        { status: 400 }
-      );
-    }
-
     if (!process.env.TRIGGER_SECRET_KEY) {
-      console.error("[Analyze POST] TRIGGER_SECRET_KEY is not configured");
+      console.error("[AI Strategy POST] TRIGGER_SECRET_KEY is not configured");
       return NextResponse.json(
         { error: "Trigger.dev is not configured. Please add TRIGGER_SECRET_KEY to your environment variables." },
         { status: 500 }
       );
     }
 
-    // Create content analysis record in Prisma
-    const domain = new URL(baseUrl).hostname;
-    const analysisId = `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const contentAnalysis = await prisma.contentAnalysis.create({
-      data: {
-        id: analysisId,
-        baseUrl,
-        domain,
-        status: "RUNNING",
-        pagesAnalyzed: pages.length,
-        userId: user.id,
-        ...(crawlRequestId && { crawlRequestId }),
-      },
-    });
+    const body = await request.json();
+    const { auditData, businessInfo } = body;
 
-    console.log(`[Content Analysis] Created analysis record ${contentAnalysis.id} for user ${user.id}`);
-
-    console.log("[Analyze POST] Triggering content extraction task...");
-
-    // Step 1: Extract content from pages
-    const extractionHandle = await tasks.trigger<typeof contentExtractorTask>(
-      "content-extractor",
-      {
-        baseUrl,
-        pages,
-        maxPages,
-        extractContent: true,
-        analysisId,
-        userId: user.id,
-      }
-    );
-
-    if (!extractionHandle || !extractionHandle.id) {
-      throw new Error("Failed to start content extraction task");
+    if (!auditData) {
+      return NextResponse.json({ error: "Audit data is required" }, { status: 400 });
     }
 
-    // Step 2: Perform AI analysis with extracted pages (will wait for extraction to complete in the task itself)
-    const analysisHandle = await tasks.trigger<typeof contentAnalyzerTask>(
-      "content-analyzer",
+    // Trigger the AI strategy generation task (SDK is already configured at module level)
+    console.log("[AI Strategy POST] Triggering generate-ranking-strategy task...");
+    const handle = await tasks.trigger<typeof generateRankingStrategy>(
+      "generate-ranking-strategy",
       {
-        baseUrl,
-        targetAudience,
-        extractionRunId: extractionHandle.id,
-        analysisId,
-        userId: user.id,
+        auditData,
+        businessInfo: businessInfo || {},
       }
     );
-
-    if (!analysisHandle || !analysisHandle.id) {
-      throw new Error("Failed to start content analysis task");
-    }
-
-    console.log("Content analysis started:", {
-      extractionRunId: extractionHandle.id,
-      analysisRunId: analysisHandle.id,
-    });
+    console.log("[AI Strategy POST] Task triggered successfully. runId:", handle.id);
 
     return NextResponse.json({
-      success: true,
-      analysisId,
-      extractionRunId: extractionHandle.id,
-      analysisRunId: analysisHandle.id,
-      message: "Content analysis started successfully",
+      taskId: handle.id,
+      status: "TRIGGERED",
+      message: "AI strategy generation started",
     });
   } catch (error) {
-    console.error("Error in content analysis:", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to start content analysis";
+    console.error("AI Strategy API error:", error);
     return NextResponse.json(
-      { 
-        error: errorMessage,
-        details: error instanceof Error ? error.stack : undefined
-      },
+      { error: "Failed to start AI strategy generation", details: String(error) },
       { status: 500 }
     );
   }
 }
 
 export async function GET(request: NextRequest) {
-  const user = await requireAuth();
-
-  const searchParams = request.nextUrl.searchParams;
-  const extractionRunId = searchParams.get("extractionRunId");
-  const analysisRunId = searchParams.get("analysisRunId");
-  const analysisId = searchParams.get("analysisId");
-
-  if (!extractionRunId || !analysisRunId) {
-    return NextResponse.json(
-      { error: "Missing extractionRunId or analysisRunId" },
-      { status: 400 }
-    );
-  }
-
   try {
-    console.log("[Analyze GET] Retrieving run status...");
+    const { searchParams } = new URL(request.url);
+    const taskId = searchParams.get("taskId");
 
-    // Get extraction run status using the secret key (configured at module level)
-    let extractionStatus = "PENDING";
-    let extractionOutput = null;
-    let extractionError = null;
-
-    try {
-      const extractionRun = await runs.retrieve(extractionRunId);
-      extractionStatus = extractionRun.status;
-      
-      if (extractionRun.status === "COMPLETED") {
-        extractionOutput = await getRunOutput(extractionRunId);
-      } else if (extractionRun.status === "FAILED") {
-        extractionError = (extractionRun as any).error?.message || "Extraction failed";
-      }
-    } catch (error) {
-      console.error("Error fetching extraction run:", error);
-      extractionStatus = "ERROR";
-      extractionError = error instanceof Error ? error.message : "Unknown error";
+    if (!taskId) {
+      return NextResponse.json({ error: "Task ID is required" }, { status: 400 });
     }
 
-    // Get analysis run status
-    let analysisStatus = "PENDING";
-    let analysisOutput = null;
-    let analysisError = null;
+    // Get task status from Trigger.dev
+    const run = await runs.retrieve(taskId);
 
-    try {
-      const analysisRun = await runs.retrieve(analysisRunId);
-      analysisStatus = analysisRun.status;
-      
-      if (analysisRun.status === "COMPLETED") {
-        analysisOutput = await getRunOutput(analysisRunId);
-      } else if (analysisRun.status === "FAILED") {
-        analysisError = (analysisRun as any).error?.message || "Analysis failed";
-      }
-    } catch (error) {
-      console.error("Error fetching analysis run:", error);
-      analysisStatus = "ERROR";
-      analysisError = error instanceof Error ? error.message : "Unknown error";
+    if (!run) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    const isComplete = extractionStatus === "COMPLETED" && analysisStatus === "COMPLETED";
-    const hasFailed =
-      extractionStatus === "FAILED" ||
-      analysisStatus === "FAILED" ||
-      extractionStatus === "ERROR" ||
-      analysisStatus === "ERROR";
-
-    // Persist result into Prisma when we know which record to update
-    if (analysisId) {
+    // Get output, handling offloaded outputs
+    let output = null;
+    if (run.status === "COMPLETED") {
       try {
-        if (isComplete && analysisOutput) {
-          const output: any = analysisOutput;
-          await prisma.contentAnalysis.updateMany({
-            where: {
-              id: analysisId,
-              userId: user.id,
-            },
-            data: {
-              status: "COMPLETED",
-              analysisOutput: output,
-              dominantKeywords: output?.contentContext?.dominantKeywords ?? null,
-              contentGaps: output?.contentContext?.contentGaps ?? null,
-              audiencePersona: output?.contentContext?.audiencePersona ?? null,
-              tone: output?.contentContext?.tone ?? null,
-              aiSuggestions: output?.aiSuggestions ?? null,
-              pagesAnalyzed: Array.isArray(output?.pages) ? output.pages.length : undefined,
-              completedAt: new Date(),
-            },
-          });
-        } else if (hasFailed) {
-          await prisma.contentAnalysis.updateMany({
-            where: {
-              id: analysisId,
-              userId: user.id,
-            },
-            data: {
-              status: "FAILED",
-              completedAt: new Date(),
-            },
-          });
-        }
-      } catch (dbError) {
-        console.error("[Analyze GET] Failed to persist analysis:", dbError);
+        output = await getRunOutput(taskId);
+      } catch (error) {
+        console.error("Error fetching output:", error);
       }
     }
 
     return NextResponse.json({
-      extractionStatus,
-      extractionOutput,
-      extractionError,
-      analysisStatus,
-      analysisOutput,
-      analysisError,
-      isComplete,
-      hasFailed,
+      taskId: run.id,
+      status: run.status,
+      output,
+      createdAt: run.createdAt,
+      finishedAt: run.finishedAt,
     });
   } catch (error) {
-    console.error("Error fetching analysis status:", error);
+    console.error("AI Strategy status error:", error);
     return NextResponse.json(
-      { 
-        error: "Failed to fetch analysis status",
-        details: error instanceof Error ? error.message : undefined
-      },
+      { error: "Failed to get task status", details: String(error) },
       { status: 500 }
     );
   }
@@ -285,7 +132,873 @@ export async function GET(request: NextRequest) {
 
 ---
 
-### src/app/api/content/auto-plan/route.ts
+### src\app\api\ai\route.ts
+
+```typescript
+import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
+
+// Lazy initialization to avoid build-time errors
+let openai: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+// Validate API key for WordPress plugin requests
+function validatePluginRequest(request: NextRequest): { valid: boolean; error?: string } {
+  const authHeader = request.headers.get("authorization");
+  const pluginKey = request.headers.get("x-plugin-key");
+  
+  // Accept either Bearer token or plugin key
+  if (!authHeader && !pluginKey) {
+    return { valid: false, error: "Missing authorization" };
+  }
+  
+  // For now, accept any authenticated request from the plugin
+  // In production, you'd validate against stored API keys
+  return { valid: true };
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Check for OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: "OpenAI API Key is not configured. Please add OPENAI_API_KEY to your environment variables in Vercel Dashboard." },
+        { status: 400 }
+      );
+    }
+
+    const validation = validatePluginRequest(request);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { action, data } = body;
+
+    if (!action) {
+      return NextResponse.json({ error: "Action is required" }, { status: 400 });
+    }
+
+    switch (action) {
+      case "generate_alt_text":
+        return await generateAltText(data);
+      
+      case "generate_meta_description":
+        return await generateMetaDescription(data);
+      
+      case "generate_title":
+        return await generateTitle(data);
+      
+      case "generate_author_bio":
+        return await generateAuthorBio(data);
+      
+      case "generate_testimonial_response":
+        return await generateTestimonialResponse(data);
+      
+      case "generate_faq":
+        return await generateFAQ(data);
+      
+      case "generate_service_area_content":
+        return await generateServiceAreaContent(data);
+      
+      case "generate_llms_txt":
+        return await generateLlmsTxt(data);
+      
+      case "analyze_content":
+        return await analyzeContent(data);
+      
+      case "optimize_content":
+        return await optimizeContent(data);
+      
+      default:
+        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    }
+  } catch (error) {
+    console.error("AI API error:", error);
+    return NextResponse.json(
+      { error: "AI processing failed", details: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+// Generate alt text for images
+async function generateAltText(data: { imageUrl?: string; imageName?: string; pageContext?: string }) {
+  const { imageUrl, imageName, pageContext } = data;
+  
+  const prompt = `Generate a concise, descriptive alt text for an image.
+${imageName ? `Image filename: ${imageName}` : ""}
+${pageContext ? `Page context: ${pageContext}` : ""}
+${imageUrl ? `Image URL: ${imageUrl}` : ""}
+
+Requirements:
+- Be descriptive but concise (under 125 characters)
+- Include relevant keywords naturally
+- Don't start with "Image of" or "Picture of"
+- Be specific about what the image shows
+- Consider SEO value
+
+Return ONLY the alt text, nothing else.`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 100,
+    temperature: 0.7,
+  });
+
+  const altText = completion.choices[0]?.message?.content?.trim() || "";
+  
+  return NextResponse.json({ success: true, altText });
+}
+
+// Generate meta description
+async function generateMetaDescription(data: { title?: string; content?: string; keywords?: string[] }) {
+  const { title, content, keywords } = data;
+  
+  const prompt = `Generate an SEO-optimized meta description for a webpage.
+
+Title: ${title || "Unknown"}
+Content summary: ${content?.substring(0, 500) || "No content provided"}
+Target keywords: ${keywords?.join(", ") || "Not specified"}
+
+Requirements:
+- Between 150-160 characters
+- Include primary keyword naturally
+- Include a call-to-action
+- Be compelling and click-worthy
+- Accurately describe the page content
+
+Return ONLY the meta description, nothing else.`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 100,
+    temperature: 0.7,
+  });
+
+  const metaDescription = completion.choices[0]?.message?.content?.trim() || "";
+  
+  return NextResponse.json({ success: true, metaDescription });
+}
+
+// Generate page title
+async function generateTitle(data: { content?: string; keywords?: string[]; businessName?: string }) {
+  const { content, keywords, businessName } = data;
+  
+  const prompt = `Generate an SEO-optimized page title.
+
+Content summary: ${content?.substring(0, 300) || "No content provided"}
+Target keywords: ${keywords?.join(", ") || "Not specified"}
+Business name: ${businessName || ""}
+
+Requirements:
+- Between 50-60 characters
+- Include primary keyword near the beginning
+- Include business name if relevant
+- Be compelling and descriptive
+- Use power words when appropriate
+
+Return ONLY the title, nothing else.`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 80,
+    temperature: 0.7,
+  });
+
+  const title = completion.choices[0]?.message?.content?.trim() || "";
+  
+  return NextResponse.json({ success: true, title });
+}
+
+// Generate author bio
+async function generateAuthorBio(data: { 
+  name: string; 
+  role?: string; 
+  credentials?: string[]; 
+  businessType?: string;
+  yearsExperience?: number;
+}) {
+  const { name, role, credentials, businessType, yearsExperience } = data;
+  
+  const prompt = `Generate a professional author bio for E-E-A-T optimization.
+
+Name: ${name}
+Role: ${role || "Business Owner"}
+Credentials: ${credentials?.join(", ") || "Not specified"}
+Business type: ${businessType || "Local business"}
+Years of experience: ${yearsExperience || "Several"}
+
+Requirements:
+- 2-3 sentences
+- Highlight expertise and experience
+- Include credentials naturally
+- Establish trust and authority
+- Professional but approachable tone
+
+Return ONLY the bio, nothing else.`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 150,
+    temperature: 0.7,
+  });
+
+  const bio = completion.choices[0]?.message?.content?.trim() || "";
+  
+  return NextResponse.json({ success: true, bio });
+}
+
+// Generate response to testimonial
+async function generateTestimonialResponse(data: { 
+  reviewText: string; 
+  rating: number; 
+  businessName: string;
+}) {
+  const { reviewText, rating, businessName } = data;
+  
+  const prompt = `Generate a professional response to a customer review.
+
+Review: "${reviewText}"
+Rating: ${rating}/5 stars
+Business: ${businessName}
+
+Requirements:
+- Thank the customer by name if mentioned
+- Address specific points from the review
+- Be genuine and personalized
+- Keep it brief (2-3 sentences)
+- If negative, be empathetic and offer resolution
+
+Return ONLY the response, nothing else.`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 150,
+    temperature: 0.7,
+  });
+
+  const response = completion.choices[0]?.message?.content?.trim() || "";
+  
+  return NextResponse.json({ success: true, response });
+}
+
+// Generate FAQ content
+async function generateFAQ(data: { 
+  businessType: string; 
+  services?: string[]; 
+  location?: string;
+  count?: number;
+}) {
+  const { businessType, services, location, count = 5 } = data;
+  
+  const prompt = `Generate ${count} FAQ questions and answers for a local business.
+
+Business type: ${businessType}
+Services: ${services?.join(", ") || "General services"}
+Location: ${location || "Local area"}
+
+Requirements:
+- Questions should be what customers actually ask
+- Include "near me" and local intent questions
+- Answers should be 2-3 sentences
+- Be helpful and informative
+- Include service-specific questions
+
+Return as JSON array:
+[{"question": "...", "answer": "..."}, ...]`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 1000,
+    temperature: 0.7,
+  });
+
+  const content = completion.choices[0]?.message?.content?.trim() || "[]";
+  
+  try {
+    const faqs = JSON.parse(content);
+    return NextResponse.json({ success: true, faqs });
+  } catch {
+    return NextResponse.json({ success: true, faqs: [], raw: content });
+  }
+}
+
+// Generate service area page content
+async function generateServiceAreaContent(data: { 
+  service: string; 
+  location: string; 
+  businessName: string;
+  phone?: string;
+}) {
+  const { service, location, businessName, phone } = data;
+  
+  const prompt = `Generate SEO-optimized content for a service area page.
+
+Service: ${service}
+Location: ${location}
+Business: ${businessName}
+Phone: ${phone || ""}
+
+Generate:
+1. Page title (50-60 chars)
+2. Meta description (150-160 chars)
+3. H1 heading
+4. Introduction paragraph (100-150 words)
+5. 3 benefits of choosing this service in this location
+6. Call-to-action text
+
+Return as JSON:
+{
+  "title": "...",
+  "metaDescription": "...",
+  "h1": "...",
+  "intro": "...",
+  "benefits": ["...", "...", "..."],
+  "cta": "..."
+}`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 800,
+    temperature: 0.7,
+  });
+
+  const content = completion.choices[0]?.message?.content?.trim() || "{}";
+  
+  try {
+    const pageContent = JSON.parse(content);
+    return NextResponse.json({ success: true, content: pageContent });
+  } catch {
+    return NextResponse.json({ success: true, content: {}, raw: content });
+  }
+}
+
+// Generate llms.txt content
+async function generateLlmsTxt(data: { 
+  businessName: string; 
+  businessType: string;
+  services?: string[];
+  location?: string;
+  description?: string;
+}) {
+  const { businessName, businessType, services, location, description } = data;
+  
+  const prompt = `Generate an llms.txt file content for AI crawlers.
+
+Business: ${businessName}
+Type: ${businessType}
+Services: ${services?.join(", ") || "Various services"}
+Location: ${location || "Local area"}
+Description: ${description || ""}
+
+The llms.txt format helps AI understand your business. Generate content that:
+- Clearly describes the business
+- Lists key services
+- Mentions location and service areas
+- Includes contact information placeholder
+- Is concise but comprehensive
+
+Return the content in llms.txt format.`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 500,
+    temperature: 0.7,
+  });
+
+  const llmsTxt = completion.choices[0]?.message?.content?.trim() || "";
+  
+  return NextResponse.json({ success: true, llmsTxt });
+}
+
+// Analyze content for SEO improvements
+async function analyzeContent(data: { content: string; targetKeywords?: string[] }) {
+  const { content, targetKeywords } = data;
+  
+  const prompt = `Analyze this content for SEO and provide specific improvements.
+
+Content: "${content.substring(0, 2000)}"
+Target keywords: ${targetKeywords?.join(", ") || "Not specified"}
+
+Analyze:
+1. Keyword usage and density
+2. Readability
+3. Structure (headings, paragraphs)
+4. Call-to-action presence
+5. Local SEO signals
+
+Return as JSON:
+{
+  "score": 0-100,
+  "issues": ["issue1", "issue2"],
+  "suggestions": ["suggestion1", "suggestion2"],
+  "keywordDensity": {"keyword": percentage},
+  "readabilityScore": "easy|medium|hard"
+}`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 600,
+    temperature: 0.5,
+  });
+
+  const result = completion.choices[0]?.message?.content?.trim() || "{}";
+  
+  try {
+    const analysis = JSON.parse(result);
+    return NextResponse.json({ success: true, analysis });
+  } catch {
+    return NextResponse.json({ success: true, analysis: {}, raw: result });
+  }
+}
+
+// Optimize content with AI suggestions
+async function optimizeContent(data: { 
+  content: string; 
+  targetKeywords?: string[];
+  tone?: string;
+}) {
+  const { content, targetKeywords, tone = "professional" } = data;
+  
+  const prompt = `Optimize this content for SEO while maintaining readability.
+
+Original content: "${content.substring(0, 1500)}"
+Target keywords: ${targetKeywords?.join(", ") || "Not specified"}
+Tone: ${tone}
+
+Requirements:
+- Naturally incorporate target keywords
+- Improve readability
+- Add local SEO signals if appropriate
+- Maintain the original meaning
+- Keep approximately the same length
+
+Return ONLY the optimized content, nothing else.`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 2000,
+    temperature: 0.7,
+  });
+
+  const optimizedContent = completion.choices[0]?.message?.content?.trim() || "";
+  
+  return NextResponse.json({ success: true, optimizedContent });
+}
+
+```
+
+---
+
+### src\app\api\audit\route.ts
+
+```typescript
+import { NextRequest, NextResponse } from "next/server";
+import { analyzeWebsite } from "@/lib/analyzers";
+import { tasks, auth, configure } from "@trigger.dev/sdk/v3";
+import type { smartAuditTask } from "../../../../trigger/audit/smart-audit";
+import { getRunOutput } from "@/lib/trigger-utils";
+import { getCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60; // Allow up to 60 seconds for analysis
+
+// CRITICAL: Configure SDK with secret key at module level
+// The SDK will automatically use TRIGGER_SECRET_KEY if set, but we configure explicitly
+// Do NOT call configure() inside handlers as it causes conflicts in warm serverless functions
+if (process.env.TRIGGER_SECRET_KEY) {
+  configure({ secretKey: process.env.TRIGGER_SECRET_KEY });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    console.log("[Audit POST] Starting request");
+
+    // Get authenticated user
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in." },
+        { status: 401 }
+      );
+    }
+
+    if (!process.env.TRIGGER_SECRET_KEY) {
+      console.error("[Audit POST] TRIGGER_SECRET_KEY is not configured");
+      return NextResponse.json(
+        { error: "Trigger.dev is not configured. Please add TRIGGER_SECRET_KEY to your environment variables." },
+        { status: 500 }
+      );
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error("JSON parse error:", parseError);
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const { url, selectedUrls, crawlData, auditId } = body;
+
+    if (!url) {
+      return NextResponse.json({ error: "URL is required" }, { status: 400 });
+    }
+
+    // Normalize URLs to prevent duplicates (trailing slashes, http/https)
+    const normalizeUrl = (urlStr: string): string => {
+      try {
+        const u = new URL(urlStr);
+        // Remove trailing slash from pathname
+        u.pathname = u.pathname.replace(/\/$/, '');
+        // Normalize to lowercase
+        return u.toString().toLowerCase();
+      } catch {
+        return urlStr.toLowerCase().replace(/\/$/, '');
+      }
+    };
+
+    // If selectedUrls is provided, use those for multi-page audit
+    const urlsToAudit = selectedUrls && selectedUrls.length > 0
+      ? Array.from(new Set(selectedUrls.map(normalizeUrl)))
+      : [normalizeUrl(url)];
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+    }
+
+    const domain = parsedUrl.hostname;
+    const finalAuditId = auditId || `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log(`Starting comprehensive analysis for ${domain}`);
+    console.log(`Auditing ${urlsToAudit.length} pages: ${urlsToAudit.slice(0, 5).join(', ')}${urlsToAudit.length > 5 ? '...' : ''}`);
+
+    try {
+      // If crawlData is provided and multiple pages, use Trigger.dev background task
+      if (crawlData && urlsToAudit.length > 1) {
+        console.log(`[Multi-page Audit] Triggering smart-audit task for ${urlsToAudit.length} pages`);
+
+        // Create audit record in Prisma
+        const auditRecord = await prisma.audit.create({
+          data: {
+            id: finalAuditId,
+            url: parsedUrl.toString(),
+            domain,
+            status: "RUNNING",
+            userId: user.id,
+          },
+        });
+
+        console.log(`[Audit] Created audit record ${auditRecord.id} for user ${user.id}`);
+
+        // Trigger the smart audit task in background
+        const handle = await tasks.trigger<typeof smartAuditTask>(
+          "smart-audit",
+          {
+            baseUrl: parsedUrl.toString(),
+            selectedUrls: urlsToAudit as string[],
+            crawlData,
+            auditId: finalAuditId,
+            userId: user.id,
+          }
+        );
+
+        // Generate a public access token for frontend polling
+        const publicToken = await auth.createPublicToken({
+          scopes: {
+            read: {
+              runs: [handle.id],
+            },
+          },
+          expirationTime: "1h",
+        });
+
+        return NextResponse.json({
+          id: finalAuditId,
+          runId: handle.id,
+          publicToken,
+          status: "RUNNING",
+          domain,
+          url: parsedUrl.toString(),
+          auditedPages: urlsToAudit.length,
+          message: "Multi-page audit started in background",
+        });
+      }
+
+      // Single page audit - run inline (fast enough for Vercel)
+      const results = await analyzeWebsite(parsedUrl.toString());
+
+      console.log(`Analysis complete for ${domain}: ${results.overallGrade} (${results.overallScore})`);
+
+      // Save audit results to Prisma
+      const auditRecord = await prisma.audit.create({
+        data: {
+          id: finalAuditId,
+          url: parsedUrl.toString(),
+          domain,
+          status: "COMPLETED",
+          overallScore: results.overallScore,
+          overallGrade: results.overallGrade,
+          localSeoScore: results.localSeo.score,
+          seoScore: results.seo.score,
+          linksScore: results.links.score,
+          usabilityScore: results.usability.score,
+          performanceScore: results.performance.score,
+          socialScore: results.social.score,
+          contentScore: results.content.score,
+          eeatScore: results.eeat.score,
+          localSeoResults: results.localSeo as any,
+          seoResults: results.seo as any,
+          linksResults: results.links as any,
+          usabilityResults: results.usability as any,
+          performanceResults: results.performance as any,
+          socialResults: results.social as any,
+          technologyResults: results.technology as any,
+          contentResults: results.content as any,
+          eeatResults: results.eeat as any,
+          userId: user.id,
+          completedAt: new Date(),
+        },
+      });
+
+      console.log(`[Audit] Saved audit record ${auditRecord.id} to Prisma for user ${user.id}`);
+
+      // Return full results directly (no separate polling needed)
+      return NextResponse.json({
+        id: auditRecord.id,
+        status: "COMPLETED",
+        domain,
+        url: parsedUrl.toString(),
+        overallScore: results.overallScore,
+        overallGrade: results.overallGrade,
+        localSeoScore: results.localSeo.score,
+        localSeoResults: results.localSeo,
+        seoScore: results.seo.score,
+        seoResults: results.seo,
+        linksScore: results.links.score,
+        linksResults: results.links,
+        usabilityScore: results.usability.score,
+        usabilityResults: results.usability,
+        performanceScore: results.performance.score,
+        performanceResults: results.performance,
+        socialScore: results.social.score,
+        socialResults: results.social,
+        technologyResults: results.technology,
+        contentScore: results.content.score,
+        contentResults: results.content,
+        eeatScore: results.eeat.score,
+        eeatResults: results.eeat,
+        recommendations: results.recommendations,
+        createdAt: auditRecord.createdAt,
+      });
+    } catch (analysisError) {
+      console.error("Analysis error:", analysisError);
+
+      // Update audit status to FAILED
+      if (finalAuditId) {
+        await prisma.audit.update({
+          where: { id: finalAuditId },
+          data: { status: "FAILED" },
+        }).catch(console.error);
+      }
+
+      return NextResponse.json({
+        id: finalAuditId,
+        status: "FAILED",
+        error: "Analysis failed",
+        details: String(analysisError),
+      }, { status: 500 });
+    }
+  } catch (error) {
+    console.error("Audit API error:", error);
+    return NextResponse.json(
+      { error: "Failed to start audit", details: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+// GET endpoint for polling audit status
+export async function GET(request: NextRequest) {
+  // Enforce auth for polling too (prevents publicToken abuse)
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const runId = request.nextUrl.searchParams.get("runId");
+  const publicToken = request.nextUrl.searchParams.get("publicToken");
+  const auditId = request.nextUrl.searchParams.get("auditId");
+  
+  if (!runId) {
+    return NextResponse.json(
+      { error: "runId is required" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const { runs, configure } = await import("@trigger.dev/sdk/v3");
+    
+    // Configure with public token if provided
+    if (publicToken) {
+      configure({ accessToken: publicToken });
+    }
+    
+    const run = await runs.retrieve(runId);
+
+    // If completed, transform output to match expected format
+    if (run.status === "COMPLETED") {
+      let results;
+      try {
+        results = await getRunOutput(runId);
+      } catch (error) {
+        console.error("Error fetching output:", error);
+        return NextResponse.json({
+          status: "FAILED",
+          error: "Failed to fetch output",
+          metadata: run.metadata,
+        });
+      }
+
+      // Persist results into Prisma (if audit exists and belongs to current user)
+      if (auditId) {
+        try {
+          const existing = await prisma.audit.findFirst({
+            where: { id: auditId, userId: user.id },
+            select: { id: true },
+          });
+
+          if (existing) {
+            const recs = (results.recommendations || []).map((rec: any) => ({
+              auditId,
+              title: rec.title,
+              description: rec.description ?? null,
+              category: rec.category,
+              priority: rec.priority,
+              checkId: rec.checkId,
+            }));
+
+            await prisma.$transaction(async (tx) => {
+              await tx.audit.update({
+                where: { id: auditId },
+                data: {
+                  status: "COMPLETED",
+                  overallScore: results.overallScore,
+                  overallGrade: results.overallGrade,
+                  localSeoScore: results.localSeo?.score,
+                  seoScore: results.seo?.score,
+                  linksScore: results.links?.score,
+                  usabilityScore: results.usability?.score,
+                  performanceScore: results.performance?.score,
+                  socialScore: results.social?.score,
+                  contentScore: results.content?.score,
+                  eeatScore: results.eeat?.score,
+                  localSeoResults: results.localSeo as any,
+                  seoResults: results.seo as any,
+                  linksResults: results.links as any,
+                  usabilityResults: results.usability as any,
+                  performanceResults: results.performance as any,
+                  socialResults: results.social as any,
+                  technologyResults: results.technology as any,
+                  contentResults: results.content as any,
+                  eeatResults: results.eeat as any,
+                  completedAt: new Date(),
+                },
+              });
+
+              await tx.recommendation.deleteMany({ where: { auditId } });
+
+              if (recs.length > 0) {
+                await tx.recommendation.createMany({ data: recs });
+              }
+            });
+          }
+        } catch (dbError) {
+          console.error("[Audit Poll] Failed to persist audit:", dbError);
+        }
+      }
+
+      return NextResponse.json({
+        status: "COMPLETED",
+        output: {
+          id: auditId || `audit_${runId}`,
+          status: "COMPLETED",
+          overallScore: results.overallScore,
+          overallGrade: results.overallGrade,
+          localSeoScore: results.localSeo?.score,
+          localSeoResults: results.localSeo,
+          seoScore: results.seo?.score,
+          seoResults: results.seo,
+          linksScore: results.links?.score,
+          linksResults: results.links,
+          usabilityScore: results.usability?.score,
+          usabilityResults: results.usability,
+          performanceScore: results.performance?.score,
+          performanceResults: results.performance,
+          socialScore: results.social?.score,
+          socialResults: results.social,
+          technologyResults: results.technology,
+          contentScore: results.content?.score,
+          contentResults: results.content,
+          eeatScore: results.eeat?.score,
+          eeatResults: results.eeat,
+          recommendations: results.recommendations,
+          pageClassifications: results.pageClassifications,
+          auditMapping: results.auditMapping,
+          pagesAnalyzed: results.pagesAnalyzed,
+          pagesFailed: results.pagesFailed,
+          createdAt: new Date().toISOString(),
+        },
+        metadata: run.metadata,
+      });
+    }
+
+    return NextResponse.json({
+      status: run.status,
+      output: null,
+      metadata: run.metadata,
+    });
+  } catch (error) {
+    console.error("Error fetching audit run:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch audit status" },
+      { status: 500 }
+    );
+  }
+}
+
+```
+
+---
+
+### src\app\api\content\auto-plan\route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
@@ -384,2902 +1097,309 @@ function extractKeywords(text: string): string[] {
 
 ---
 
-### src/app/api/content/bulk-generate/route.ts
+### src\app\auto-content\page.tsx
 
 ```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import { tasks } from "@trigger.dev/sdk/v3";
+import AutoContentEngine from "@/components/content/AutoContentEngine";
 
-export const dynamic = "force-dynamic";
-
-export async function POST(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const body = await request.json();
-    const { 
-      selectedTopics,
-      selectedLocations,
-      service,
-      brandTone,
-      targetAudience,
-      aboutSummary,
-      generateImages = false,
-      singlePage = true // New parameter to generate only one page
-    } = body;
-
-    if (!selectedTopics || selectedTopics.length === 0) {
-      return NextResponse.json(
-        { error: "At least one topic must be selected" },
-        { status: 400 }
-      );
-    }
-
-    if (!selectedLocations || selectedLocations.length === 0) {
-      return NextResponse.json(
-        { error: "At least one location must be selected" },
-        { status: 400 }
-      );
-    }
-
-    console.log("[Bulk Generate] Starting content generation:", {
-      topics: selectedTopics.length,
-      locations: selectedLocations.length,
-      service,
-      singlePage,
-    });
-
-    // If singlePage is true, only generate one combination (first topic + first location)
-    let combinations = [];
-    if (singlePage) {
-      // Generate only one page using the first topic and first location
-      combinations = [{
-        topic: selectedTopics[0],
-        location: selectedLocations[0],
-        service,
-        brandTone,
-        targetAudience,
-        aboutSummary,
-        generateImages,
-      }];
-      console.log("[Bulk Generate] Single page mode: generating 1 piece of content");
-    } else {
-      // Create all topic-location combinations (original behavior)
-      for (const topic of selectedTopics) {
-        for (const location of selectedLocations) {
-          combinations.push({
-            topic,
-            location,
-            service,
-            brandTone,
-            targetAudience,
-            aboutSummary,
-            generateImages,
-          });
-        }
-      }
-      console.log("[Bulk Generate] Bulk mode: generating", combinations.length, "pieces of content");
-    }
-
-    // Trigger content generation task
-    const handle = await tasks.trigger("content-generator", {
-      combinations,
-      userId: user.id,
-      generateImages,
-      singlePage,
-    });
-
-    return NextResponse.json({
-      success: true,
-      taskId: handle.id,
-      totalCombinations: combinations.length,
-      message: `Started generating ${combinations.length} piece${combinations.length === 1 ? '' : 's'} of content`,
-    });
-  } catch (error) {
-    console.error("[Bulk Generate] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to start content generation", details: String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-export async function GET(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const { searchParams } = new URL(request.url);
-    const taskId = searchParams.get("taskId");
-
-    if (!taskId) {
-      return NextResponse.json(
-        { error: "Task ID is required" },
-        { status: 400 }
-      );
-    }
-
-    console.log("[Bulk Generate GET] Checking status for task:", taskId);
-
-    // Return the actual Trigger.dev task results
-    // In a real implementation, you'd use the Trigger.dev SDK to fetch task results
-    // For now, we'll return a structure that matches the real Trigger.dev output
-    const realCompletedResults = {
-      success: true,
-      status: "COMPLETED",
-      progress: 100,
-      total: 1,
-      completed: 1,
-      failed: 0,
-      results: [
-        {
-          id: `content_${Date.now()}_0`,
-          title: "Unlocking Business Potential with Computer Vision Technology",
-          location: "Rawalpindi",
-          contentType: "blog post",
-          content: `Title: "Unlocking Business Potential with Computer Vision Technology in Rawalpindi"
-
-Introduction:
-
-In an era where digital solutions are essential for business performance and growth, Computer Vision Technology stands as a revolutionary force, driving innovation and digital transformation. Specially, in the thriving tech-hub of Rawalpindi, businesses are increasingly seeking cutting-edge digital solutions to stay ahead of the curve. This blog post delves into how Computer Vision Technology is unlocking unprecedented business potential in Rawalpindi.
-
-Understanding Computer Vision Technology:
-
-Computer Vision Technology, a facet of AI technology, is designed to mimic human vision and cognition. It empowers computers to interpret and understand visual data from the physical world, enabling them to make informed decisions based on that data. From facial recognition to object detection, this innovative technology is transforming operations across a plethora of industries.
-
-The Impact of Computer Vision Technology on Businesses:
-
-Computer Vision Technology is becoming integral to many businesses, driving efficiencies, reducing costs, and unlocking new opportunities. By leveraging Computer Vision Services, businesses in Rawalpindi are not only automating processes but also enhancing customer experiences and improving their bottom line.
-
-1. Enhancing Operational Efficiencies:
-
-Computer Vision Technology can automate tedious and time-consuming tasks, freeing up staff to focus on more strategic initiatives. It can significantly reduce human error and streamline workflows, leading to improved operational efficiencies and productivity.
-
-2. Boosting Customer Experiences:
-
-In the age of digital transformation, customer expectations are skyrocketing. Computer Vision Technology can help businesses meet these expectations by providing personalized experiences, enhancing interactions, and ensuring seamless customer journeys.
-
-3. Mitigating Risks:
-
-Computer Vision can also be a game-changer in risk management. From detecting fraud in financial transactions to identifying potential hazards in manufacturing plants, Computer Vision Technology can help businesses mitigate risks and ensure compliance.
-
-The Future of Business with Computer Vision Services:
-
-As AI technology continues to evolve, so too does the potential of Computer Vision. This technology is pushing the boundaries of innovation, enabling businesses in Rawalpindi to pioneer new tech solutions and drive digital transformation.
-
-Whether it's retail businesses using Computer Vision to improve inventory management, healthcare providers leveraging it for accurate diagnoses, or manufacturing plants utilizing it for quality control, the applications are endless and the benefits substantial.
-
-Conclusion:
-
-In the bustling tech landscape of Rawalpindi, businesses that adopt Computer Vision Technology stand to gain a competitive edge. By harnessing this innovative technology, they can unlock immense business potential, revolutionize their operations, and lead their industries into a new era of digital transformation.
-
-Call to Action:
-
-Ready to unlock the potential of your business with Computer Vision Technology? Our team of tech experts in Rawalpindi is here to help. Contact us today to learn more about our cutting-edge Computer Vision Services and start your digital transformation journey. Your future is just a vision away.`,
-          imageUrl: "https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-zkFBoZl2kx0xaCbHyEwCcDlX.png?st=2026-01-22T08%3A31%3A35Z&se=2026-01-22T10%3A31%3A35Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=35890473-cca8-4a54-8305-05a39e0bc9c3&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T09%3A02%3A50Z&ske=2026-01-23T09%3A02%3A50Z&sks=b&skv=2024-08-04&sig=eRVdAp4mOl092XL8RP%2BgsC5bH1IiSImzuCk5rWWvCRg%3D",
-          wordCount: 3420,
-          keywords: [
-            "Computer Vision Technology",
-            "Business Potential",
-            "Digital Solutions",
-            "AI Technology",
-            "Innovation",
-            "Digital Transformation",
-            "Computer Vision Services",
-            "Tech Solutions"
-          ],
-          status: "completed"
-        }
-      ]
-    };
-
-    return NextResponse.json(realCompletedResults);
-  } catch (error) {
-    console.error("[Bulk Generate GET] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to get generation status", details: String(error) },
-      { status: 500 }
-    );
-  }
+export default function AutoContentPage() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      <AutoContentEngine />
+    </div>
+  );
 }
 
 ```
 
 ---
 
-### src/app/api/content/cron/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-
-// This endpoint will be called by cron-job.org every minute
-// It checks for scheduled content that needs to be published
-
-export async function GET(request: NextRequest) {
-  // Verify cron secret for security
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  try {
-    const now = new Date();
-    
-    // Find all content that should be published now
-    const pendingContent = await prisma.scheduledContent.findMany({
-      where: {
-        status: "PENDING",
-        scheduledFor: {
-          lte: now,
-        },
-      },
-      include: {
-        wordpressSite: true,
-      },
-      take: 10, // Process max 10 at a time to avoid timeout
-    });
-
-    if (pendingContent.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: "No content to publish",
-        processed: 0,
-      });
-    }
-
-    const results = [];
-
-    for (const content of pendingContent) {
-      // Mark as publishing
-      await prisma.scheduledContent.update({
-        where: { id: content.id },
-        data: { status: "PUBLISHING" },
-      });
-
-      try {
-        // Publish to WordPress
-        const publishResult = await publishToWordPress(content, content.wordpressSite);
-
-        // Update status
-        await prisma.scheduledContent.update({
-          where: { id: content.id },
-          data: {
-            status: "PUBLISHED",
-            wpPostId: publishResult.postId,
-            publishedAt: new Date(),
-          },
-        });
-
-        results.push({
-          id: content.id,
-          title: content.title,
-          status: "published",
-          wpPostId: publishResult.postId,
-          wpUrl: publishResult.url,
-        });
-      } catch (error) {
-        // Mark as failed
-        await prisma.scheduledContent.update({
-          where: { id: content.id },
-          data: {
-            status: "FAILED",
-            publishError: error instanceof Error ? error.message : "Unknown error",
-          },
-        });
-
-        results.push({
-          id: content.id,
-          title: content.title,
-          status: "failed",
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: `Processed ${results.length} content items`,
-      processed: results.length,
-      results,
-    });
-  } catch (error) {
-    console.error("Cron job error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Cron job failed" },
-      { status: 500 }
-    );
-  }
-}
-
-// Publish content to WordPress via REST API
-async function publishToWordPress(
-  content: any,
-  site: any
-): Promise<{ postId: number; url: string }> {
-  const { siteUrl, wpUsername, wpAppPassword, apiKey } = site;
-
-  // Method 1: Use WordPress REST API with Application Password
-  if (wpUsername && wpAppPassword) {
-    return await publishViaRestApi(content, siteUrl, wpUsername, wpAppPassword);
-  }
-
-  // Method 2: Use our plugin API
-  if (apiKey) {
-    return await publishViaPlugin(content, siteUrl, apiKey);
-  }
-
-  throw new Error("No authentication method available for this site");
-}
-
-// Publish via WordPress REST API
-async function publishViaRestApi(
-  content: any,
-  siteUrl: string,
-  username: string,
-  appPassword: string
-): Promise<{ postId: number; url: string }> {
-  const credentials = Buffer.from(`${username}:${appPassword}`).toString("base64");
-  
-  // First, upload featured image if exists
-  let featuredMediaId: number | undefined;
-  
-  if (content.featuredImageUrl) {
-    try {
-      featuredMediaId = await uploadMediaToWordPress(
-        content.featuredImageUrl,
-        content.featuredImageAlt || content.title,
-        siteUrl,
-        credentials
-      );
-    } catch (error) {
-      console.error("Failed to upload featured image:", error);
-      // Continue without featured image
-    }
-  }
-
-  // Create the post
-  const postData: any = {
-    title: content.title,
-    content: content.content,
-    status: "publish",
-    slug: content.slug || undefined,
-    excerpt: content.excerpt || undefined,
-    meta: {
-      _yoast_wpseo_metadesc: content.metaDescription,
-      _yoast_wpseo_focuskw: content.focusKeyword,
-    },
-  };
-
-  if (featuredMediaId) {
-    postData.featured_media = featuredMediaId;
-  }
-
-  // Add categories if provided
-  if (content.categories?.length > 0) {
-    const categoryIds = await getOrCreateCategories(content.categories, siteUrl, credentials);
-    postData.categories = categoryIds;
-  }
-
-  // Add tags if provided
-  if (content.tags?.length > 0) {
-    const tagIds = await getOrCreateTags(content.tags, siteUrl, credentials);
-    postData.tags = tagIds;
-  }
-
-  const response = await fetch(`${siteUrl}/wp-json/wp/v2/posts`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Basic ${credentials}`,
-    },
-    body: JSON.stringify(postData),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`WordPress API error: ${error}`);
-  }
-
-  const post = await response.json();
-  
-  return {
-    postId: post.id,
-    url: post.link,
-  };
-}
-
-// Publish via our SEO AutoFix plugin
-async function publishViaPlugin(
-  content: any,
-  siteUrl: string,
-  apiKey: string
-): Promise<{ postId: number; url: string }> {
-  const response = await fetch(`${siteUrl}/wp-json/seo-autofix/v1/content/publish`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": apiKey,
-    },
-    body: JSON.stringify({
-      title: content.title,
-      content: content.content,
-      slug: content.slug,
-      excerpt: content.excerpt,
-      metaDescription: content.metaDescription,
-      focusKeyword: content.focusKeyword,
-      categories: content.categories,
-      tags: content.tags,
-      featuredImageUrl: content.featuredImageUrl,
-      featuredImageAlt: content.featuredImageAlt,
-      postType: content.postType || "post",
-      postStatus: "publish",
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Plugin API error: ${error}`);
-  }
-
-  const result = await response.json();
-  
-  return {
-    postId: result.postId,
-    url: result.url,
-  };
-}
-
-// Upload media to WordPress
-async function uploadMediaToWordPress(
-  imageUrl: string,
-  altText: string,
-  siteUrl: string,
-  credentials: string
-): Promise<number> {
-  // Fetch the image
-  const imageResponse = await fetch(imageUrl);
-  if (!imageResponse.ok) {
-    throw new Error("Failed to fetch image");
-  }
-
-  const imageBuffer = await imageResponse.arrayBuffer();
-  const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
-  const extension = contentType.split("/")[1] || "jpg";
-  const filename = `featured-${Date.now()}.${extension}`;
-
-  // Upload to WordPress
-  const response = await fetch(`${siteUrl}/wp-json/wp/v2/media`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": contentType,
-      "Content-Disposition": `attachment; filename="${filename}"`,
-    },
-    body: imageBuffer,
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to upload media to WordPress");
-  }
-
-  const media = await response.json();
-
-  // Update alt text
-  await fetch(`${siteUrl}/wp-json/wp/v2/media/${media.id}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Basic ${credentials}`,
-    },
-    body: JSON.stringify({
-      alt_text: altText,
-    }),
-  });
-
-  return media.id;
-}
-
-// Get or create categories
-async function getOrCreateCategories(
-  categoryNames: string[],
-  siteUrl: string,
-  credentials: string
-): Promise<number[]> {
-  const ids: number[] = [];
-
-  for (const name of categoryNames) {
-    // Search for existing category
-    const searchResponse = await fetch(
-      `${siteUrl}/wp-json/wp/v2/categories?search=${encodeURIComponent(name)}`,
-      {
-        headers: { Authorization: `Basic ${credentials}` },
-      }
-    );
-
-    const categories = await searchResponse.json();
-    const existing = categories.find(
-      (c: any) => c.name.toLowerCase() === name.toLowerCase()
-    );
-
-    if (existing) {
-      ids.push(existing.id);
-    } else {
-      // Create new category
-      const createResponse = await fetch(`${siteUrl}/wp-json/wp/v2/categories`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Basic ${credentials}`,
-        },
-        body: JSON.stringify({ name }),
-      });
-
-      if (createResponse.ok) {
-        const newCategory = await createResponse.json();
-        ids.push(newCategory.id);
-      }
-    }
-  }
-
-  return ids;
-}
-
-// Get or create tags
-async function getOrCreateTags(
-  tagNames: string[],
-  siteUrl: string,
-  credentials: string
-): Promise<number[]> {
-  const ids: number[] = [];
-
-  for (const name of tagNames) {
-    // Search for existing tag
-    const searchResponse = await fetch(
-      `${siteUrl}/wp-json/wp/v2/tags?search=${encodeURIComponent(name)}`,
-      {
-        headers: { Authorization: `Basic ${credentials}` },
-      }
-    );
-
-    const tags = await searchResponse.json();
-    const existing = tags.find(
-      (t: any) => t.name.toLowerCase() === name.toLowerCase()
-    );
-
-    if (existing) {
-      ids.push(existing.id);
-    } else {
-      // Create new tag
-      const createResponse = await fetch(`${siteUrl}/wp-json/wp/v2/tags`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Basic ${credentials}`,
-        },
-        body: JSON.stringify({ name }),
-      });
-
-      if (createResponse.ok) {
-        const newTag = await createResponse.json();
-        ids.push(newTag.id);
-      }
-    }
-  }
-
-  return ids;
-}
-
-// Also support POST for manual triggering
-export async function POST(request: NextRequest) {
-  return GET(request);
-}
-
-```
-
----
-
-### src/app/api/content/editor/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { verify } from "jsonwebtoken";
-
-export const dynamic = "force-dynamic";
-
-// Helper function to get user from token
-async function getUserFromToken(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.replace("Bearer ", "");
-
-  if (!token) {
-    return null;
-  }
-
-  try {
-    const decoded = verify(
-      token,
-      process.env.JWT_SECRET || "your-secret-key-change-in-production"
-    ) as { userId: string };
-
-    const session = await prisma.session.findUnique({
-      where: { token },
-    });
-
-    if (!session || session.expiresAt < new Date()) {
-      return null;
-    }
-
-    return decoded.userId;
-  } catch {
-    return null;
-  }
-}
-
-// GET - Fetch scheduled content for editing
-export async function GET(request: NextRequest) {
-  try {
-    const userId = await getUserFromToken(request);
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const { searchParams } = new URL(request.url);
-    const contentId = searchParams.get("id");
-
-    if (!contentId) {
-      return NextResponse.json(
-        { error: "Content ID is required" },
-        { status: 400 }
-      );
-    }
-
-    // Fetch the scheduled content
-    const content = await prisma.scheduledContent.findFirst({
-      where: {
-        id: contentId,
-        wordpressSite: {
-          userId,
-        },
-      },
-      include: {
-        wordpressSite: {
-          select: {
-            id: true,
-            name: true,
-            siteUrl: true,
-          },
-        },
-        keyword: true,
-        contentPlan: true,
-      },
-    });
-
-    if (!content) {
-      return NextResponse.json(
-        { error: "Content not found" },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        content,
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("Content editor GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch content" },
-      { status: 500 }
-    );
-  }
-}
-
-// PUT - Update scheduled content
-export async function PUT(request: NextRequest) {
-  try {
-    const userId = await getUserFromToken(request);
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const body = await request.json();
-    const { id, title, content, excerpt, metaDescription, focusKeyword, secondaryKeywords, featuredImageUrl, featuredImageAlt, categories, tags, scheduledFor, timezone } = body;
-
-    if (!id || !title || !content) {
-      return NextResponse.json(
-        { error: "id, title, and content are required" },
-        { status: 400 }
-      );
-    }
-
-    // Verify user owns this content
-    const existingContent = await prisma.scheduledContent.findFirst({
-      where: {
-        id,
-        wordpressSite: {
-          userId,
-        },
-      },
-    });
-
-    if (!existingContent) {
-      return NextResponse.json(
-        { error: "Content not found" },
-        { status: 404 }
-      );
-    }
-
-    // Only allow editing if status is PENDING or READY
-    if (
-      existingContent.status !== "PENDING" &&
-      existingContent.status !== "READY"
-    ) {
-      return NextResponse.json(
-        { error: "Cannot edit content that is already being published or published" },
-        { status: 400 }
-      );
-    }
-
-    // Update the content
-    const updatedContent = await prisma.scheduledContent.update({
-      where: { id },
-      data: {
-        title,
-        content,
-        excerpt: excerpt || null,
-        metaDescription: metaDescription || null,
-        focusKeyword,
-        secondaryKeywords: secondaryKeywords || [],
-        featuredImageUrl: featuredImageUrl || null,
-        featuredImageAlt: featuredImageAlt || null,
-        categories: categories || [],
-        tags: tags || [],
-        scheduledFor: scheduledFor ? new Date(scheduledFor) : existingContent.scheduledFor,
-        timezone: timezone || existingContent.timezone,
-        status: "READY", // Mark as ready after manual edit
-      },
-      include: {
-        wordpressSite: {
-          select: {
-            id: true,
-            name: true,
-            siteUrl: true,
-          },
-        },
-      },
-    });
-
-    return NextResponse.json(
-      {
-        success: true,
-        content: updatedContent,
-        message: "Content updated successfully",
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("Content editor PUT error:", error);
-    return NextResponse.json(
-      { error: "Failed to update content" },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE - Delete scheduled content
-export async function DELETE(request: NextRequest) {
-  try {
-    const userId = await getUserFromToken(request);
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const { searchParams } = new URL(request.url);
-    const contentId = searchParams.get("id");
-
-    if (!contentId) {
-      return NextResponse.json(
-        { error: "Content ID is required" },
-        { status: 400 }
-      );
-    }
-
-    // Verify user owns this content
-    const existingContent = await prisma.scheduledContent.findFirst({
-      where: {
-        id: contentId,
-        wordpressSite: {
-          userId,
-        },
-      },
-    });
-
-    if (!existingContent) {
-      return NextResponse.json(
-        { error: "Content not found" },
-        { status: 404 }
-      );
-    }
-
-    // Only allow deletion if status is PENDING or READY
-    if (
-      existingContent.status !== "PENDING" &&
-      existingContent.status !== "READY"
-    ) {
-      return NextResponse.json(
-        { error: "Cannot delete content that is already being published or published" },
-        { status: 400 }
-      );
-    }
-
-    // Delete the content
-    await prisma.scheduledContent.delete({
-      where: { id: contentId },
-    });
-
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Content deleted successfully",
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("Content editor DELETE error:", error);
-    return NextResponse.json(
-      { error: "Failed to delete content" },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src/app/api/content/generate-image/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-
-export const dynamic = "force-dynamic";
-
-export async function POST(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const body = await request.json();
-    const { 
-      title,
-      service,
-      location,
-      brandTone,
-      contentType = "blog post"
-    } = body;
-
-    if (!title) {
-      return NextResponse.json(
-        { error: "Title is required" },
-        { status: 400 }
-      );
-    }
-
-    console.log("[Image Generation] Generating image for:", title);
-
-    // Create DALL-E prompt based on content type and brand tone
-    const prompt = createImagePrompt(title, service, location, brandTone, contentType);
-
-    // Call OpenAI DALL-E 3 API
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt: prompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'standard',
-        style: 'vivid',
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('[Image Generation] OpenAI API error:', error);
-      throw new Error('Failed to generate image');
-    }
-
-    const data = await response.json();
-    const imageUrl = data.data[0].url;
-
-    console.log('[Image Generation] Image generated successfully');
-
-    return NextResponse.json({
-      success: true,
-      imageUrl,
-      prompt,
-      title,
-    });
-  } catch (error) {
-    console.error('[Image Generation] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate image', details: String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-function createImagePrompt(title: string, service: string, location: string, brandTone: string, contentType: string): string {
-  const basePrompt = `Create a professional, modern image for a ${contentType} about "${title}"`;
-  
-  const serviceContext = service ? `related to ${service} services` : '';
-  const locationContext = location ? `targeting ${location}` : '';
-  const toneContext = getToneDescription(brandTone);
-  
-  return `${basePrompt} ${serviceContext} ${locationContext}. ${toneContext}. The image should be suitable for a technology company website, clean and professional, with good visual hierarchy and modern design aesthetics. Avoid text overlays - focus on visual representation of the concept.`;
-}
-
-function getToneDescription(tone: string): string {
-  const toneMap: Record<string, string> = {
-    'professional': 'Use corporate colors, clean lines, and business imagery',
-    'innovative': 'Use modern, tech-forward visuals with dynamic elements',
-    'friendly': 'Use warm colors and approachable imagery',
-    'technical': 'Use precise, detailed imagery with technology focus',
-    'creative': 'Use artistic, visually striking elements',
-  };
-  
-  return toneMap[tone.toLowerCase()] || 'Use professional, clean imagery';
-}
-
-```
-
----
-
-### src/app/api/content/generate-outline/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-
-export const dynamic = "force-dynamic";
-export const maxDuration = 60;
-
-export async function POST(request: NextRequest) {
-  const { title, aiKeywords, userKeywords, promotedService, serviceContext, tone } = await request.json();
-
-  if (!title) {
-    return NextResponse.json({ error: "Title is required" }, { status: 400 });
-  }
-
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: "OpenAI API key is not configured" },
-        { status: 500 }
-      );
-    }
-
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    // Combine AI keywords with user keywords
-    const allKeywords = [...(aiKeywords || []), ...(userKeywords || [])];
-    const keywordsString = allKeywords.length > 0 ? allKeywords.join(", ") : "Not specified";
-
-    let prompt = `
-You are an expert Content Strategist. Create a detailed, specific Blog Post Outline.
-
-TITLE: "${title}"
-TARGET KEYWORDS: ${allKeywords.length > 0 ? keywordsString : "Not specified"}
-${promotedService ? `GOAL: This article must subtly sell the user's service: "${promotedService}".` : ''}
-${serviceContext ? `CONTEXT (What the service is):\n${serviceContext}` : ''}
-${tone ? `TONE INSTRUCTIONS: Write this outline in a ${tone} style.` : ''}
-INSTRUCTIONS:
-1. Create 6-8 Headings (H2) that are SPECIFIC to the topic, NOT generic like "Introduction" or "Conclusion"
-2. Under each H2, write 2 bullet points on what to cover
-3. ${promotedService ? `The "Solution" or "Implementation" section MUST mention how "${promotedService}" helps solve the problem.` : ''}
-4. ${promotedService ? `The Conclusion MUST include a Call to Action for "${promotedService}".` : ''}
-5. Do NOT use generic text like "Hook the reader". Be specific to the topic and keywords.
-6. Make each section actionable and practical.
-7. Use real-world examples and data points where appropriate.
-8. ${tone ? `Maintain a ${tone} tone throughout the outline.` : ''}
-Return the response as Markdown with H2 headings and bullet points.
-`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert content strategist and SEO specialist. You create detailed, specific blog post outlines that are tailored to the target keywords and business goals. You avoid generic placeholders and always provide specific, actionable content."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
-
-    const outline = completion.choices[0]?.message?.content || "";
-
-    return NextResponse.json({
-      success: true,
-      outline,
-    });
-  } catch (error) {
-    console.error("Error generating outline:", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to generate outline";
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src/app/api/content/generate/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-import { z } from "zod";
-
-// Lazy initialization to avoid build-time errors
-let openai: OpenAI | null = null;
-
-function getOpenAI(): OpenAI {
-  if (!openai) {
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-  return openai;
-}
-
-// ==================== OUTPUT SCHEMAS ====================
-
-const KeywordResearchSchema = z.object({
-  keywords: z.array(z.object({
-    keyword: z.string(),
-    searchVolume: z.number(),
-    difficulty: z.number().min(1).max(100),
-    intent: z.enum(["informational", "transactional", "navigational", "commercial"]),
-    relevanceScore: z.number().min(1).max(10),
-    suggestedContentType: z.enum(["blog", "service-page", "location-page", "faq", "how-to"]),
-  })),
-  clusterGroups: z.array(z.object({
-    name: z.string(),
-    mainKeyword: z.string(),
-    relatedKeywords: z.array(z.string()),
-  })),
-});
-
-const ContentOutlineSchema = z.object({
-  title: z.string(),
-  slug: z.string(),
-  metaDescription: z.string().max(160),
-  focusKeyword: z.string(),
-  secondaryKeywords: z.array(z.string()),
-  outline: z.array(z.object({
-    heading: z.string(),
-    headingLevel: z.enum(["h2", "h3", "h4"]),
-    keyPoints: z.array(z.string()),
-    targetWordCount: z.number(),
-  })),
-  estimatedWordCount: z.number(),
-  contentType: z.string(),
-  targetAudience: z.string(),
-  callToAction: z.string(),
-});
-
-const FullContentSchema = z.object({
-  title: z.string(),
-  slug: z.string(),
-  content: z.string(),
-  excerpt: z.string().max(300),
-  metaDescription: z.string().max(160),
-  focusKeyword: z.string(),
-  secondaryKeywords: z.array(z.string()),
-  suggestedCategories: z.array(z.string()),
-  suggestedTags: z.array(z.string()),
-  seoScore: z.number().min(0).max(100),
-  readabilityScore: z.number().min(0).max(100),
-  wordCount: z.number(),
-  keywordDensity: z.number(),
-  internalLinkSuggestions: z.array(z.string()),
-  faqSection: z.array(z.object({
-    question: z.string(),
-    answer: z.string(),
-  })).optional(),
-});
-
-const MonthlyContentPlanSchema = z.object({
-  month: z.number(),
-  year: z.number(),
-  totalPosts: z.number(),
-  contentCalendar: z.array(z.object({
-    week: z.number(),
-    posts: z.array(z.object({
-      dayOfWeek: z.string(),
-      suggestedDate: z.string(),
-      title: z.string(),
-      focusKeyword: z.string(),
-      contentType: z.string(),
-      estimatedWordCount: z.number(),
-      priority: z.enum(["high", "medium", "low"]),
-    })),
-  })),
-  keywordDistribution: z.record(z.number()),
-  contentMix: z.object({
-    blogs: z.number(),
-    servicePages: z.number(),
-    locationPages: z.number(),
-    faqs: z.number(),
-  }),
-});
-
-// ==================== AI AGENTS ====================
-
-// Agent 1: Keyword Research Specialist
-async function keywordResearchAgent(params: {
-  businessType: string;
-  services: string[];
-  location: string;
-  competitors?: string[];
-  existingKeywords?: string[];
-}) {
-  const systemPrompt = `You are an expert Local SEO Keyword Research Specialist. Your job is to identify high-value, rankable keywords for local businesses.
-
-EXPERTISE:
-- Local search intent analysis
-- Long-tail keyword discovery
-- Keyword difficulty assessment
-- Search volume estimation
-- Competitor keyword gap analysis
-- Semantic keyword clustering
-
-GUIDELINES:
-1. Focus on keywords with local intent (e.g., "[service] in [city]", "[service] near me")
-2. Include service-specific long-tail keywords
-3. Consider seasonal trends for local businesses
-4. Prioritize keywords with commercial/transactional intent
-5. Group keywords into logical clusters for content planning
-6. Estimate realistic search volumes for local markets
-7. Assess difficulty based on local competition
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Research keywords for the following local business:
-
-Business Type: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-${params.competitors ? `Competitors: ${params.competitors.join(", ")}` : ""}
-${params.existingKeywords?.length ? `Already targeting: ${params.existingKeywords.join(", ")}` : ""}
-
-Generate 20-30 high-value local SEO keywords that can help this business rank on Google. Include a mix of:
-- High-volume head terms
-- Medium-competition body keywords  
-- Low-competition long-tail keywords
-- Location-specific variations
-- Service + location combinations
-- Question-based keywords (for FAQ content)
-
-Group them into semantic clusters for content planning.`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 2: Content Strategy Planner
-async function contentStrategyAgent(params: {
-  businessType: string;
-  services: string[];
-  location: string;
-  keywords: string[];
-  month: number;
-  year: number;
-  postsPerWeek: number;
-}) {
-  const systemPrompt = `You are an expert Content Strategy Planner specializing in Local SEO content calendars. Your job is to create strategic monthly content plans that maximize organic search visibility.
-
-EXPERTISE:
-- Content calendar optimization
-- Keyword-to-content mapping
-- Content type selection (blogs, service pages, location pages, FAQs)
-- Publishing frequency optimization
-- Seasonal content planning
-- Internal linking strategy
-
-GUIDELINES:
-1. Distribute keywords strategically across the month
-2. Mix content types for variety and comprehensive coverage
-3. Schedule high-priority content earlier in the month
-4. Consider local events/seasons in timing
-5. Ensure proper keyword density across content pieces
-6. Plan internal linking opportunities
-7. Balance evergreen and timely content
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Create a monthly content plan for:
-
-Business: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-Target Month: ${params.month}/${params.year}
-Posts Per Week: ${params.postsPerWeek}
-
-Keywords to target:
-${params.keywords.map((k, i) => `${i + 1}. ${k}`).join("\n")}
-
-Create a detailed content calendar that:
-1. Assigns specific keywords to specific posts
-2. Suggests optimal publishing dates
-3. Recommends content types for each keyword
-4. Prioritizes high-value keywords
-5. Ensures keyword diversity throughout the month`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 3: Content Outline Creator
-async function contentOutlineAgent(params: {
-  keyword: string;
-  businessType: string;
-  services: string[];
-  location: string;
-  contentType: string;
-  competitorInsights?: string;
-}) {
-  const systemPrompt = `You are an expert SEO Content Outline Creator. Your job is to create comprehensive, SEO-optimized content outlines that will rank on Google.
-
-EXPERTISE:
-- Search intent analysis
-- SERP feature targeting
-- Content structure optimization
-- Heading hierarchy (H1, H2, H3)
-- Featured snippet optimization
-- People Also Ask targeting
-- E-E-A-T signals incorporation
-
-GUIDELINES:
-1. Analyze search intent for the keyword
-2. Structure content to match top-ranking results
-3. Include LSI keywords naturally in headings
-4. Plan for featured snippet capture
-5. Add FAQ sections targeting PAA questions
-6. Include local trust signals
-7. Plan call-to-action placement
-8. Optimize meta description for CTR
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Create a detailed content outline for:
-
-Target Keyword: "${params.keyword}"
-Business Type: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-Content Type: ${params.contentType}
-${params.competitorInsights ? `\nCompetitor Insights: ${params.competitorInsights}` : ""}
-
-Create an SEO-optimized outline that includes:
-1. Compelling title with keyword
-2. Meta description (max 160 chars)
-3. Complete heading structure (H2s, H3s)
-4. Key points to cover under each heading
-5. Target word count for each section
-6. Secondary keywords to include
-7. FAQ questions to answer
-8. Call-to-action recommendation`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 4: Content Writer
-async function contentWriterAgent(params: {
-  outline: any;
-  keyword: string;
-  businessType: string;
-  businessName: string;
-  services: string[];
-  location: string;
-  tone?: string;
-  targetWordCount?: number;
-}) {
-  const systemPrompt = `You are an expert SEO Content Writer specializing in local business content. Your job is to write high-quality, engaging, SEO-optimized content that ranks on Google and converts readers into customers.
-
-EXPERTISE:
-- SEO copywriting
-- Local business content
-- Conversion optimization
-- E-E-A-T content principles
-- Natural keyword integration
-- Engaging storytelling
-- Technical accuracy
-
-WRITING GUIDELINES:
-1. Write in a ${params.tone || "professional yet friendly"} tone
-2. Include the focus keyword in first 100 words
-3. Use keywords naturally (1-2% density)
-4. Write scannable content with short paragraphs
-5. Include local references and landmarks
-6. Add trust signals (years in business, certifications, etc.)
-7. Use power words for engagement
-8. Include clear calls-to-action
-9. Write compelling meta description
-10. Format with proper HTML headings
-
-LOCAL SEO SPECIFICS:
-- Mention the city/location naturally throughout
-- Include "near me" and location variations
-- Reference local landmarks or areas served
-- Include local phone number format
-- Mention service area coverage
-
-IMPORTANT: You must respond with valid JSON only using the specified schemas.`;
-
-  const userPrompt = `Write a complete blog post based on this outline:
-
-${JSON.stringify(params.outline, null, 2)}
-
-Business Details:
-- Name: ${params.businessName}
-- Type: ${params.businessType}
-- Services: ${params.services.join(", ")}
-- Location: ${params.location}
-- Focus Keyword: "${params.keyword}"
-- Target Word Count: ${params.targetWordCount || 1500}
-
-Write the full content in HTML format with proper heading tags. Make it:
-1. Highly informative and valuable
-2. Optimized for the focus keyword
-3. Engaging and easy to read
-4. Locally relevant
-5. Conversion-focused with clear CTAs
-6. Include an FAQ section at the end`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.8,
-    max_tokens: 4000,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 5: SEO Quality Reviewer
-async function seoReviewerAgent(params: {
-  content: string;
-  focusKeyword: string;
-  metaDescription: string;
-  title: string;
-}) {
-  const systemPrompt = `You are an expert SEO Content Reviewer. Your job is to analyze content for SEO quality and provide actionable improvements.
-
-ANALYSIS CRITERIA:
-1. Keyword optimization (density, placement, variations)
-2. Title tag effectiveness
-3. Meta description quality
-4. Heading structure
-5. Content readability (Flesch-Kincaid)
-6. Internal linking opportunities
-7. E-E-A-T signals
-8. Local SEO elements
-9. Call-to-action effectiveness
-10. Featured snippet potential
-
-Provide scores from 0-100 for:
-- SEO Score: Overall optimization
-- Readability Score: Content clarity and flow
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Review this content for SEO quality:
-
-Title: ${params.title}
-Meta Description: ${params.metaDescription}
-Focus Keyword: "${params.focusKeyword}"
-
-Content:
-${params.content.substring(0, 8000)}
-
-Analyze and provide:
-1. SEO Score (0-100)
-2. Readability Score (0-100)
-3. Keyword density percentage
-4. Word count
-5. Top 3 improvements needed
-6. Internal linking suggestions`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.3,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// ==================== MAIN API HANDLER ====================
-
-export async function POST(request: NextRequest) {
-  console.log("[Content Generate] Starting request");
-  
-  try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    console.log("[Content Generate] OPENAI_API_KEY exists:", !!apiKey);
-    console.log("[Content Generate] OPENAI_API_KEY length:", apiKey?.length);
-    
-    if (!apiKey) {
-      console.log("[Content Generate] ERROR: OPENAI_API_KEY not configured");
-      return NextResponse.json(
-        { error: "OpenAI API Key is not configured. Please add OPENAI_API_KEY to your environment variables in Vercel Dashboard." },
-        { status: 400 }
-      );
-    }
-
-    console.log("[Content Generate] parsing request body");
-    
-    const body = await request.json();
-    console.log("[Content Generate] Request body received");
-    console.log("[Content Generate] Action:", body.action);
-    
-    const { action, ...params } = body;
-
-    let result;
-
-    switch (action) {
-      case "research_keywords":
-        console.log("[Content Generate] Calling keywordResearchAgent with params:", JSON.stringify(params));
-        result = await keywordResearchAgent(params);
-        console.log("[Content Generate] keywordResearchAgent completed successfully");
-        break;
-
-      case "create_content_plan":
-        console.log("[Content Generate] Calling contentStrategyAgent with params:", JSON.stringify(params));
-        result = await contentStrategyAgent(params);
-        console.log("[Content Generate] contentStrategyAgent completed successfully");
-        break;
-
-      case "create_outline":
-        console.log("[Content Generate] Calling contentOutlineAgent with params:", JSON.stringify(params));
-        result = await contentOutlineAgent(params);
-        console.log("[Content Generate] contentOutlineAgent completed successfully");
-        break;
-
-      case "write_content":
-        console.log("[Content Generate] Calling contentWriterAgent with params:", JSON.stringify(params));
-        result = await contentWriterAgent(params);
-        console.log("[Content Generate] contentWriterAgent completed successfully");
-        break;
-
-      case "review_seo":
-        console.log("[Content Generate] Calling seoReviewerAgent with params:", JSON.stringify(params));
-        result = await seoReviewerAgent(params);
-        console.log("[Content Generate] seoReviewerAgent completed successfully");
-        break;
-
-      case "generate_full_content":
-        // Pipeline: Outline -> Write -> Review
-        const outline = await contentOutlineAgent({
-          keyword: params.keyword,
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          contentType: params.contentType || "blog",
-        });
-
-        const written = await contentWriterAgent({
-          outline,
-          keyword: params.keyword,
-          businessType: params.businessType,
-          businessName: params.businessName,
-          services: params.services,
-          location: params.location,
-          tone: params.tone,
-          targetWordCount: params.targetWordCount,
-        });
-
-        const review = await seoReviewerAgent({
-          content: written.content || "",
-          focusKeyword: params.keyword,
-          metaDescription: written.metaDescription || "",
-          title: written.title || "",
-        });
-
-        result = {
-          ...written,
-          outline,
-          seoScore: review.seoScore || review.SEOScore || 75,
-          readabilityScore: review.readabilityScore || review.ReadabilityScore || 80,
-          improvements: review.improvements || [],
-        };
-        break;
-
-      case "generate_monthly_content":
-        // Full pipeline for monthly content generation
-        const keywords = await keywordResearchAgent({
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          existingKeywords: params.existingKeywords,
-        });
-
-        const plan = await contentStrategyAgent({
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          keywords: keywords.keywords?.map((k: any) => k.keyword) || [],
-          month: params.month,
-          year: params.year,
-          postsPerWeek: params.postsPerWeek || 3,
-        });
-
-        result = {
-          keywords: keywords.keywords || [],
-          clusters: keywords.clusterGroups || [],
-          contentPlan: plan,
-        };
-        break;
-
-      default:
-        return NextResponse.json(
-          { error: "Invalid action" },
-          { status: 400 }
-        );
-    }
-
-    return NextResponse.json({ success: true, data: result });
-  } catch (error) {
-    console.error("Content generation error:", error);
-    console.error("Content generation error stack:", error instanceof Error ? error.stack : "No stack");
-    
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const stackTrace = error instanceof Error ? error.stack : "No stack";
-    
-    // Return detailed error in response body so browser can show it
-    return NextResponse.json(
-      { 
-        success: false,
-        error: errorMessage, 
-        details: String(error),
-        // Stack trace for debugging
-        debug: {
-          message: errorMessage,
-          stack: stackTrace,
-          type: error instanceof Error ? error.constructor.name : typeof error
-        }
-      },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src/app/api/content/history/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-
-export const dynamic = "force-dynamic";
-
-export async function GET(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-
-    const analyses = await prisma.contentAnalysis.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 50,
-      select: {
-        id: true,
-        baseUrl: true,
-        domain: true,
-        status: true,
-        pagesAnalyzed: true,
-        createdAt: true,
-        completedAt: true,
-        analysisOutput: true,
-        dominantKeywords: true,
-        contentGaps: true,
-        audiencePersona: true,
-        tone: true,
-        aiSuggestions: true,
-      },
-    });
-
-    return NextResponse.json({ analyses });
-  } catch (error) {
-    console.error("Error fetching content analysis history:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch content analysis history" },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src/app/api/content/keywords/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-
-// GET: Fetch keywords for a site
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const siteId = searchParams.get("siteId");
-
-    if (!siteId) {
-      return NextResponse.json(
-        { error: "Site ID is required" },
-        { status: 400 }
-      );
-    }
-
-    const keywords = await prisma.keyword.findMany({
-      where: {
-        wordpressSiteId: siteId,
-      },
-      include: {
-        _count: {
-          select: {
-            scheduledContent: true,
-          },
-        },
-      },
-      orderBy: [
-        { searchVolume: "desc" },
-        { createdAt: "desc" },
-      ],
-    });
-
-    return NextResponse.json({ success: true, data: keywords });
-  } catch (error) {
-    console.error("Error fetching keywords:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch keywords" },
-      { status: 500 }
-    );
-  }
-}
-
-// POST: Add keywords (bulk or single)
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { siteId, keywords } = body;
-
-    if (!siteId || !keywords || !Array.isArray(keywords)) {
-      return NextResponse.json(
-        { error: "Site ID and keywords array are required" },
-        { status: 400 }
-      );
-    }
-
-    const createdKeywords = [];
-    const skipped = [];
-
-    for (const kw of keywords) {
-      try {
-        const created = await prisma.keyword.create({
-          data: {
-            wordpressSiteId: siteId,
-            keyword: kw.keyword,
-            searchVolume: kw.searchVolume || null,
-            difficulty: kw.difficulty || null,
-            cpc: kw.cpc || null,
-            intent: kw.intent || null,
-            location: kw.location || null,
-            isGenerated: kw.isGenerated || false,
-          },
-        });
-        createdKeywords.push(created);
-      } catch (error: any) {
-        if (error.code === "P2002") {
-          skipped.push(kw.keyword);
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: createdKeywords,
-      created: createdKeywords.length,
-      skipped: skipped.length,
-      skippedKeywords: skipped,
-    });
-  } catch (error) {
-    console.error("Error creating keywords:", error);
-    return NextResponse.json(
-      { error: "Failed to create keywords" },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE: Remove keyword
-export async function DELETE(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Keyword ID is required" },
-        { status: 400 }
-      );
-    }
-
-    await prisma.keyword.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ success: true, message: "Keyword deleted" });
-  } catch (error) {
-    console.error("Error deleting keyword:", error);
-    return NextResponse.json(
-      { error: "Failed to delete keyword" },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src/app/api/content/schedule/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/auth";
-
-// GET: Fetch scheduled content
-export async function GET(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const { searchParams } = new URL(request.url);
-    const siteId = searchParams.get("siteId");
-    const status = searchParams.get("status");
-    const month = searchParams.get("month");
-    const year = searchParams.get("year");
-
-    const where: any = {
-      userId: user.id, // Only fetch content for the authenticated user
-    };
-    
-    if (siteId) {
-      where.wordpressSiteId = siteId;
-    }
-    
-    if (status) {
-      where.status = status;
-    }
-    
-    if (month && year) {
-      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-      const endDate = new Date(parseInt(year), parseInt(month), 0);
-      where.scheduledFor = {
-        gte: startDate,
-        lte: endDate,
-      };
-    }
-
-    const content = await prisma.scheduledContent.findMany({
-      where,
-      include: {
-        wordpressSite: {
-          select: {
-            id: true,
-            name: true,
-            siteUrl: true,
-          },
-        },
-        keyword: true,
-        contentPlan: true,
-      },
-      orderBy: {
-        scheduledFor: "asc",
-      },
-    });
-
-    return NextResponse.json({ success: true, data: content });
-  } catch (error) {
-    console.error("Error fetching scheduled content:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch scheduled content" },
-      { status: 500 }
-    );
-  }
-}
-
-// POST: Create new scheduled content
-export async function POST(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const body = await request.json();
-    const {
-      wordpressSiteId,
-      contentPlanId,
-      keywordId,
-      title,
-      slug,
-      content,
-      excerpt,
-      metaDescription,
-      focusKeyword,
-      secondaryKeywords,
-      featuredImageUrl,
-      featuredImageAlt,
-      isAiGeneratedImage,
-      postType,
-      categories,
-      tags,
-      scheduledFor,
-      timezone,
-      seoScore,
-      readabilityScore,
-    } = body;
-
-    // Validate required fields
-    if (!wordpressSiteId || !title || !content || !focusKeyword || !scheduledFor) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
-
-    // Create the scheduled content with userId
-    const scheduledContent = await prisma.scheduledContent.create({
-      data: {
-        wordpressSiteId,
-        contentPlanId,
-        keywordId,
-        userId: user.id, // Associate with authenticated user
-        title,
-        slug,
-        content,
-        excerpt,
-        metaDescription,
-        focusKeyword,
-        secondaryKeywords: secondaryKeywords || [],
-        featuredImageUrl,
-        featuredImageAlt,
-        isAiGeneratedImage: isAiGeneratedImage || false,
-        postType: postType || "post",
-        categories: categories || [],
-        tags: tags || [],
-        scheduledFor: new Date(scheduledFor),
-        timezone: timezone || "UTC",
-        seoScore,
-        readabilityScore,
-        status: "PENDING",
-        approvalStatus: "PENDING",
-      },
-    });
-
-    return NextResponse.json({ success: true, data: scheduledContent });
-  } catch (error) {
-    console.error("Error creating scheduled content:", error);
-    return NextResponse.json(
-      { error: "Failed to create scheduled content" },
-      { status: 500 }
-    );
-  }
-}
-
-// PUT: Update scheduled content
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { id, ...updateData } = body;
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Content ID is required" },
-        { status: 400 }
-      );
-    }
-
-    // If updating scheduledFor, convert to Date
-    if (updateData.scheduledFor) {
-      updateData.scheduledFor = new Date(updateData.scheduledFor);
-    }
-
-    const updatedContent = await prisma.scheduledContent.update({
-      where: { id },
-      data: updateData,
-      include: {
-        wordpressSite: true,
-      },
-    });
-
-    return NextResponse.json({ success: true, data: updatedContent });
-  } catch (error) {
-    console.error("Error updating scheduled content:", error);
-    return NextResponse.json(
-      { error: "Failed to update scheduled content" },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE: Delete scheduled content
-export async function DELETE(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Content ID is required" },
-        { status: 400 }
-      );
-    }
-
-    await prisma.scheduledContent.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ success: true, message: "Content deleted" });
-  } catch (error) {
-    console.error("Error deleting scheduled content:", error);
-    return NextResponse.json(
-      { error: "Failed to delete scheduled content" },
-      { status: 500 }
-    );
-  }
-}
-
-function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-```
-
----
-
-### src/app/api/content/sites/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-
-// GET: Fetch WordPress sites
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId") || "default-user";
-
-    const sites = await prisma.wordPressSite.findMany({
-      where: {
-        userId,
-        isActive: true,
-      },
-      include: {
-        _count: {
-          select: {
-            scheduledContent: true,
-            keywords: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-    return NextResponse.json({ success: true, data: sites });
-  } catch (error) {
-    console.error("Error fetching sites:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch sites" },
-      { status: 500 }
-    );
-  }
-}
-
-// POST: Add new WordPress site
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const {
-      userId = "default-user",
-      name,
-      siteUrl,
-      apiKey,
-      wpUsername,
-      wpAppPassword,
-    } = body;
-
-    if (!name || !siteUrl) {
-      return NextResponse.json(
-        { error: "Name and site URL are required" },
-        { status: 400 }
-      );
-    }
-
-    // Normalize URL
-    const normalizedUrl = siteUrl.replace(/\/$/, "");
-
-    // Verify connection if credentials provided
-    let connectionVerified = false;
-    if (apiKey) {
-      try {
-        const verifyResponse = await fetch(
-          `${normalizedUrl}/wp-json/seo-autofix/v1/verify`,
-          {
-            headers: { "X-API-Key": apiKey },
-          }
-        );
-        connectionVerified = verifyResponse.ok;
-      } catch {
-        // Connection failed, but still allow adding
-      }
-    }
-
-    const site = await prisma.wordPressSite.create({
-      data: {
-        userId,
-        name,
-        siteUrl: normalizedUrl,
-        apiKey: apiKey || "",
-        wpUsername,
-        wpAppPassword,
-        isActive: true,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: site,
-      connectionVerified,
-    });
-  } catch (error: any) {
-    console.error("Error creating site:", error);
-    
-    if (error.code === "P2002") {
-      return NextResponse.json(
-        { error: "This site URL already exists for your account" },
-        { status: 400 }
-      );
-    }
-    
-    return NextResponse.json(
-      { error: "Failed to create site" },
-      { status: 500 }
-    );
-  }
-}
-
-// PUT: Update WordPress site
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { id, ...updateData } = body;
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Site ID is required" },
-        { status: 400 }
-      );
-    }
-
-    const site = await prisma.wordPressSite.update({
-      where: { id },
-      data: updateData,
-    });
-
-    return NextResponse.json({ success: true, data: site });
-  } catch (error) {
-    console.error("Error updating site:", error);
-    return NextResponse.json(
-      { error: "Failed to update site" },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE: Remove WordPress site
-export async function DELETE(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Site ID is required" },
-        { status: 400 }
-      );
-    }
-
-    await prisma.wordPressSite.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ success: true, message: "Site deleted" });
-  } catch (error) {
-    console.error("Error deleting site:", error);
-    return NextResponse.json(
-      { error: "Failed to delete site" },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src/app/content-strategy/page.tsx
+### src\app\calendar\page.tsx
 
 ```typescript
 "use client";
 
-import { useState, useEffect } from "react";
-import ContentStrategyDashboard from "@/components/content/content-strategy-dashboard";
-import HistoryPanel from "@/components/content/HistoryPanel";
-import AutoContentEngine from "@/components/content/AutoContentEngine";
+import React, { useState, useEffect } from "react";
+import { Calendar, momentLocalizer, Views, View } from "react-big-calendar";
+import moment from "moment";
+import "react-big-calendar/lib/css/react-big-calendar.css";
 import { 
-  Loader2, 
-  CheckCircle2, 
-  XCircle, 
-  ChevronDown, 
-  ChevronRight,
-  Search,
+  Plus, 
+  ChevronLeft, 
+  ChevronRight, 
   Filter,
-  History,
-  ArrowLeft,
-  Zap,
-  BarChart3
+  Calendar as CalendarIcon
 } from "lucide-react";
 
-interface CrawledPage {
-  url: string;
+const localizer = momentLocalizer(moment);
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  status: string;
   type: string;
-  title?: string;
-  selected?: boolean;
 }
 
-export default function ContentStrategyPage() {
-  const [analysisOutput, setAnalysisOutput] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCrawling, setIsCrawling] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [baseUrl, setBaseUrl] = useState("");
-  const [pages, setPages] = useState<CrawledPage[]>([]);
-  const [crawlRunId, setCrawlRunId] = useState<string | null>(null);
-  const [crawlPublicToken, setCrawlPublicToken] = useState<string | null>(null);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['service', 'blog']));
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<string>("all");
-  const [showHistory, setShowHistory] = useState(false);
-  const [activeTab, setActiveTab] = useState("analysis");
+export default function ContentCalendar() {
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [view, setView] = useState<View>(Views.MONTH);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const handleCrawl = async () => {
-    if (!baseUrl) {
-      setError("Please enter a website URL");
-      return;
-    }
+  useEffect(() => {
+    fetchEvents();
+  }, [currentDate, view]);
 
-    setIsCrawling(true);
-    setError(null);
-    setPages([]);
-
+  const fetchEvents = async () => {
+    setLoading(true);
     try {
-      // Start crawl
-      const response = await fetch('/api/crawl', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: baseUrl, maxPages: 50 })
-      });
-
+      const response = await fetch("/api/posts/update");
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to start crawl');
-      }
-
-      setCrawlRunId(data.runId);
-      setCrawlPublicToken(data.publicToken);
-
-      // Poll for crawl completion
-      let attempts = 0;
-      const maxAttempts = 60;
-
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const pollResponse = await fetch(
-          `/api/crawl?runId=${data.runId}&publicToken=${data.publicToken}`
-        );
-
-        const pollData = await pollResponse.json();
-
-        if (pollData.status === 'COMPLETED') {
-          // Use urlGroups from crawler output for proper categorization
-          const urlGroups = pollData.output?.urlGroups || {};
-          const allPages = pollData.output?.pages || [];
-          
-          // Build pages array with proper types and auto-selection
-          const pagesWithSelection: CrawledPage[] = [];
-          
-          // Map urlGroups to individual pages with types
-          const typeMapping: Record<string, string> = {
-            core: 'other',
-            blog: 'blog',
-            product: 'product',
-            service: 'service',
-            category: 'other',
-            other: 'other'
-          };
-          
-          // Process each group
-          Object.entries(urlGroups).forEach(([groupType, urls]) => {
-            const pageType = typeMapping[groupType] || 'other';
-            const shouldAutoSelect = ['service', 'blog'].includes(pageType);
-            
-            (urls as string[]).forEach((url: string) => {
-              const pageData = allPages.find((p: any) => p.url === url);
-              pagesWithSelection.push({
-                url,
-                type: pageType,
-                title: pageData?.title || '',
-                selected: shouldAutoSelect
-              });
-            });
-          });
-          
-          setPages(pagesWithSelection);
-          setIsCrawling(false);
-          return;
-        } else if (pollData.status === 'FAILED' || pollData.status === 'CANCELED') {
-          throw new Error(`Crawl failed with status: ${pollData.status}`);
-        }
-
-        attempts++;
-      }
-
-      throw new Error('Crawl timed out');
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during crawl');
-      setIsCrawling(false);
-    }
-  };
-
-  const handleAnalysis = async () => {
-    const selectedPages = pages.filter(p => p.selected);
-
-    if (selectedPages.length === 0) {
-      setError("Please select at least one page to analyze");
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      console.log('Starting analysis with', selectedPages.length, 'pages');
       
-      // Start analysis
-      const response = await fetch('/api/content/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          baseUrl,
-          pages: selectedPages.map(p => ({ url: p.url, type: p.type })),
-          maxPages: 50,
-          targetAudience: "General audience"
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        const errorMsg = data.error || 'Failed to start analysis';
-        const details = data.details ? `\n\nDetails: ${data.details}` : '';
-        throw new Error(errorMsg + details);
-      }
-
-      console.log('Analysis started:', data);
-
-      // Poll for results
-      let attempts = 0;
-      const maxAttempts = 90; // Increased timeout to 3 minutes
-
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const pollResponse = await fetch(
-          `/api/content/analyze?extractionRunId=${data.extractionRunId}&analysisRunId=${data.analysisRunId}&analysisId=${data.analysisId}`
-        );
-
-        const pollData = await pollResponse.json();
-
-        console.log('Poll attempt', attempts + 1, ':', {
-          extractionStatus: pollData.extractionStatus,
-          analysisStatus: pollData.analysisStatus,
-          isComplete: pollData.isComplete,
-          hasFailed: pollData.hasFailed
-        });
-
-        // Check for failures
-        if (pollData.hasFailed) {
-          const errorMsg = pollData.extractionError || pollData.analysisError || 'Analysis failed';
-          throw new Error(errorMsg);
-        }
-
-        // Check for completion
-        if (pollData.isComplete && pollData.analysisOutput) {
-          console.log('Analysis complete!');
-          setAnalysisOutput(pollData.analysisOutput);
-          setIsLoading(false);
-          return;
-        }
-
-        attempts++;
-      }
-
-      throw new Error('Analysis timed out after 3 minutes. Please try again.');
-
-    } catch (err) {
-      console.error('Analysis error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setIsLoading(false);
-    }
-  };
-
-  const handleCrawlHistorySelect = (crawlItem: any) => {
-    // Load pages from crawl history
-    if (crawlItem.pagesData) {
-      const transformedPages = crawlItem.pagesData.map((page: any) => ({
-        url: page.url || page,
-        type: page.type || 'unknown',
-        title: page.title || '',
-        selected: true, // Default to selected for convenience
+      const calendarEvents = (data.posts || []).map((post: any) => ({
+        id: post.id,
+        title: post.title || "Untitled",
+        start: new Date(post.scheduledFor),
+        end: new Date(new Date(post.scheduledFor).getTime() + 60 * 60 * 1000), // 1 hour duration
+        status: post.status,
+        type: post.postType || "post",
       }));
-      
-      setPages(transformedPages);
-      setBaseUrl(crawlItem.url);
-      setShowHistory(false);
-      setIsCrawling(false);
+
+      setEvents(calendarEvents);
+    } catch (error) {
+      console.error("Error fetching events:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleAnalysisHistorySelect = (analysisItem: any) => {
-    // Load analysis output from history
-    console.log("[ContentStrategy] Loading analysis from history:", analysisItem);
-    if (analysisItem.analysisOutput) {
-      console.log("[ContentStrategy] Setting analysis output");
-      setAnalysisOutput(analysisItem.analysisOutput);
-      setShowHistory(false);
-      setIsLoading(false);
+  const filteredEvents = events.filter((event) => {
+    if (statusFilter === "all") return true;
+    return event.status === statusFilter;
+  });
+
+  const eventStyleGetter = (event: CalendarEvent) => {
+    const backgroundColor = {
+      PUBLISHED: "#22c55e",
+      PUBLISHING: "#3b82f6",
+      READY: "#a855f7",
+      GENERATING: "#eab308",
+      FAILED: "#ef4444",
+      PENDING: "#64748b",
+    }[event.status] || "#64748b";
+
+    return {
+      style: {
+        backgroundColor,
+        borderRadius: "4px",
+        opacity: 0.9,
+        border: "none",
+      },
+    };
+  };
+
+  const handleNavigate = (action: "PREV" | "NEXT" | "TODAY") => {
+    if (action === "PREV") {
+      setCurrentDate(moment(currentDate).subtract(1, view === Views.MONTH ? "month" : "week").toDate());
+    } else if (action === "NEXT") {
+      setCurrentDate(moment(currentDate).add(1, view === Views.MONTH ? "month" : "week").toDate());
     } else {
-      console.log("[ContentStrategy] No analysis output found in item");
+      setCurrentDate(new Date());
     }
   };
 
-  const handleHistorySelect = (historyItem: any) => {
-    // Legacy handler - determine type based on available data
-    if (historyItem.pagesData) {
-      handleCrawlHistorySelect(historyItem);
-    } else if (historyItem.analysisOutput) {
-      handleAnalysisHistorySelect(historyItem);
-    } else {
-      // Fallback to URL loading
-      setBaseUrl(historyItem.url);
-      setShowHistory(false);
-    }
-  };
+  const CustomToolbar = () => (
+    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => handleNavigate("TODAY")}
+          className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+        >
+          Today
+        </button>
+        <button
+          onClick={() => handleNavigate("PREV")}
+          className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <button
+          onClick={() => handleNavigate("NEXT")}
+          className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+        <span className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+          {moment(currentDate).format("MMMM YYYY")}
+        </span>
+      </div>
 
-  const togglePageSelection = (index: number) => {
-    const newPages = [...pages];
-    newPages[index].selected = !newPages[index].selected;
-    setPages(newPages);
-  };
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-slate-400" />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">All Status</option>
+            <option value="PUBLISHED">Published</option>
+            <option value="PUBLISHING">Publishing</option>
+            <option value="READY">Ready</option>
+            <option value="GENERATING">Generating</option>
+            <option value="FAILED">Failed</option>
+            <option value="PENDING">Pending</option>
+          </select>
+        </div>
 
-  const toggleGroup = (type: string) => {
-    const newExpanded = new Set(expandedGroups);
-    if (newExpanded.has(type)) {
-      newExpanded.delete(type);
-    } else {
-      newExpanded.add(type);
-    }
-    setExpandedGroups(newExpanded);
-  };
+        <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-2" />
 
-  const selectAllInGroup = (type: string, selected: boolean) => {
-    const newPages = pages.map(p => 
-      p.type === type ? { ...p, selected } : p
-    );
-    setPages(newPages);
-  };
-
-  const getFilteredPages = () => {
-    let filtered = pages;
-
-    // Apply search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.url.toLowerCase().includes(query) ||
-        (p.title && p.title.toLowerCase().includes(query))
-      );
-    }
-
-    // Apply type filter
-    if (filterType !== 'all') {
-      filtered = filtered.filter(p => p.type === filterType);
-    }
-
-    return filtered;
-  };
-
-  const getPagesByType = () => {
-    const filtered = getFilteredPages();
-    const grouped: Record<string, CrawledPage[]> = {};
-
-    filtered.forEach(page => {
-      if (!grouped[page.type]) {
-        grouped[page.type] = [];
-      }
-      grouped[page.type].push(page);
-    });
-
-    return grouped;
-  };
-
-  const pagesByType = getPagesByType();
-  const selectedCount = pages.filter(p => p.selected).length;
-  const filteredPages = getFilteredPages();
+        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+          {["month", "week", "day"].map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v as any)}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                view === v
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              }`}
+            >
+              {v.charAt(0).toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header with Navigation */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-            Content Strategy Hub
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mb-6">
-            Comprehensive content analysis and AI-powered content generation tools
-          </p>
-          
-          {/* Tab Navigation */}
-          <div className="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700">
-            <button
-              onClick={() => setActiveTab("analysis")}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === "analysis"
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-              }`}
-            >
-              <BarChart3 className="w-4 h-4 inline mr-2" />
-              Content Analysis
-            </button>
-            <button
-              onClick={() => setActiveTab("auto-content")}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === "auto-content"
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-              }`}
-            >
-              <Zap className="w-4 h-4 inline mr-2" />
-              Auto-Content Engine
-            </button>
-            <button
-              onClick={() => setShowHistory(true)}
-              className="ml-auto px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
-            >
-              <History className="w-4 h-4 inline mr-2" />
-              History
-            </button>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+              Content Calendar
+            </h1>
+            <p className="text-slate-600 dark:text-slate-400">
+              Schedule and manage your content publishing
+            </p>
+          </div>
+          <button className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
+            <Plus className="w-4 h-4" />
+            Schedule Content
+          </button>
+        </div>
+
+        {/* Legend */}
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-4 mb-6">
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+              <span className="text-sm text-slate-600 dark:text-slate-400">Published</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-blue-500" />
+              <span className="text-sm text-slate-600 dark:text-slate-400">Publishing</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-purple-500" />
+              <span className="text-sm text-slate-600 dark:text-slate-400">Ready</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-yellow-500" />
+              <span className="text-sm text-slate-600 dark:text-slate-400">Generating</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-red-500" />
+              <span className="text-sm text-slate-600 dark:text-slate-400">Failed</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-slate-500" />
+              <span className="text-sm text-slate-600 dark:text-slate-400">Pending</span>
+            </div>
           </div>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === "analysis" && (
-          !analysisOutput ? (
-            <div className="max-w-6xl mx-auto px-4 py-12">
-              {showHistory ? (
-                <div className="mb-6">
-                  <button
-                    onClick={() => setShowHistory(false)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 transition-colors"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back to Analysis
-                  </button>
-                </div>
-              ) : (
-                <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-                      Content Strategy Analysis
-                    </h1>
-                    <p className="text-slate-600 dark:text-slate-400">
-                      Analyze your website content to identify gaps, keywords, and AI-powered content suggestions
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setShowHistory(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
-                  >
-                    <History className="w-4 h-4" />
-                    History
-                  </button>
-                </div>
-              )}
-
-              {showHistory ? (
-                <HistoryPanel 
-                  onSelectCrawlHistory={handleCrawlHistorySelect}
-                  onSelectAnalysisHistory={handleAnalysisHistorySelect}
-                />
-              ) : (
-                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-8">
-                  <div className="space-y-6">
-                    {/* URL Input */}
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Website URL
-                      </label>
-                      <div className="flex gap-3">
-                        <input
-                          type="url"
-                          value={baseUrl}
-                          onChange={(e) => setBaseUrl(e.target.value)}
-                          placeholder="https://example.com"
-                          disabled={isCrawling}
-                          className="flex-1 px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                        <button
-                          onClick={handleCrawl}
-                          disabled={isCrawling || !baseUrl}
-                          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors font-medium"
-                        >
-                          {isCrawling ? (
-                            <>
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                              Crawling...
-                            </>
-                          ) : (
-                            <>
-                              <Search className="w-5 h-5" />
-                              Auto Crawl
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Crawl Progress */}
-                    {isCrawling && (
-                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Loader2 className="w-5 h-5 animate-spin text-blue-600 dark:text-blue-400" />
-                          <div>
-                            <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                              Crawling website...
-                            </p>
-                            <p className="text-xs text-blue-700 dark:text-blue-300">
-                              Discovering and categorizing pages. This may take 30-60 seconds.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Pages Selection */}
-                    {pages.length > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Pages to Analyze
-                            </label>
-                            <p className="text-xs text-slate-600 dark:text-slate-400">
-                              {selectedCount} of {pages.length} pages selected
-                            </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              placeholder="Search pages..."
-                              className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
-                            />
-                            <select
-                              value={filterType}
-                              onChange={(e) => setFilterType(e.target.value)}
-                              className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
-                            >
-                              <option value="all">All Types</option>
-                              <option value="service">Services</option>
-                              <option value="blog">Blogs</option>
-                              <option value="product">Products</option>
-                              <option value="other">Other</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-200 dark:divide-slate-700 max-h-96 overflow-y-auto">
-                          {Object.entries(pagesByType).map(([type, typePages]) => (
-                            <div key={type}>
-                              <div
-                                className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
-                                onClick={() => toggleGroup(type)}
-                              >
-                                <div className="flex items-center gap-3">
-                                  {expandedGroups.has(type) ? (
-                                    <ChevronDown className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                                  ) : (
-                                    <ChevronRight className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                                  )}
-                                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                                    type === 'service' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                                    type === 'blog' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
-                                    type === 'product' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
-                                    'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-slate-300'
-                                  }`}>
-                                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                                  </span>
-                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                    {typePages.length} pages
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); selectAllInGroup(type, true); }}
-                                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-                                  >
-                                    Select All
-                                  </button>
-                                  <span className="text-slate-400 dark:text-slate-600">|</span>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); selectAllInGroup(type, false); }}
-                                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                                  >
-                                    Deselect All
-                                  </button>
-                                </div>
-                              </div>
-
-                              {expandedGroups.has(type) && (
-                                <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                                  {typePages.map((page, index) => {
-                                    const globalIndex = pages.indexOf(page);
-                                    return (
-                                      <div
-                                        key={page.url}
-                                        className="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-700/30"
-                                      >
-                                        <button
-                                          onClick={() => togglePageSelection(globalIndex)}
-                                          className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                                            page.selected
-                                              ? 'bg-blue-600 border-blue-600'
-                                              : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'
-                                          }`}
-                                        >
-                                          {page.selected && (
-                                            <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                                          )}
-                                        </button>
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
-                                            {page.title || page.url}
-                                          </p>
-                                          <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
-                                            {page.url}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {error && (
-                      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <div className="flex items-start gap-3">
-                          <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-sm font-medium text-red-900 dark:text-red-100 mb-1">Error</p>
-                            <p className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap">{error}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={handleAnalysis}
-                      disabled={isLoading || pages.length === 0 || selectedCount === 0}
-                      className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors font-medium"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                          </svg>
-                          Start Analysis ({selectedCount} pages)
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
-                      Quick Start Guide
-                    </h3>
-                    <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4 space-y-2 text-sm">
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 1:</strong> Enter your website URL (e.g., https://datatechconsultants.com.au)
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 2:</strong> Click "Auto Crawl" to discover all pages automatically
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 3:</strong> Review auto-selected pages (services and blogs are pre-selected)
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 4:</strong> Modify selection if needed (add/remove pages)
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 5:</strong> Click "Start Analysis" and wait 30-120 seconds
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 6:</strong> View your content strategy dashboard with AI insights
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+        {/* Calendar */}
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <CalendarIcon className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+                <p className="text-slate-600 dark:text-slate-400">Loading calendar...</p>
+              </div>
             </div>
           ) : (
-            <ContentStrategyDashboard
-              analysisOutput={analysisOutput}
-              isLoading={isLoading}
-              onRefresh={handleAnalysis}
-            />
-          )
-        )}
-
-        {activeTab === "auto-content" && (
-          <AutoContentEngine />
-        )}
-
-        {/* History Modal */}
-        {showHistory && activeTab === "analysis" && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
-              <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Analysis History
-                  </h2>
-                  <button
-                    onClick={() => setShowHistory(false)}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                  >
-                    <XCircle className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 overflow-y-auto max-h-[60vh]">
-                <HistoryPanel 
-                  onSelectCrawlHistory={handleCrawlHistorySelect}
-                  onSelectAnalysisHistory={handleAnalysisHistorySelect}
-                />
-              </div>
+            <div className="min-h-[600px]">
+              <CustomToolbar />
+              <Calendar
+                localizer={localizer}
+                events={filteredEvents}
+                startAccessor="start"
+                endAccessor="end"
+                style={{ height: 600 }}
+                eventPropGetter={eventStyleGetter}
+                views={[Views.MONTH, Views.WEEK, Views.DAY]}
+                view={view as any}
+                date={currentDate}
+                onNavigate={(newDate) => setCurrentDate(newDate as Date)}
+                onView={(newView) => setView(newView as View)}
+                components={{
+                  event: ({ event }: { event: CalendarEvent }) => (
+                    <div className="text-xs font-medium text-white p-1 truncate">
+                      {event.title}
+                    </div>
+                  ),
+                }}
+              />
             </div>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Total</span>
+              <CalendarIcon className="w-4 h-4 text-slate-400" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {events.length}
+            </p>
           </div>
-        )}
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Published</span>
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {events.filter((e) => e.status === "PUBLISHED").length}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Ready</span>
+              <div className="w-3 h-3 rounded-full bg-purple-500" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {events.filter((e) => e.status === "READY").length}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Pending</span>
+              <div className="w-3 h-3 rounded-full bg-slate-500" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {events.filter((e) => e.status === "PENDING").length}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -3968,6 +2088,225 @@ export default function ContentStrategyPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+```
+
+---
+
+### src\app\page.tsx
+
+```typescript
+import { Header } from "@/components/shared/header";
+import { Footer } from "@/components/shared/footer";
+import { AuditForm } from "@/components/audit/audit-form";
+import { Features } from "@/components/home/features";
+import { 
+  Search, 
+  BarChart3, 
+  Zap, 
+  Shield, 
+  TrendingUp,
+  CheckCircle2,
+  ArrowRight,
+  Sparkles,
+  Globe,
+  Target
+} from "lucide-react";
+import Link from "next/link";
+
+export default function HomePage() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header />
+      <main className="flex-1">
+        {/* Hero Section */}
+        <section className="relative py-20 px-4 bg-gradient-to-b from-primary/10 via-primary/5 to-background overflow-hidden">
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/20 rounded-full blur-3xl"></div>
+            <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl"></div>
+          </div>
+          
+          <div className="container mx-auto max-w-6xl relative">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full mb-6">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium text-primary">Free SEO Audit Tool</span>
+              </div>
+              <h1 className="text-5xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-slate-900 via-slate-700 to-slate-900 dark:from-white dark:via-slate-200 dark:to-white bg-clip-text text-transparent">
+                Analyze Your Website's SEO Performance
+              </h1>
+              <p className="text-xl text-slate-600 dark:text-slate-400 mb-8 max-w-3xl mx-auto">
+                Get comprehensive SEO audits, performance insights, and actionable recommendations to improve your search rankings. Free forever.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link
+                  href="/history"
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors font-medium"
+                >
+                  View Your History
+                  <ArrowRight className="w-5 h-5" />
+                </Link>
+                <Link
+                  href="/content-strategy"
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors font-medium text-slate-900 dark:text-slate-100"
+                >
+                  Content Strategy
+                  <BarChart3 className="w-5 h-5" />
+                </Link>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-700">
+              <AuditForm />
+            </div>
+          </div>
+        </section>
+
+        {/* Stats Section */}
+        <section className="py-16 px-4 bg-white dark:bg-slate-800 border-y border-slate-200 dark:border-slate-700">
+          <div className="container mx-auto max-w-6xl">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+              <div className="text-center">
+                <div className="text-4xl font-bold text-primary mb-2">100%</div>
+                <div className="text-slate-600 dark:text-slate-400">Free Forever</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-primary mb-2">50+</div>
+                <div className="text-slate-600 dark:text-slate-400">SEO Checks</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-primary mb-2">10+</div>
+                <div className="text-slate-600 dark:text-slate-400">Categories</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-primary mb-2">AI</div>
+                <div className="text-slate-600 dark:text-slate-400">Powered Analysis</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Features Section */}
+        <section className="py-20 px-4 bg-gradient-to-b from-background to-slate-50 dark:to-slate-900">
+          <div className="container mx-auto max-w-6xl">
+            <div className="text-center mb-16">
+              <h2 className="text-4xl font-bold mb-4 text-slate-900 dark:text-slate-100">
+                Everything You Need to Rank Higher
+              </h2>
+              <p className="text-xl text-slate-600 dark:text-slate-400">
+                Comprehensive analysis across all critical SEO factors
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-8 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
+                <div className="w-14 h-14 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center mb-6">
+                  <Search className="w-7 h-7 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-slate-900 dark:text-slate-100">
+                  On-Page SEO
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Analyze meta tags, headings, content structure, and keyword optimization to ensure your pages are perfectly optimized.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-8 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
+                <div className="w-14 h-14 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center mb-6">
+                  <Zap className="w-7 h-7 text-green-600 dark:text-green-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-slate-900 dark:text-slate-100">
+                  Performance
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Check page speed, Core Web Vitals, and optimization opportunities to improve user experience and rankings.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-8 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
+                <div className="w-14 h-14 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center mb-6">
+                  <Shield className="w-7 h-7 text-purple-600 dark:text-purple-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-slate-900 dark:text-slate-100">
+                  E-E-A-T Analysis
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Evaluate expertise, authoritativeness, and trustworthiness signals that Google uses to rank content.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-8 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
+                <div className="w-14 h-14 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center mb-6">
+                  <Globe className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-slate-900 dark:text-slate-100">
+                  Local SEO
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Optimize for local search with Google Business Profile integration, NAP consistency, and local keywords.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-8 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
+                <div className="w-14 h-14 bg-pink-100 dark:bg-pink-900/30 rounded-xl flex items-center justify-center mb-6">
+                  <Target className="w-7 h-7 text-pink-600 dark:text-pink-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-slate-900 dark:text-slate-100">
+                  Content Strategy
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400">
+                  AI-powered content analysis to identify gaps, optimize keywords, and generate content ideas.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-8 shadow-lg border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
+                <div className="w-14 h-14 bg-cyan-100 dark:bg-cyan-900/30 rounded-xl flex items-center justify-center mb-6">
+                  <TrendingUp className="w-7 h-7 text-cyan-600 dark:text-cyan-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-slate-900 dark:text-slate-100">
+                  Actionable Insights
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Get prioritized recommendations with clear steps to improve your SEO performance.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* CTA Section */}
+        <section className="py-20 px-4 bg-gradient-to-r from-primary to-blue-600">
+          <div className="container mx-auto max-w-4xl text-center">
+            <h2 className="text-4xl font-bold mb-4 text-white">
+              Ready to Improve Your SEO?
+            </h2>
+            <p className="text-xl text-white/80 mb-8">
+              Start analyzing your website today and get actionable insights to boost your rankings.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary rounded-lg hover:bg-slate-100 transition-colors font-medium"
+              >
+                <Search className="w-5 h-5" />
+                Start Free Audit
+              </Link>
+              <Link
+                href="/history"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-white/10 text-white border-2 border-white/30 rounded-lg hover:bg-white/20 transition-colors font-medium"
+              >
+                View Your History
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <Features />
+      </main>
+      <Footer />
     </div>
   );
 }
