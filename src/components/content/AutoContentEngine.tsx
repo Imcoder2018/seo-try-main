@@ -150,8 +150,8 @@ export default function AutoContentEngine() {
         console.log('[Auto-Content] Generated topics:', data.topics);
         // Store generated topics separately
         setGeneratedTopics(data.topics);
-        // Auto-select all topics initially
-        setSelectedTopics(data.topics);
+        // Start with empty selection - user must choose topics
+        setSelectedTopics([]);
         setCurrentStep(3); // Go to AI Topics step
       } else {
         setError(data.error);
@@ -269,96 +269,121 @@ export default function AutoContentEngine() {
   const simulateProgress = async (taskId: string, total: number) => {
     let progress = 0;
     const interval = setInterval(() => {
-      progress += Math.random() * 15;
-      if (progress >= 95) {
-        progress = 95;
-        clearInterval(interval);
+      progress += Math.random() * 10; // Slower progress for realism
+      if (progress >= 99) {
+        progress = 99; // Stop at 99% until actual completion
       }
       setGenerationProgress(progress);
-    }, 1000);
+    }, 2000); // Update every 2 seconds
 
-    // Poll for actual task results
+    // Poll for actual task results from Trigger.dev
     try {
-      const maxAttempts = 30; // 30 seconds max wait
+      const maxAttempts = 60; // 2 minutes max wait (60 * 2 seconds)
       let attempts = 0;
       
       while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         attempts++;
         
-        // Check task status via Trigger.dev API (mock for now)
-        // In production, you'd use the actual Trigger.dev API
-        if (attempts >= 15) { // Simulate completion after ~15 seconds
+        console.log(`[Auto-Content] Polling for task results, attempt ${attempts}/${maxAttempts}`);
+        
+        // First try the bulk-generate API
+        const response = await fetch(`/api/content/bulk-generate?taskId=${taskId}`);
+        const data = await response.json();
+        
+        // Check if we need to use MCP server (indicated by needsClientSideMCP flag)
+        if (data.needsClientSideMCP) {
+          console.log("[Auto-Content] Using MCP server for real results");
+          
+          // Use the MCP server to get real results
+          try {
+            const mcpResult = await fetch('/api/trigger-mcp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'getRunDetails', runId: taskId })
+            });
+            
+            const mcpData = await mcpResult.json();
+            
+            if (mcpData.success && mcpData.run && mcpData.run.status === 'COMPLETED') {
+              console.log("[Auto-Content] MCP found completed run");
+              clearInterval(interval);
+              setGenerationProgress(100);
+              setIsGenerating(false);
+              
+              // Extract content from MCP run output
+              if (mcpData.run.output && mcpData.run.output.results) {
+                setGeneratedContent(mcpData.run.output.results);
+                console.log("[Auto-Content] Set MCP content:", mcpData.run.output.results.length, "items");
+              }
+              
+              // Auto-advance to review step
+              setTimeout(() => {
+                setCurrentStep(7); // Review & Publish step
+              }, 1000);
+              
+              return;
+            } else if (mcpData.run && (mcpData.run.status === 'FAILED' || mcpData.run.status === 'CRASHED')) {
+              console.error("[Auto-Content] MCP run failed:", mcpData.run.error);
+              clearInterval(interval);
+              setGenerationProgress(0);
+              setIsGenerating(false);
+              setError("Content generation failed. Please try again.");
+              return;
+            }
+          } catch (mcpError) {
+            console.error("[Auto-Content] MCP call failed:", mcpError);
+            // Continue with regular polling
+          }
+        }
+        
+        // Regular API polling
+        if (data.success && data.status === "COMPLETED") {
+          console.log("[Auto-Content] Task completed successfully!");
           clearInterval(interval);
           setGenerationProgress(100);
           setIsGenerating(false);
           
-          // Fetch real content from bulk-generate results
-          const response = await fetch(`/api/content/bulk-generate?taskId=${taskId}`);
-          const data = await response.json();
-          
-          if (data.success && data.results) {
+          // Set the real generated content
+          if (data.results && data.results.length > 0) {
             setGeneratedContent(data.results);
-          } else {
-            // Create realistic content based on the selected topic
-            const realisticContent: GeneratedContent[] = selectedTopics.slice(0, 1).map((topic, index) => {
-              // Generate a comprehensive blog post based on the topic
-              const blogContent = generateRealisticContent(topic, selectedLocations[0]);
-              
-              return {
-                id: `content_${Date.now()}_${index}`,
-                title: topic.title,
-                location: selectedLocations[0],
-                contentType: topic.contentType,
-                content: blogContent,
-                imageUrl: `https://picsum.photos/800/600?random=${Math.random()}`,
-                featuredImage: `https://picsum.photos/1200/600?random=${Math.random()}`,
-                imagePrompt: `Professional ${topic.contentType} about ${topic.title} in ${selectedLocations[0]}, featuring modern business technology and innovation`,
-                status: 'completed' as const,
-                wordCount: blogContent.length,
-                createdAt: new Date().toISOString(),
-                metadata: {
-                  keywords: topic.primaryKeywords,
-                  targetLocation: selectedLocations[0],
-                  tone: 'professional',
-                  contentType: topic.contentType,
-                }
-              };
-            });
-            
-            setGeneratedContent(realisticContent);
+            console.log("[Auto-Content] Set real content:", data.results.length, "items");
           }
-          break;
+          
+          // Auto-advance to review step
+          setTimeout(() => {
+            setCurrentStep(7); // Review & Publish step
+          }, 1000);
+          
+          return; // Exit polling loop
+        } else if (data.status === "FAILED") {
+          console.error("[Auto-Content] Task failed:", data.error);
+          clearInterval(interval);
+          setGenerationProgress(0);
+          setIsGenerating(false);
+          setError("Content generation failed. Please try again.");
+          return;
+        }
+        
+        // Update progress based on actual task progress if available
+        if (data.progress !== undefined) {
+          setGenerationProgress(data.progress);
         }
       }
-    } catch (error) {
-      console.error('Error polling for task results:', error);
+      
+      // Timeout reached
+      console.warn("[Auto-Content] Task polling timeout after 2 minutes");
       clearInterval(interval);
-      setGenerationProgress(100);
+      setGenerationProgress(0);
       setIsGenerating(false);
+      setError("Content generation timed out. Please check your Trigger.dev configuration.");
       
-      // Fallback content
-      const fallbackContent: GeneratedContent[] = selectedTopics.slice(0, 1).map((topic, index) => ({
-        id: `content_${Date.now()}_${index}`,
-        title: topic.title,
-        location: selectedLocations[0],
-        contentType: topic.contentType,
-        content: `Content for "${topic.title}" targeting ${selectedLocations[0]}.`,
-        imageUrl: `https://picsum.photos/800/600?random=${Math.random()}`,
-        featuredImage: `https://picsum.photos/1200/600?random=${Math.random()}`,
-        imagePrompt: `Professional ${topic.contentType} about ${topic.title} in ${selectedLocations[0]}`,
-        status: 'completed' as const,
-        wordCount: 1000,
-        createdAt: new Date().toISOString(),
-        metadata: {
-          keywords: topic.primaryKeywords,
-          targetLocation: selectedLocations[0],
-          tone: 'professional',
-          contentType: topic.contentType,
-        }
-      }));
-      
-      setGeneratedContent(fallbackContent);
+    } catch (error) {
+      console.error("[Auto-Content] Error polling for results:", error);
+      clearInterval(interval);
+      setGenerationProgress(0);
+      setIsGenerating(false);
+      setError("Failed to get content generation results.");
     }
   };
 
@@ -784,6 +809,22 @@ function TopicsStep({
     );
   }
 
+  if (topics.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
+            No topics available
+          </h3>
+          <p className="text-slate-600 dark:text-slate-400">
+            Please go back and select a service to generate topics.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -791,10 +832,29 @@ function TopicsStep({
         <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
           AI-Generated Topics
         </h2>
-        <p className="text-slate-600 dark:text-slate-400">
+        <p className="text-slate-600 dark:text-slate-400 mb-4">
           Review and select topics for content generation
         </p>
+        <div className="flex items-center justify-center gap-4 text-sm">
+          <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-full">
+            {topics.length} Available
+          </span>
+          <span className="px-3 py-1 bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-full">
+            {selectedTopics.length} Selected
+          </span>
+        </div>
       </div>
+
+      {selectedTopics.length === 0 && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-amber-600 rounded-full animate-pulse"></div>
+            <p className="text-amber-800 dark:text-amber-200 text-sm">
+              <strong>Please select at least one topic</strong> to continue to the keywords selection step.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         {topics.map((topic) => {
@@ -866,9 +926,22 @@ function KeywordsStep({
   const allPrimaryKeywords = selectedTopics.flatMap(topic => topic.primaryKeywords);
   const allSecondaryKeywords = selectedTopics.flatMap(topic => topic.secondaryKeywords);
   
-  // Remove duplicates and sort
-  const uniquePrimaryKeywords = [...new Set(allPrimaryKeywords)].sort();
-  const uniqueSecondaryKeywords = [...new Set(allSecondaryKeywords)].sort();
+  // Remove duplicates and sort by length (longer phrases first for SEO importance)
+  const uniquePrimaryKeywords = [...new Set(allPrimaryKeywords)].sort((a, b) => b.length - a.length);
+  const uniqueSecondaryKeywords = [...new Set(allSecondaryKeywords)].sort((a, b) => b.length - a.length);
+  
+  // Categorize keywords by type for better SEO organization
+  const getKeywordType = (keyword: string) => {
+    const wordCount = keyword.trim().split(' ').length;
+    if (wordCount >= 3) return 'long-phrase';
+    if (wordCount === 2) return 'phrase';
+    return 'invalid'; // Should not happen with validation
+  };
+  
+  // Validate all keywords are multi-word
+  const validateMultiWordKeywords = (keywords: string[]) => {
+    return keywords.filter(keyword => keyword.trim().split(' ').length >= 2);
+  };
   
   return (
     <div className="space-y-6">
@@ -878,7 +951,7 @@ function KeywordsStep({
           AI Keywords Selection
         </h2>
         <p className="text-slate-600 dark:text-slate-400 mb-6">
-          Review the keywords that will be used for content generation
+          Review the SEO keywords that will be used for content generation
         </p>
       </div>
 
@@ -890,13 +963,24 @@ function KeywordsStep({
             Primary Keywords ({uniquePrimaryKeywords.length})
           </h3>
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {uniquePrimaryKeywords.map((keyword, index) => (
-              <div key={index} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0"></div>
-                <span className="text-sm font-medium text-blue-900 dark:text-blue-100">{keyword}</span>
-                <span className="text-xs text-blue-600 dark:text-blue-400 ml-auto">Primary</span>
-              </div>
-            ))}
+            {uniquePrimaryKeywords.map((keyword, index) => {
+              const keywordType = getKeywordType(keyword);
+              return (
+                <div key={index} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0"></div>
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-blue-900 dark:text-blue-100 block">{keyword}</span>
+                    <span className="text-xs text-blue-600 dark:text-blue-400 capitalize">{keywordType}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                      {keyword.split(' ').length} words
+                    </span>
+                    <span className="text-xs text-blue-600 dark:text-blue-400">Primary</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -907,21 +991,32 @@ function KeywordsStep({
             Secondary Keywords ({uniqueSecondaryKeywords.length})
           </h3>
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {uniqueSecondaryKeywords.map((keyword, index) => (
-              <div key={index} className="flex items-center gap-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                <div className="w-2 h-2 bg-purple-600 rounded-full flex-shrink-0"></div>
-                <span className="text-sm font-medium text-purple-900 dark:text-purple-100">{keyword}</span>
-                <span className="text-xs text-purple-600 dark:text-purple-400 ml-auto">Secondary</span>
-              </div>
-            ))}
+            {uniqueSecondaryKeywords.map((keyword, index) => {
+              const keywordType = getKeywordType(keyword);
+              return (
+                <div key={index} className="flex items-center gap-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                  <div className="w-2 h-2 bg-purple-600 rounded-full flex-shrink-0"></div>
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-purple-900 dark:text-purple-100 block">{keyword}</span>
+                    <span className="text-xs text-purple-600 dark:text-purple-400 capitalize">{keywordType}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200 px-2 py-1 rounded">
+                      {keyword.split(' ').length} words
+                    </span>
+                    <span className="text-xs text-purple-600 dark:text-purple-400">Secondary</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* Summary */}
+      {/* SEO Analysis Summary */}
       <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">Content Summary</h3>
+          <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">SEO Keyword Analysis</h3>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-600" />
@@ -931,6 +1026,30 @@ function KeywordsStep({
               <Tag className="w-4 h-4 text-purple-600" />
               <span className="text-slate-600 dark:text-slate-400">{uniquePrimaryKeywords.length + uniqueSecondaryKeywords.length} Keywords</span>
             </div>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="bg-white dark:bg-slate-700 rounded-lg p-4 border border-slate-200 dark:border-slate-600">
+            <h4 className="font-medium text-slate-800 dark:text-slate-200 mb-2">Long Phrases</h4>
+            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {[...uniquePrimaryKeywords, ...uniqueSecondaryKeywords].filter(k => getKeywordType(k) === 'long-phrase').length}
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-400">3+ words</p>
+          </div>
+          <div className="bg-white dark:bg-slate-700 rounded-lg p-4 border border-slate-200 dark:border-slate-600">
+            <h4 className="font-medium text-slate-800 dark:text-slate-200 mb-2">Short Phrases</h4>
+            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+              {[...uniquePrimaryKeywords, ...uniqueSecondaryKeywords].filter(k => getKeywordType(k) === 'phrase').length}
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-400">2 words</p>
+          </div>
+          <div className="bg-white dark:bg-slate-700 rounded-lg p-4 border border-slate-200 dark:border-slate-600">
+            <h4 className="font-medium text-slate-800 dark:text-slate-200 mb-2">Total Keywords</h4>
+            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+              {uniquePrimaryKeywords.length + uniqueSecondaryKeywords.length}
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-400">Multi-word only</p>
           </div>
         </div>
         

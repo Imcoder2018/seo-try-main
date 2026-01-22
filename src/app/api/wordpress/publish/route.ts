@@ -79,24 +79,44 @@ export async function POST(request: NextRequest) {
     console.log("[WordPress Publish] Image URL type:", typeof processedImageUrl);
     console.log("[WordPress Publish] Image URL length:", processedImageUrl?.length);
     
+    // Prepare the request payload with better image handling
+    const requestPayload = {
+      title,
+      content,
+      location,
+      contentType,
+      status,
+      // Send image in multiple formats to ensure compatibility
+      imageUrl: processedImageUrl?.trim() || "",
+      featured_image: processedImageUrl?.trim() || "",
+      featuredImageUrl: processedImageUrl?.trim() || "",
+      image_url: processedImageUrl?.trim() || "",
+      primaryKeywords,
+      // Add image metadata for debugging
+      hasImage: !!processedImageUrl,
+      imageSource: processedImageUrl ? "ai-generated" : "none",
+      imageMetadata: processedImageUrl ? {
+        url: processedImageUrl,
+        type: "featured",
+        source: "ai-generated"
+      } : null,
+    };
+    
+    console.log("[WordPress Publish] Request payload keys:", Object.keys(requestPayload));
+    console.log("[WordPress Publish] Image fields in payload:", {
+      imageUrl: !!requestPayload.imageUrl,
+      featured_image: !!requestPayload.featured_image,
+      featuredImageUrl: !!requestPayload.featuredImageUrl,
+      image_url: !!requestPayload.image_url,
+    });
+    
     const wordpressResponse = await fetch(`${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-SEO-AutoFix-Key": API_KEY,
       },
-      body: JSON.stringify({
-        title,
-        content,
-        location,
-        contentType,
-        imageUrl: processedImageUrl?.trim() || "", // Use validated URL
-        primaryKeywords,
-        status,
-        // Add image metadata for debugging
-        hasImage: !!processedImageUrl,
-        imageSource: processedImageUrl ? "ai-generated" : "none",
-      }),
+      body: JSON.stringify(requestPayload),
     });
 
     console.log("[WordPress Publish] API response status:", wordpressResponse.status);
@@ -120,11 +140,31 @@ export async function POST(request: NextRequest) {
     console.log("[WordPress Publish] Response structure:", Object.keys(responseData));
 
     // Check if image was successfully set as featured image
-    const featuredMediaId = responseData.post?.featured_media || 0;
+    // WordPress plugin may return featured_media in different ways
+    const featuredMediaId = responseData.post?.featured_media || 
+                           responseData.featured_media || 
+                           responseData.post?.featured_media_id ||
+                           responseData.featured_media_id ||
+                           0;
+    
     const imageSetSuccessfully = featuredMediaId > 0;
     
     console.log("[WordPress Publish] Image set as featured:", imageSetSuccessfully);
     console.log("[WordPress Publish] Featured media ID:", featuredMediaId);
+    console.log("[WordPress Publish] Response structure:", Object.keys(responseData));
+    console.log("[WordPress Publish] Post structure:", responseData.post ? Object.keys(responseData.post) : 'No post object');
+    
+    // Additional debugging for image handling
+    if (processedImageUrl) {
+      console.log("[WordPress Publish] Image was sent to WordPress:", processedImageUrl);
+      console.log("[WordPress Publish] WordPress response for image:", {
+        hasFeaturedMedia: !!featuredMediaId,
+        featuredMediaId: featuredMediaId,
+        imageSetAsFeatured: imageSetSuccessfully
+      });
+    } else {
+      console.log("[WordPress Publish] No image was sent to WordPress");
+    }
 
     // Handle both old and new response formats for backward compatibility
     let postData;
@@ -141,7 +181,7 @@ export async function POST(request: NextRequest) {
         content: { rendered: "" },
         slug: responseData.url?.split('/')?.filter(Boolean)?.pop() || "",
         date: new Date().toISOString(),
-        featured_media: 0,
+        featured_media: featuredMediaId, // Use the actual featured media ID
         meta: {
           generated_by: "auto-content-engine"
         }
@@ -151,39 +191,46 @@ export async function POST(request: NextRequest) {
       postData = null;
     }
 
-    // Store successful publish in database
+    // Store successful publish in database with better error handling
+    let dbStored = false;
     try {
-      await prisma.wordpressPublish.create({
-        data: {
-          title: title,
-          content: content,
-          excerpt: content ? content.substring(0, 200) + "..." : "",
-          wordCount: content ? content.split(/\s+/).length : 0,
-          wordpressPostId: postData?.id || 0,
-          permalink: postData?.link || responseData.url || "",
-          wordpressEditUrl: responseData.editUrl || "",
-          status: responseData.status || status,
-          location: location || "",
-          contentType: contentType || "",
-          primaryKeywords: primaryKeywords || [],
-          imageUrl: imageUrl || "",
-          imageDownloaded: !!imageUrl,
-          wordpressUrl: WORDPRESS_URL,
-          wordpressApiUrl: `${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`,
-          userId: user.id,
-          publishResponse: responseData,
-        },
-      });
-      console.log("[WordPress Publish] Stored in database successfully");
+      // Keep database storage disabled until Prisma client is fully working
+      console.log("[WordPress Publish] Database storage temporarily disabled - Prisma client still has issues");
+      dbStored = false;
+      
+      // TODO: Re-enable this after Prisma client is fully regenerated and working
+      /*
+      if (prisma && prisma.wordpressPublish) {
+        await prisma.wordpressPublish.create({
+          data: {
+            title: title,
+            content: content,
+            excerpt: content ? content.substring(0, 200) + "..." : "",
+            wordCount: content ? content.split(/\s+/).length : 0,
+            wordpressPostId: postData?.id || 0,
+            permalink: postData?.link || responseData.url || "",
+            wordpressEditUrl: responseData.editUrl || "",
+            status: responseData.status || status,
+            location: location || "",
+            contentType: contentType || "",
+            primaryKeywords: primaryKeywords || [],
+            imageUrl: imageUrl || "",
+            imageDownloaded: !!imageUrl,
+            wordpressUrl: WORDPRESS_URL,
+            wordpressApiUrl: `${WORDPRESS_URL}/wp-json/seo-autofix/v1/content/publish`,
+            userId: user.id,
+            publishResponse: responseData,
+            publishError: null,
+          },
+        });
+        console.log("[WordPress Publish] Stored in database successfully");
+        dbStored = true;
+      } else {
+        throw new Error("Prisma client or wordpressPublish model not available");
+      }
+      */
     } catch (dbError) {
-      console.log("[WordPress Publish] Database not ready, storing in console:", dbError);
-      // Store in console for now until Prisma client is regenerated
-      console.log("[WordPress Publish] Would store:", {
-        title,
-        wordpressPostId: postData?.id,
-        status: responseData.status || status,
-        publishedAt: new Date().toISOString(),
-      });
+      console.log("[WordPress Publish] Database storage disabled:", dbError);
     }
 
     return NextResponse.json({
@@ -202,6 +249,11 @@ export async function POST(request: NextRequest) {
     
     // Store failed publish attempt
     try {
+      // Skip database storage for now until Prisma client is regenerated
+      console.log("[WordPress Publish] Skipping failed publish database storage until Prisma client is fixed");
+      
+      // TODO: Re-enable this after running: npx prisma generate
+      /*
       const body = await request.json().catch(() => ({}));
       await prisma.wordpressPublish.create({
         data: {
@@ -222,8 +274,9 @@ export async function POST(request: NextRequest) {
           publishError: String(error),
         },
       });
+      */
     } catch (dbError) {
-      console.log("[WordPress Publish] Database not ready, logging error:", dbError);
+      console.log("[WordPress Publish] Database storage for failed publish skipped:", dbError);
       console.log("[WordPress Publish] Would store error:", {
         error: String(error),
         title: await request.json().catch(() => ({})).then(b => b.title || "Unknown"),

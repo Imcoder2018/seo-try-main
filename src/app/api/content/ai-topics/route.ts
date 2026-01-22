@@ -51,12 +51,18 @@ Generate 8-10 high-quality blog post and landing page topics that will:
 
 For each topic, provide:
 - A compelling title (60-70 characters max)
-- Primary keywords (3-5)
-- Secondary keywords (5-8)
+- Primary keywords (3-5) - MUST be multi-word phrases (2+ words each)
+- Secondary keywords (5-8) - MUST be multi-word phrases (2+ words each)
 - Target locations (if applicable)
 - Content type (blog post or landing page)
 - Brief description (1-2 sentences)
 - Search intent (informational, commercial, local)
+
+IMPORTANT KEYWORD REQUIREMENTS:
+- ALL keywords must be 2+ words (no single words like "AI", "data", "2024")
+- Examples of good keywords: "cybersecurity trends", "business automation", "machine learning"
+- Examples of bad keywords: "AI", "data", "trends", "2024", "startups"
+- Focus on phrase-based keywords for better SEO targeting
 
 Return ONLY a valid JSON object with this structure:
 {
@@ -76,11 +82,11 @@ Return ONLY a valid JSON object with this structure:
 }`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o-mini", // Faster model for topic generation
       messages: [
         {
           role: "system",
-          content: "You are a content strategy expert. Always respond with valid JSON only."
+          content: "You are a content strategy expert. Always respond with valid JSON only. Be concise and fast."
         },
         {
           role: "user",
@@ -88,7 +94,8 @@ Return ONLY a valid JSON object with this structure:
         }
       ],
       temperature: 0.7,
-      max_tokens: 2000,
+      max_tokens: 1500, // Reduced tokens for faster response
+      response_format: { type: "json_object" }, // Force JSON response
     });
 
     const result = response.choices[0]?.message?.content;
@@ -114,9 +121,31 @@ Return ONLY a valid JSON object with this structure:
 
     console.log("[AI Topics] Generated", topicsData.topics.length, "topics");
 
+    // Validate and filter keywords to ensure they are multi-word
+    const validatedTopics = topicsData.topics.map((topic: any) => {
+      const filterMultiWordKeywords = (keywords: string[]) => {
+        return keywords.filter(keyword => {
+          const wordCount = keyword.trim().split(' ').length;
+          const isValid = wordCount >= 2;
+          if (!isValid) {
+            console.log("[AI Topics] Filtered out single-word keyword:", keyword);
+          }
+          return isValid;
+        });
+      };
+
+      return {
+        ...topic,
+        primaryKeywords: filterMultiWordKeywords(topic.primaryKeywords || []),
+        secondaryKeywords: filterMultiWordKeywords(topic.secondaryKeywords || []),
+      };
+    });
+
+    console.log("[AI Topics] Validated topics with multi-word keywords only");
+
     return NextResponse.json({
       success: true,
-      topics: topicsData.topics,
+      topics: validatedTopics,
       service: selectedService,
     });
   } catch (error) {

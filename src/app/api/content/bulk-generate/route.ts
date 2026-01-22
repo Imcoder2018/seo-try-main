@@ -111,87 +111,26 @@ export async function GET(request: NextRequest) {
     console.log("[Bulk Generate GET] Checking status for task:", taskId);
 
     // Try to get real task results from Trigger.dev
-    try {
-      // For now, we'll use a placeholder approach
-      // In production, you'd use the proper Trigger.dev client methods
-      const realResults = await getTriggerDevTaskResults(taskId);
-      
-      if (realResults) {
-        return NextResponse.json(realResults);
-      }
-    } catch (triggerError) {
-      console.log("[Bulk Generate GET] Trigger.dev error, using fallback:", triggerError);
+    const realResults = await getTriggerDevTaskResults(taskId);
+    
+    if (realResults && realResults.needsClientSideMCP) {
+      // Return the response indicating MCP should be used
+      console.log("[Bulk Generate GET] MCP needed for task:", taskId);
+      return NextResponse.json(realResults);
+    } else if (realResults) {
+      return NextResponse.json(realResults);
+    } else {
+      // Don't return fallback results here - let the frontend handle MCP
+      console.log("[Bulk Generate GET] No results available, letting frontend handle MCP");
+      return NextResponse.json({
+        success: false,
+        needsClientSideMCP: true,
+        taskId,
+        status: "PENDING",
+        progress: 0,
+        results: []
+      });
     }
-
-    // Fallback to mock data for development/testing
-    return NextResponse.json({
-      success: true,
-      status: "COMPLETED",
-      progress: 100,
-      total: 1,
-      completed: 1,
-      failed: 0,
-      results: [
-        {
-          id: `content_${Date.now()}_0`,
-          title: "Unlocking Business Potential with Computer Vision Technology",
-          location: "Rawalpindi",
-          contentType: "blog post",
-          content: `Title: "Unlocking Business Potential with Computer Vision Technology in Rawalpindi"
-
-Introduction:
-
-In an era where digital solutions are essential for business performance and growth, Computer Vision Technology stands as a revolutionary force, driving innovation and digital transformation. Specially, in the thriving tech-hub of Rawalpindi, businesses are increasingly seeking cutting-edge digital solutions to stay ahead of the curve. This blog post delves into how Computer Vision Technology is unlocking unprecedented business potential in Rawalpindi.
-
-Understanding Computer Vision Technology:
-
-Computer Vision Technology, a facet of AI technology, is designed to mimic human vision and cognition. It empowers computers to interpret and understand visual data from the physical world, enabling them to make informed decisions based on that data. From facial recognition to object detection, this innovative technology is transforming operations across a plethora of industries.
-
-The Impact of Computer Vision Technology on Businesses:
-
-Computer Vision Technology is becoming integral to many businesses, driving efficiencies, reducing costs, and unlocking new opportunities. By leveraging Computer Vision Services, businesses in Rawalpindi are not only automating processes but also enhancing customer experiences and improving their bottom line.
-
-1. Enhancing Operational Efficiencies:
-
-Computer Vision Technology can automate tedious and time-consuming tasks, freeing up staff to focus on more strategic initiatives. It can significantly reduce human error and streamline workflows, leading to improved operational efficiencies and productivity.
-
-2. Boosting Customer Experiences:
-
-In the age of digital transformation, customer expectations are skyrocketing. Computer Vision Technology can help businesses meet these expectations by providing personalized experiences, enhancing interactions, and ensuring seamless customer journeys.
-
-3. Mitigating Risks:
-
-Computer Vision can also be a game-changer in risk management. From detecting fraud in financial transactions to identifying potential hazards in manufacturing plants, Computer Vision Technology can help businesses mitigate risks and ensure compliance.
-
-The Future of Business with Computer Vision Services:
-
-As AI technology continues to evolve, so too does the potential of Computer Vision. This technology is pushing the boundaries of innovation, enabling businesses in Rawalpindi to pioneer new tech solutions and drive digital transformation.
-
-Whether it's retail businesses using Computer Vision to improve inventory management, healthcare providers leveraging it for accurate diagnoses, or manufacturing plants utilizing it for quality control, the applications are endless and the benefits substantial.
-
-Conclusion:
-
-In the bustling tech landscape of Rawalpindi, businesses that adopt Computer Vision Technology stand to gain a competitive edge. By harnessing this innovative technology, they can unlock immense business potential, revolutionize their operations, and lead their industries into a new era of digital transformation.
-
-Call to Action:
-
-Ready to unlock the potential of your business with Computer Vision Technology? Our team of tech experts in Rawalpindi is here to help. Contact us today to learn more about our cutting-edge Computer Vision Services and start your digital transformation journey. Your future is just a vision away.`,
-          imageUrl: "https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-zkFBoZl2kx0xaCbHyEwCcDlX.png?st=2026-01-22T08%3A31%3A35Z&se=2026-01-22T10%3A31%3A35Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=35890473-cca8-4a54-8305-05a39e0bc9c3&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T09%3A02%3A50Z&ske=2026-01-23T09%3A02%3A50Z&sks=b&skv=2024-08-04&sig=eRVdAp4mOl092XL8RP%2BgsC5bH1IiSImzuCk5rWWvCRg%3D",
-          wordCount: 3420,
-          keywords: [
-            "Computer Vision Technology",
-            "Business Potential",
-            "Digital Solutions",
-            "AI Technology",
-            "Innovation",
-            "Digital Transformation",
-            "Computer Vision Services",
-            "Tech Solutions"
-          ],
-          status: "completed"
-        }
-      ]
-    });
   } catch (error) {
     console.error("[Bulk Generate GET] Error:", error);
     return NextResponse.json(
@@ -204,78 +143,172 @@ Ready to unlock the potential of your business with Computer Vision Technology? 
 // Helper function to get Trigger.dev task results
 async function getTriggerDevTaskResults(taskId: string) {
   try {
-    console.log("[Trigger.dev] Getting task results for:", taskId);
+    console.log("[Trigger.dev] Getting run results for:", taskId);
     
-    // Return the real data from the LATEST completed task (Peshawar content)
+    // Use Trigger.dev SDK to retrieve the run
+    const { runs } = await import("@trigger.dev/sdk/v3");
+    const run = await runs.retrieve(taskId);
+    
+    console.log("[Trigger.dev] Retrieved run:", {
+      id: run.id,
+      status: run.status,
+      isCompleted: run.status === "COMPLETED"
+    });
+    
+    // If the run is completed, return the actual results
+    if (run.status === "COMPLETED" && run.output) {
+      return {
+        success: true,
+        status: "COMPLETED",
+        progress: 100,
+        total: run.output.results?.length || 1,
+        completed: run.output.results?.length || 1,
+        failed: 0,
+        results: run.output.results || [],
+        summary: run.output.summary || {
+          total: run.output.results?.length || 1,
+          completed: run.output.results?.length || 1,
+          failed: 0
+        }
+      };
+    } else if (run.status === "FAILED" || run.status === "CRASHED") {
+      return {
+        success: false,
+        status: "FAILED",
+        error: run.error || "Task execution failed",
+        progress: 0,
+        results: []
+      };
+    } else {
+      // Task is still running
+      return {
+        success: false,
+        needsClientSideMCP: false,
+        taskId,
+        status: run.status,
+        progress: run.status === "EXECUTING" ? 50 : 0,
+        results: []
+      };
+    }
+    
+  } catch (error) {
+    console.error("[Trigger.dev] Failed to get run results:", error);
+    // If we can't get results, indicate that client-side MCP should be used
     return {
-      success: true,
-      status: "COMPLETED",
-      progress: 100,
-      total: 1,
-      completed: 1,
-      failed: 0,
-      results: [
-        {
-          id: "content_1769114164269_0",
-          title: "Unleashing Business Growth with AI & Data Science",
-          location: "Peshawar",
-          contentType: "blog post",
-          content: `Title: Unleashing Business Growth in Peshawar with AI & Data Science
+      success: false,
+      needsClientSideMCP: true,
+      taskId
+    };
+  }
+}
+
+// Fallback function for when real results aren't available
+function getFallbackResults() {
+  return {
+    success: true,
+    status: "COMPLETED",
+    progress: 100,
+    total: 1,
+    completed: 1,
+    failed: 0,
+    results: [
+      {
+        id: `content_${Date.now()}_0`,
+        title: "Advanced Business Automation Solutions for Digital Transformation",
+        location: "Lahore",
+        contentType: "blog post",
+        content: `Title: Advanced Business Automation Solutions for Digital Transformation in Lahore
 
 Introduction:
+In the heart of Pakistan's technological revolution, Lahore businesses are embracing advanced automation solutions to drive digital transformation. The convergence of artificial intelligence, machine learning, and robotic process automation is creating unprecedented opportunities for businesses to optimize operations and achieve sustainable growth.
 
-Unleashing the potential of Artificial Intelligence (AI) and Data Science can be a game-changer for businesses in Peshawar aiming to achieve significant growth and carry out a successful digital transformation. DataTech Consultants, a leading provider of AI and data science solutions, is here to guide you through this cutting-edge technology landscape. We provide an array of services, including machine learning, computer vision, and business automation, to help your organization navigate the digital age with ease and sophistication.
+The Automation Revolution:
+Business automation has evolved from simple task automation to intelligent, AI-driven systems that can learn, adapt, and make decisions. This transformation is enabling Lahore businesses to compete on a global scale while maintaining operational excellence.
 
-The Power of AI and Data Science:
+Key Automation Technologies:
 
-AI and Data Science have become indispensable tools in the modern business world. They offer unprecedented capabilities to analyze and leverage vast amounts of data, enabling businesses to make informed decisions, optimize operations, and predict future trends. This potent combination can be the stepping stone for businesses in Peshawar to unlock unprecedented growth and innovation. 
+1. Artificial Intelligence & Machine Learning:
+AI-powered systems can analyze vast amounts of data, predict trends, and automate complex decision-making processes. Machine learning algorithms continuously improve performance based on historical data and user interactions.
 
-Leveraging AI for Business Growth:
+2. Robotic Process Automation (RPA):
+RPA bots handle repetitive, rule-based tasks with precision and speed, freeing human workers to focus on strategic initiatives that require creativity and critical thinking.
 
-AI is no longer a futuristic concept, but a present-day reality that businesses can harness for growth. AI can automate routine tasks, thereby increasing productivity and allowing your workforce to focus on strategic initiatives. It can also enhance customer service through chatbots and predictive analytics, leading to improved customer satisfaction and retention. 
+3. Intelligent Document Processing:
+Advanced OCR and NLP technologies automatically extract, classify, and process documents, reducing manual data entry by up to 95%.
 
-In Peshawar, AI can be a powerful tool to drive business growth across various sectors. From healthcare to retail, manufacturing to finance, AI can transform the way businesses operate, leading to increased efficiency and profitability.
+4. Workflow Automation:
+Sophisticated workflow engines orchestrate complex business processes across multiple departments and systems, ensuring seamless operations and real-time visibility.
 
-Harnessing Data Science for Digital Transformation:
+Benefits for Lahore Businesses:
 
-Data Science is the fuel for digital transformation. It enables businesses to extract valuable insights from their data, helping them understand their customers better, streamline their operations, and make data-driven decisions. 
+Operational Excellence:
+Automation reduces errors, improves consistency, and ensures compliance with industry standards. Businesses report 60-80% reduction in processing times for automated workflows.
 
-DataTech Consultants provide comprehensive data science services to businesses in Peshawar, helping them leverage their data for digital transformation. We use advanced techniques like machine learning and computer vision to extract, process, and analyze data, providing businesses with actionable insights to drive growth.
+Cost Optimization:
+While initial investment varies, businesses typically achieve 30-50% reduction in operational costs within the first year of automation implementation.
 
-Boosting Business Automation with AI and Data Science:
+Scalability:
+Automated systems can handle increased workload without proportional increases in resources, enabling businesses to scale operations efficiently.
 
-In an age where time is money, business automation has become a necessity. AI and data science can automate various business processes, from customer service to inventory management, leading to substantial cost savings and increased efficiency.
+Customer Experience:
+Automation enables 24/7 service availability, faster response times, and personalized interactions that enhance customer satisfaction.
 
-DataTech Consultants specialize in business automation services, helping businesses in Peshawar leverage AI and data science to automate their processes and boost their bottom line.
+Implementation Strategy:
+
+Phase 1: Assessment and Planning
+- Identify automation opportunities
+- Calculate ROI and prioritize initiatives
+- Develop comprehensive implementation roadmap
+
+Phase 2: Technology Selection
+- Evaluate automation platforms
+- Choose appropriate tools and technologies
+- Ensure integration capabilities with existing systems
+
+Phase 3: Implementation and Testing
+- Deploy automation solutions incrementally
+- Conduct thorough testing and validation
+- Train staff on new processes and tools
+
+Phase 4: Optimization and Scaling
+- Monitor performance and gather feedback
+- Refine processes and expand automation scope
+- Continuously improve based on analytics and insights
+
+Success Metrics:
+- Processing time reduction
+- Error rate improvement
+- Cost savings achieved
+- Customer satisfaction scores
+- Employee productivity gains
+
+Future Trends:
+The future of business automation in Lahore includes:
+- Hyperautomation initiatives
+- AI-driven decision automation
+- Integration with IoT devices
+- Cloud-native automation platforms
+- Low-code/no-code automation tools
 
 Conclusion:
-
-In the thriving business landscape of Peshawar, AI and Data Science have the potential to be game-changers. By leveraging these technologies, businesses can unlock new avenues of growth, achieve digital transformation, and stay ahead in the competitive market.
-
-DataTech Consultants are here to guide you on this journey, providing cutting-edge AI and data science solutions tailored to your business needs. We believe in delivering innovative, technically sophisticated solutions that drive business growth and digital transformation.
-
-Are you ready to unleash the potential of AI and Data Science for your business? Contact us today to learn how we can help you navigate this digital age with confidence and sophistication.
+Business automation is no longer optional for Lahore businesses seeking competitive advantage. By embracing advanced automation technologies, organizations can achieve operational excellence, drive innovation, and position themselves for long-term success in the digital economy.
 
 Call to Action:
-
-"Unleash the power of AI and Data Science in your business with DataTech Consultants. Contact us today and start your journey towards business growth and digital transformation in Peshawar!"`,
-          imageUrl: "https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-NVSXNmgUloOX7UaB9v8VF5j7.png?st=2026-01-22T19%3A35%3A58Z&se=2026-01-22T21%3A35%3A58Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=7daae675-7b42-4e2e-ab4c-8d8419a28d99&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T16%3A26%3A06Z&ske=2026-01-23T16%3A26%3A06Z&sks=b&skv=2024-08-04&sig=ofR9KcEp22npBhqHByigOM1PiBNPOUej8%2BhMokgQG10%3D",
-          wordCount: 3733,
-          keywords: [
-            "AI",
-            "Data Science",
-            "Business Growth",
-            "Digital Transformation",
-            "Machine Learning",
-            "Computer Vision",
-            "Business Automation"
-          ],
-          status: "completed"
-        }
-      ]
-    };
-  } catch (error) {
-    console.error("Failed to get Trigger.dev task results:", error);
-    return null;
-  }
+Transform your business with cutting-edge automation solutions. Contact our team today for a comprehensive automation assessment and discover how we can help you achieve digital transformation excellence.`,
+        imageUrl: "https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-business-automation-lahore.png?st=2026-01-23T02%3A30%3A00Z&se=2026-01-23T04%3A30%3A00Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=77e5a8ec-6bd1-4477-8afc-16703a64f029&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-23T02%3A30%3A00Z&ske=2026-01-24T02%3A30%3A00Z&sks=b&skv=2024-08-04&sig=LahoreAutomation2026%3D",
+        wordCount: 3850,
+        keywords: [
+          "business automation solutions",
+          "digital transformation",
+          "AI automation",
+          "process optimization",
+          "operational excellence",
+          "workflow automation",
+          "intelligent systems",
+          "scalable operations"
+        ],
+        status: "completed"
+      }
+    ]
+  };
 }
