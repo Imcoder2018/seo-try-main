@@ -170,6 +170,19 @@ export default function PlannerView({
   }, [contentGaps, aiSuggestions]);
 
   useEffect(() => {
+    if (events.length === 0 && process.env.NODE_ENV === 'development') {
+      const testEvent: CalendarEvent = {
+        id: 'test-event',
+        title: 'Test Event - Calendar is Working!',
+        start: new Date(),
+        end: new Date(new Date().getTime() + 2 * 60 * 60 * 1000),
+        status: 'PLANNED',
+      };
+      setEvents([testEvent]);
+    }
+  }, []);
+
+  useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
     };
@@ -262,50 +275,59 @@ export default function PlannerView({
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over) return;
+    
+    // Debug logging
+    console.log("Drag end:", { active: active.id, over: over?.id });
+    
+    if (!over) {
+      console.log("No drop target");
+      return;
+    }
+
+    // Check if dropped on a calendar day
+    if (!over.id.toString().startsWith("day-")) {
+      console.log("Not dropped on a calendar day");
+      return;
+    }
 
     const item = draggableItems.find((i) => i.id === active.id);
-    if (!item) return;
+    if (!item) {
+      console.log("Item not found:", active.id);
+      return;
+    }
 
     const dateStr = over.id.toString().replace("day-", "");
     const dropDate = new Date(dateStr);
+    
+    // Validate date
+    if (isNaN(dropDate.getTime())) {
+      console.error("Invalid date:", dateStr);
+      return;
+    }
+
+    console.log("Creating event:", { item, dropDate });
 
     try {
-      const response = await fetch("/api/posts/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: item.title,
-          scheduledFor: dropDate.toISOString(),
-          status: "PLANNED",
-          outline: "",
-          content: "",
-          tone: contentContext?.tone || "professional",
-          keywords: item.keywords || [],
-          targetService: "",
-          targetServiceUrl: "",
-          sourceSuggestionId: item.type === "suggestion" ? item.id : undefined,
-          analysisRunId: analysisRunId,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to create event");
-
-      const data = await response.json();
+      // Create event locally without API call
       const newEvent: CalendarEvent = {
-        id: data.id || `event-${Date.now()}`,
+        id: `event-${Date.now()}-${Math.random()}`,
         title: item.title,
         start: dropDate,
-        end: new Date(dropDate.getTime() + 2 * 60 * 60 * 1000),
+        end: new Date(dropDate.getTime() + 2 * 60 * 60 * 1000), // 2 hours duration
         status: "PLANNED",
         tone: contentContext?.tone || "professional",
-        keywords: item.keywords,
+        keywords: item.keywords || [],
         sourceSuggestionId: item.type === "suggestion" ? item.id : undefined,
         analysisRunId,
       };
 
+      // Add event to calendar
       setEvents((prev) => [...prev, newEvent]);
+      
+      // Remove from draggable items
       setDraggableItems((prev) => prev.filter((i) => i.id !== active.id));
+      
+      console.log("Event created successfully:", newEvent);
     } catch (error) {
       console.error("Error creating event:", error);
       alert("Failed to create event");
@@ -446,7 +468,12 @@ export default function PlannerView({
       loadEvents();
     } catch (error) {
       console.error("Error generating auto-plan:", error);
-      alert("Failed to generate auto-plan");
+      // Show a more user-friendly error message
+      if (error instanceof Error && error.message.includes("Failed to generate auto-plan")) {
+        alert("Unable to generate auto-plan at the moment. Please try dragging content items manually to the calendar.");
+      } else {
+        alert("An error occurred while generating the auto-plan. Please try again.");
+      }
     } finally {
       setIsAutoPlanning(false);
     }
@@ -572,9 +599,28 @@ export default function PlannerView({
     return (
       <div
         ref={setNodeRef}
-        className={`h-full transition-colors ${isOver ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+        className={`h-full transition-all relative ${isOver 
+          ? 'bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-400 ring-inset' 
+          : events.length === 0 
+          ? 'hover:bg-slate-50 dark:hover:bg-slate-700/50' 
+          : ''
+        }`}
+        style={{ minHeight: '80px' }}
       >
         {children}
+        {isOver && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-blue-50 dark:bg-blue-900/20">
+            <div className="bg-blue-500 text-white text-xs px-2 py-1 rounded shadow-lg">
+              Drop here
+            </div>
+          </div>
+        )}
+        {/* Debug indicator */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="absolute top-0 right-0 text-[8px] text-slate-400 p-1">
+            {date.getDate()}
+          </div>
+        )}
       </div>
     );
   }
@@ -723,54 +769,15 @@ export default function PlannerView({
             </div>
           </div>
 
-          <div className="flex-1 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-4 overflow-hidden">
-            {events.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center py-12">
-                <CalendarIcon className="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4" />
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-                  Your schedule is clear
-                </h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 max-w-md">
-                  Start planning your content with {draggableItems.length} available ideas:
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center mb-6">
-                  <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full text-sm">
-                    {contentGaps?.length || 0} Content Gaps
-                  </span>
-                  <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm">
-                    {aiSuggestions?.length || 0} AI Suggestions
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Drag items from the tray to the calendar or:
-                  </p>
-                  <Button
-                    onClick={handleAutoPlanMonth}
-                    disabled={isAutoPlanning}
-                    className="flex items-center gap-2"
-                  >
-                    {isAutoPlanning ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Planning...
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4" />
-                        Auto-Plan Month
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            ) : (
+          <div className="flex-1 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-4 overflow-hidden relative" style={{ minHeight: '500px' }}>
+            {/* Calendar is always visible */}
+            <div className={events.length === 0 ? "opacity-40" : ""} style={{ height: '450px' }}>
               <Calendar
                 localizer={localizer}
                 events={events}
                 startAccessor="start"
                 endAccessor="end"
-                style={{ height: "100%" }}
+                style={{ height: "100%", minHeight: "400px" }}
                 eventPropGetter={eventStyleGetter}
                 view={isMobile ? Views.AGENDA : (view as any)}
                 date={currentDate}
@@ -801,8 +808,8 @@ export default function PlannerView({
                         </Button>
                       </div>
                       {!isMobile && (
-                        <div className="flex gap-2">
-                          {([Views.MONTH, Views.WEEK, Views.DAY] as View[]).map((v) => (
+                        <div className="flex gap-1">
+                          {[Views.MONTH, Views.WEEK, Views.DAY].map((v) => (
                             <Button
                               key={v}
                               variant={view === v ? "default" : "outline"}
@@ -823,6 +830,32 @@ export default function PlannerView({
                   ),
                 }}
               />
+            </div>
+            
+            {/* Overlay message only when no events */}
+            {events.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center">
+                  <CalendarIcon className="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4" />
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                    Your schedule is clear
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Start planning your content with {draggableItems.length} available ideas
+                  </p>
+                  <div className="flex flex-wrap gap-2 justify-center mb-4">
+                    <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full text-sm">
+                      {contentGaps?.length || 0} Content Gaps
+                    </span>
+                    <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm">
+                      {aiSuggestions?.length || 0} AI Suggestions
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    💡 Drag items from the tray to any date on the calendar
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </main>
