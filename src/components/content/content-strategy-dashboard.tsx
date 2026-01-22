@@ -47,6 +47,18 @@ interface ContentContext {
   contentGaps: string[];
   audiencePersona: string;
   tone: string;
+  overallWritingStyle?: {
+    dominantTone: string;
+    averageFormality: string;
+    commonPerspective: string;
+    brandVoiceSummary: string;
+  };
+  contentPatterns?: {
+    preferredContentTypes: string[];
+    averagePostLength: string;
+    commonStructures: string[];
+    ctaPatterns: string[];
+  };
 }
 
 interface AISuggestion {
@@ -55,6 +67,10 @@ interface AISuggestion {
   reason: string;
   targetKeywords: string[];
   relatedServiceUrl?: string;
+  contentOutline?: string[];
+  suggestedTone?: string;
+  targetLength?: number;
+  keyMessagePoints?: string[];
 }
 
 interface AnalysisOutput {
@@ -68,8 +84,31 @@ interface AnalysisOutput {
     wordCount: number;
     mainTopic?: string;
     summary?: string;
-    keywords?: string[];
     content?: string;
+    keywords?: string[];
+    writingStyle?: {
+      tone: string;
+      perspective: "First Person" | "Second Person" | "Third Person";
+      formality: "Formal" | "Informal" | "Semi-Formal";
+      sentenceStructure: string;
+      averageSentenceLength: number;
+      readabilityLevel: string;
+      voice: "Active" | "Passive" | "Mixed";
+    };
+    contentStructure?: {
+      hasHeadings: boolean;
+      hasSubheadings: boolean;
+      usesLists: boolean;
+      hasCallToAction: boolean;
+      paragraphCount: number;
+      averageParagraphLength: number;
+    };
+    brandVoice?: {
+      keyPhrases: string[];
+      terminology: string[];
+      valuePropositions: string[];
+      differentiators: string[];
+    };
   }>;
   extractionData?: {
     baseUrl: string;
@@ -715,6 +754,80 @@ export default function ContentStrategyDashboard({
                 </div>
               )}
 
+              {/* Writing Style & Content Patterns */}
+              {contentContext.overallWritingStyle && contentContext.contentPatterns && (
+                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
+                    Writing Style & Content Patterns
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Writing Style */}
+                    <div>
+                      <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">Overall Writing Style</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-slate-600 dark:text-slate-400">Dominant Tone</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.overallWritingStyle.dominantTone}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-slate-600 dark:text-slate-400">Formality Level</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.overallWritingStyle.averageFormality}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-slate-600 dark:text-slate-400">Common Perspective</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.overallWritingStyle.commonPerspective}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Brand Voice Summary</p>
+                        <p className="text-sm text-slate-700 dark:text-slate-300">{contentContext.overallWritingStyle.brandVoiceSummary}</p>
+                      </div>
+                    </div>
+
+                    {/* Content Patterns */}
+                    <div>
+                      <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">Content Patterns</h4>
+                      <div className="space-y-2">
+                        <div>
+                          <span className="text-sm text-slate-600 dark:text-slate-400">Preferred Content Types</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {contentContext.contentPatterns.preferredContentTypes.map((type, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300">
+                                {type}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-slate-600 dark:text-slate-400">Average Post Length</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.contentPatterns.averagePostLength}</span>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600 dark:text-slate-400">Common Structures</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {contentContext.contentPatterns.commonStructures.map((structure, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
+                                {structure}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600 dark:text-slate-400">CTA Patterns</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {contentContext.contentPatterns.ctaPatterns.map((cta, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 rounded text-xs text-purple-700 dark:text-purple-300">
+                                {cta}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Quick Actions */}
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white">
                 <div className="flex items-start justify-between">
@@ -1352,6 +1465,123 @@ export default function ContentStrategyDashboard({
                           </div>
                         )}
 
+                        {/* Writing Style Analysis */}
+                        {page.writingStyle && (
+                          <div className="mb-4">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Writing Style Analysis</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Tone</p>
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{page.writingStyle.tone}</p>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Perspective</p>
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{page.writingStyle.perspective}</p>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Formality</p>
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{page.writingStyle.formality}</p>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Sentence Structure</p>
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{page.writingStyle.sentenceStructure}</p>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Avg Sentence Length</p>
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{page.writingStyle.averageSentenceLength} words</p>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Readability</p>
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{page.writingStyle.readabilityLevel}</p>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Voice</p>
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{page.writingStyle.voice}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Content Structure */}
+                        {page.contentStructure && (
+                          <div className="mb-4">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Content Structure</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {page.contentStructure.hasHeadings && (
+                                <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
+                                  Has Headings
+                                </span>
+                              )}
+                              {page.contentStructure.hasSubheadings && (
+                                <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
+                                  Has Subheadings
+                                </span>
+                              )}
+                              {page.contentStructure.usesLists && (
+                                <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
+                                  Uses Lists
+                                </span>
+                              )}
+                              {page.contentStructure.hasCallToAction && (
+                                <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300">
+                                  Has CTA
+                                </span>
+                              )}
+                              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-xs text-slate-700 dark:text-slate-300">
+                                {page.contentStructure.paragraphCount} paragraphs
+                              </span>
+                              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-xs text-slate-700 dark:text-slate-300">
+                                Avg: {page.contentStructure.averageParagraphLength} words
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Brand Voice */}
+                        {page.brandVoice && (
+                          <div className="mb-4">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Brand Voice Elements</h4>
+                            <div className="space-y-2">
+                              {page.brandVoice.keyPhrases.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Key Phrases</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {page.brandVoice.keyPhrases.slice(0, 5).map((phrase, idx) => (
+                                      <span key={idx} className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 rounded text-xs text-purple-700 dark:text-purple-300">
+                                        {phrase}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {page.brandVoice.terminology.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Technical Terms</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {page.brandVoice.terminology.slice(0, 5).map((term, idx) => (
+                                      <span key={idx} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300">
+                                        {term}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {page.brandVoice.valuePropositions.length > 0 && (
+                                <div>
+                                  <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Value Propositions</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {page.brandVoice.valuePropositions.slice(0, 3).map((value, idx) => (
+                                      <span key={idx} className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 rounded text-xs text-amber-700 dark:text-amber-300">
+                                        {value}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Keywords */}
                         {page.keywords && page.keywords.length > 0 && (
                           <div>
@@ -1514,6 +1744,56 @@ export default function ContentStrategyDashboard({
                           {keyword}
                         </span>
                       ))}
+                    </div>
+
+                    {/* Additional Details */}
+                    <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                      <div className="grid grid-cols-2 gap-4 mb-3">
+                        {suggestion.suggestedTone && (
+                          <div>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">Suggested Tone</span>
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{suggestion.suggestedTone}</p>
+                          </div>
+                        )}
+                        {suggestion.targetLength && (
+                          <div>
+                            <span className="text-xs text-slate-600 dark:text-slate-400">Target Length</span>
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{suggestion.targetLength} words</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {suggestion.contentOutline && suggestion.contentOutline.length > 0 && (
+                        <div className="mb-3">
+                          <span className="text-xs text-slate-600 dark:text-slate-400">Content Outline</span>
+                          <ul className="mt-1 space-y-1">
+                            {suggestion.contentOutline.slice(0, 3).map((item, idx) => (
+                              <li key={idx} className="text-sm text-slate-700 dark:text-slate-300 flex items-start gap-2">
+                                <span className="text-blue-600 dark:text-blue-400 mt-0.5">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                            {suggestion.contentOutline.length > 3 && (
+                              <li className="text-xs text-slate-500 dark:text-slate-400 italic">
+                                +{suggestion.contentOutline.length - 3} more sections
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      )}
+
+                      {suggestion.keyMessagePoints && suggestion.keyMessagePoints.length > 0 && (
+                        <div>
+                          <span className="text-xs text-slate-600 dark:text-slate-400">Key Messages</span>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {suggestion.keyMessagePoints.map((point, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 rounded text-xs text-amber-700 dark:text-amber-300">
+                                {point}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="relative">
