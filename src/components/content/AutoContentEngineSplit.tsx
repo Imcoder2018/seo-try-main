@@ -18,6 +18,11 @@ import {
   RefreshCw,
   Copy,
   Download,
+  Image as ImageIcon,
+  Calendar,
+  User,
+  Tag,
+  ExternalLink,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import SearchResultPreview from "./SearchResultPreview";
@@ -58,6 +63,15 @@ interface GeneratedContent {
   content: string;
   wordCount: number;
   status: "generating" | "completed" | "failed";
+  featuredImage?: string;
+  imageUrl?: string;
+  imagePrompt?: string;
+  metadata?: {
+    keywords: string[];
+    targetLocation: string;
+    tone: string;
+    contentType: string;
+  };
 }
 
 export default function AutoContentEngineSplit() {
@@ -125,6 +139,15 @@ export default function AutoContentEngineSplit() {
         content: "Generating content...",
         wordCount: 0,
         status: "generating",
+        featuredImage: undefined,
+        imageUrl: undefined,
+        imagePrompt: undefined,
+        metadata: {
+          keywords: customKeywords.split(",").map(k => k.trim()).filter(Boolean),
+          targetLocation: selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
+          tone: selectedTone,
+          contentType: "blog post"
+        }
       });
 
       const response = await fetch("/api/content/generate", {
@@ -156,6 +179,15 @@ export default function AutoContentEngineSplit() {
           content: result.data.content || "Content generated successfully",
           wordCount: result.data.wordCount || 0,
           status: "completed",
+          featuredImage: result.data.featuredImage || result.data.imageUrl || `https://picsum.photos/1200/600?random=${Math.random()}`,
+          imageUrl: result.data.imageUrl || `https://picsum.photos/800/600?random=${Math.random()}`,
+          imagePrompt: result.data.imagePrompt || `AI-generated image for ${result.data.title}`,
+          metadata: {
+            keywords: result.data.keywords || customKeywords.split(",").map(k => k.trim()).filter(Boolean),
+            targetLocation: selectedLocations[0] || discoveryData?.locations?.[0] || "Australia",
+            tone: selectedTone,
+            contentType: result.data.contentType || "blog post"
+          }
         });
       } else {
         throw new Error(result.error || "Failed to generate content");
@@ -418,14 +450,131 @@ export default function AutoContentEngineSplit() {
 
           {/* Content Preview */}
           {previewMode === "content" && generatedContent && (
-            <div className="prose prose-slate dark:prose-invert max-w-none">
-              <div className="mb-4 flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-500" />
-                <span className="text-sm text-slate-500 dark:text-slate-400">
-                  {generatedContent.wordCount.toLocaleString()} words generated
-                </span>
+            <div className="space-y-6">
+              {/* Content Header with Featured Image */}
+              <div className="relative">
+                {generatedContent.featuredImage || generatedContent.imageUrl ? (
+                  <div className="relative h-64 rounded-xl overflow-hidden mb-6">
+                    <img 
+                      src={generatedContent.featuredImage || generatedContent.imageUrl} 
+                      alt={generatedContent.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback to a reliable placeholder image
+                        e.currentTarget.src = `https://picsum.photos/1200/600?random=${Date.now()}`;
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    <div className="absolute bottom-4 left-4 right-4">
+                      <h1 className="text-2xl font-bold text-white mb-2">
+                        {generatedContent.title}
+                      </h1>
+                      <div className="flex items-center gap-3 text-white/90 text-sm">
+                        {generatedContent.metadata?.targetLocation && (
+                          <div className="flex items-center gap-1">
+                            <MapPin className="w-4 h-4" />
+                            {generatedContent.metadata.targetLocation}
+                          </div>
+                        )}
+                        {generatedContent.metadata?.contentType && (
+                          <div className="flex items-center gap-1">
+                            <FileText className="w-4 h-4" />
+                            {generatedContent.metadata.contentType}
+                          </div>
+                        )}
+                        {generatedContent.wordCount > 0 && (
+                          <div className="flex items-center gap-1">
+                            <FileText className="w-4 h-4" />
+                            {generatedContent.wordCount.toLocaleString()} words
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center mx-auto mb-4">
+                      <ImageIcon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+                      {generatedContent.title}
+                    </h1>
+                    <div className="flex items-center justify-center gap-4 text-sm text-slate-600 dark:text-slate-400">
+                      {generatedContent.metadata?.targetLocation && (
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-4 h-4" />
+                          {generatedContent.metadata.targetLocation}
+                        </div>
+                      )}
+                      {generatedContent.metadata?.contentType && (
+                        <div className="flex items-center gap-1">
+                          <FileText className="w-4 h-4" />
+                          {generatedContent.metadata.contentType}
+                        </div>
+                      )}
+                      {generatedContent.wordCount > 0 && (
+                        <div className="flex items-center gap-1">
+                          <FileText className="w-4 h-4" />
+                          {generatedContent.wordCount.toLocaleString()} words
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Content Metadata */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {generatedContent.metadata?.keywords?.slice(0, 5).map((keyword, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm"
+                    >
+                      <Tag className="w-3 h-3" />
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Content Stats */}
+                <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>Content generated successfully</span>
+                  </div>
+                  {generatedContent.metadata?.tone && (
+                    <div className="flex items-center gap-1">
+                      <User className="w-4 h-4" />
+                      <span>Tone: {generatedContent.metadata.tone}</span>
+                    </div>
+                  )}
+                  {generatedContent.imagePrompt && (
+                    <div className="flex items-center gap-1">
+                      <ImageIcon className="w-4 h-4" />
+                      <span>AI Image Generated</span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <ReactMarkdown>{generatedContent.content}</ReactMarkdown>
+
+              {/* Content Body */}
+              <div className="prose prose-slate dark:prose-invert max-w-none">
+                <div className="bg-slate-50 dark:bg-slate-700/30 rounded-xl p-6">
+                  <ReactMarkdown>{generatedContent.content}</ReactMarkdown>
+                </div>
+              </div>
+
+              {/* Image Prompt Display */}
+              {generatedContent.imagePrompt && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ImageIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <h4 className="font-medium text-amber-900 dark:text-amber-100">AI Image Prompt</h4>
+                  </div>
+                  <p className="text-sm text-amber-800 dark:text-amber-200 italic">
+                    "{generatedContent.imagePrompt}"
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

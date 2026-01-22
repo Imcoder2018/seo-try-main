@@ -31,6 +31,7 @@ import {
   Search,
   History,
   ArrowLeft,
+  Sparkles,
 } from "lucide-react";
 
 interface CrawledPage {
@@ -1014,7 +1015,35 @@ export default function ContentStrategyPage() {
       )}
 
       <div className="min-h-screen">
-        <div className="max-w-7xl mx-auto px-4 py-6">{renderContent()}</div>
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          {/* Page Header */}
+          <div className="mb-8 text-center">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-full mb-4">
+              <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                AI-Powered Content Strategy Platform
+              </span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+              {activeView === "analysis" && "Content Strategy Analysis"}
+              {activeView === "dashboard" && "Strategy Dashboard"}
+              {activeView === "production" && "Content Production"}
+              {activeView === "planner" && "Content Planner"}
+              {activeView === "drafts" && "Content Drafts"}
+              {activeView === "calendar" && "Content Calendar"}
+              {activeView === "history" && "Analysis History"}
+              {activeView === "auto-content" && "Auto Content Engine"}
+            </h1>
+            <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+              {analysisOutput 
+                ? "Manage your AI-powered content strategy and generate high-quality content with featured images"
+                : "Transform your website content with AI-powered analysis and intelligent recommendations"
+              }
+            </p>
+          </div>
+
+          {renderContent()}
+        </div>
       </div>
 
       {/* Bridge Flow Modal - Gap to Content Generation */}

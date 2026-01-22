@@ -13,7 +13,9 @@ import {
   Loader2,
   CheckCircle,
   Clock,
-  AlertCircle
+  AlertCircle,
+  FileText,
+  MapPin,
 } from "lucide-react";
 
 const localizer = momentLocalizer(moment);
@@ -25,6 +27,13 @@ interface CalendarEvent {
   end: Date;
   status: string;
   type: string;
+  featuredImage?: string;
+  imageUrl?: string;
+  metadata?: {
+    keywords: string[];
+    targetLocation: string;
+    wordCount: number;
+  };
 }
 
 export default function ContentCalendarPanel() {
@@ -249,8 +258,31 @@ export default function ContentCalendarPanel() {
             toolbar={false}
             components={{
               event: ({ event }: { event: CalendarEvent }) => (
-                <div className="text-xs font-medium text-white p-1 truncate">
-                  {event.title}
+                <div className="relative group">
+                  <div className="flex items-start gap-2">
+                    {event.featuredImage || event.imageUrl ? (
+                      <img 
+                        src={event.featuredImage || event.imageUrl} 
+                        alt={event.title}
+                        className="w-8 h-8 rounded object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-white truncate mb-1">
+                        {event.title}
+                      </p>
+                      {event.metadata?.targetLocation && (
+                        <p className="text-xs text-white/80 truncate flex items-center gap-1">
+                          <MapPin className="w-2 h-2" />
+                          {event.metadata.targetLocation}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ),
             }}

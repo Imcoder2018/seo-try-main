@@ -18,6 +18,10 @@ import {
   Copy,
   MoreVertical,
   Sparkles,
+  Image as ImageIcon,
+  MapPin,
+  Tag,
+  User,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -31,6 +35,16 @@ interface Draft {
   updatedAt: string;
   wordpressSite?: {
     siteUrl: string;
+  };
+  featuredImage?: string;
+  imageUrl?: string;
+  imagePrompt?: string;
+  metadata?: {
+    keywords: string[];
+    targetLocation: string;
+    tone: string;
+    contentType: string;
+    wordCount: number;
   };
 }
 
@@ -211,7 +225,7 @@ export default function DraftsPanel() {
           </button>
         </div>
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filteredDrafts.map((draft) => {
             const statusConfig = getStatusConfig(draft.status);
             return (
@@ -219,30 +233,108 @@ export default function DraftsPanel() {
                 key={draft.id}
                 className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden hover:shadow-lg transition-all group"
               >
+                {/* Featured Image */}
+                {draft.featuredImage || draft.imageUrl ? (
+                  <div className="relative h-48 overflow-hidden">
+                    <img 
+                      src={draft.featuredImage || draft.imageUrl} 
+                      alt={draft.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute top-3 right-3">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.color}`}>
+                        {statusConfig.icon}
+                        {statusConfig.label}
+                      </span>
+                    </div>
+                    {draft.imagePrompt && (
+                      <div className="absolute bottom-3 left-3">
+                        <div className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-1">
+                          <ImageIcon className="w-3 h-3 text-white" />
+                          <span className="text-xs text-white">AI Generated</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="h-48 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center relative">
+                    <div className="w-16 h-16 rounded-xl bg-slate-200 dark:bg-slate-600 flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                    </div>
+                    <div className="absolute top-3 right-3">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.color}`}>
+                        {statusConfig.icon}
+                        {statusConfig.label}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="p-5">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <h3 className="font-semibold text-slate-900 dark:text-slate-100 line-clamp-2 flex-1">
+                  <div className="mb-3">
+                    <h3 className="font-semibold text-slate-900 dark:text-slate-100 line-clamp-2 mb-2">
                       {draft.title}
                     </h3>
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.color}`}>
-                      {statusConfig.icon}
-                      {statusConfig.label}
-                    </span>
+                    
+                    {/* Keywords */}
+                    {draft.metadata?.keywords && draft.metadata.keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {draft.metadata.keywords.slice(0, 3).map((keyword, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs"
+                          >
+                            <Tag className="w-2 h-2" />
+                            {keyword}
+                          </span>
+                        ))}
+                        {draft.metadata.keywords.length > 3 && (
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            +{draft.metadata.keywords.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-3 mb-4">
+                  
+                  <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2 mb-4">
                     {draft.content.replace(/<[^>]*>/g, "").substring(0, 150)}...
                   </p>
-                  <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                  
+                  {/* Metadata */}
+                  <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mb-4">
+                    {draft.metadata?.targetLocation && (
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {draft.metadata.targetLocation}
+                      </div>
+                    )}
+                    {draft.metadata?.wordCount && (
+                      <div className="flex items-center gap-1">
+                        <FileText className="w-3 h-3" />
+                        {draft.metadata.wordCount.toLocaleString()} words
+                      </div>
+                    )}
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
                       {new Date(draft.scheduledFor).toLocaleDateString()}
                     </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                     <div className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
                       {new Date(draft.updatedAt).toLocaleDateString()}
                     </div>
+                    {draft.metadata?.tone && (
+                      <div className="flex items-center gap-1">
+                        <User className="w-3.5 h-3.5" />
+                        {draft.metadata.tone}
+                      </div>
+                    )}
                   </div>
                 </div>
+                
                 <div className="px-5 py-3 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
                   <div className="flex items-center gap-1">
                     <Link
@@ -292,10 +384,10 @@ export default function DraftsPanel() {
           <table className="w-full">
             <thead className="bg-slate-50 dark:bg-slate-700/50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Title</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Content</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Metadata</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Scheduled</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Updated</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -305,19 +397,85 @@ export default function DraftsPanel() {
                 return (
                   <tr key={draft.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                     <td className="px-4 py-4">
-                      <p className="font-medium text-slate-900 dark:text-slate-100 truncate max-w-xs">{draft.title}</p>
+                      <div className="flex items-start gap-3">
+                        {/* Thumbnail */}
+                        <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+                          {draft.featuredImage || draft.imageUrl ? (
+                            <img 
+                              src={draft.featuredImage || draft.imageUrl} 
+                              alt={draft.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center">
+                              <ImageIcon className="w-6 h-6 text-slate-400 dark:text-slate-500" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-900 dark:text-slate-100 truncate mb-1">
+                            {draft.title}
+                          </p>
+                          {/* Keywords */}
+                          {draft.metadata?.keywords && draft.metadata.keywords.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {draft.metadata.keywords.slice(0, 2).map((keyword, index) => (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs"
+                                >
+                                  <Tag className="w-2 h-2" />
+                                  {keyword}
+                                </span>
+                              ))}
+                              {draft.metadata.keywords.length > 2 && (
+                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                  +{draft.metadata.keywords.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.color}`}>
                         {statusConfig.icon}
                         {statusConfig.label}
                       </span>
+                      {draft.imagePrompt && (
+                        <div className="mt-1">
+                          <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <ImageIcon className="w-3 h-3" />
+                            AI Image
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="space-y-1">
+                        {draft.metadata?.targetLocation && (
+                          <div className="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-400">
+                            <MapPin className="w-3 h-3" />
+                            {draft.metadata.targetLocation}
+                          </div>
+                        )}
+                        {draft.metadata?.wordCount && (
+                          <div className="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-400">
+                            <FileText className="w-3 h-3" />
+                            {draft.metadata.wordCount.toLocaleString()} words
+                          </div>
+                        )}
+                        {draft.metadata?.tone && (
+                          <div className="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-400">
+                            <User className="w-3 h-3" />
+                            {draft.metadata.tone}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-4 text-sm text-slate-600 dark:text-slate-400">
                       {new Date(draft.scheduledFor).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-4 text-sm text-slate-600 dark:text-slate-400">
-                      {new Date(draft.updatedAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center justify-end gap-1">

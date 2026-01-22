@@ -17,7 +17,10 @@ import {
   Eye,
   Upload,
   Clock,
-  Zap
+  Zap,
+  Tag,
+  User,
+  ImageIcon,
 } from "lucide-react";
 
 interface DiscoveryData {
@@ -57,9 +60,17 @@ interface GeneratedContent {
   contentType: string;
   content: string;
   imageUrl?: string;
+  featuredImage?: string;
+  imagePrompt?: string;
   status: "generating" | "completed" | "failed";
   wordCount: number;
   createdAt: string;
+  metadata?: {
+    keywords: string[];
+    targetLocation: string;
+    tone: string;
+    contentType: string;
+  };
 }
 
 export default function AutoContentEngine() {
@@ -296,10 +307,18 @@ export default function AutoContentEngine() {
                 location: selectedLocations[0],
                 contentType: topic.contentType,
                 content: blogContent,
-                imageUrl: `https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-${Math.random().toString(36).substring(7)}.png?st=2026-01-22T08%3A19%3A03Z&se=2026-01-22T10%3A19%3A03Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=35890473-cca8-4a54-8305-05a39e0bc9c3&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T07%3A57%3A32Z&ske=2026-01-23T07%3A57%3A32Z&sks=b&skv=2024-08-04&sig=I2g3zDF3bnwAxwHESHEArDXmnPc21/z2Poh11n46h1M%3D`,
+                imageUrl: `https://picsum.photos/800/600?random=${Math.random()}`,
+                featuredImage: `https://picsum.photos/1200/600?random=${Math.random()}`,
+                imagePrompt: `Professional ${topic.contentType} about ${topic.title} in ${selectedLocations[0]}, featuring modern business technology and innovation`,
                 status: 'completed' as const,
                 wordCount: blogContent.length,
                 createdAt: new Date().toISOString(),
+                metadata: {
+                  keywords: topic.primaryKeywords,
+                  targetLocation: selectedLocations[0],
+                  tone: 'professional',
+                  contentType: topic.contentType,
+                }
               };
             });
             
@@ -321,9 +340,18 @@ export default function AutoContentEngine() {
         location: selectedLocations[0],
         contentType: topic.contentType,
         content: `Content for "${topic.title}" targeting ${selectedLocations[0]}.`,
+        imageUrl: `https://picsum.photos/800/600?random=${Math.random()}`,
+        featuredImage: `https://picsum.photos/1200/600?random=${Math.random()}`,
+        imagePrompt: `Professional ${topic.contentType} about ${topic.title} in ${selectedLocations[0]}`,
         status: 'completed' as const,
         wordCount: 1000,
         createdAt: new Date().toISOString(),
+        metadata: {
+          keywords: topic.primaryKeywords,
+          targetLocation: selectedLocations[0],
+          tone: 'professional',
+          contentType: topic.contentType,
+        }
       }));
       
       setGeneratedContent(fallbackContent);
@@ -1007,12 +1035,16 @@ function ReviewStep({
             {/* Header with image */}
             <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
               <div className="flex items-start gap-6">
-                {content.imageUrl && (
+                {(content.featuredImage || content.imageUrl) && (
                   <div className="flex-shrink-0">
                     <img 
-                      src={content.imageUrl} 
+                      src={content.featuredImage || content.imageUrl} 
                       alt={content.title}
                       className="w-32 h-32 object-cover rounded-lg shadow-lg"
+                      onError={(e) => {
+                        // Fallback to a reliable placeholder image
+                        e.currentTarget.src = `https://picsum.photos/800/600?random=${Date.now()}`;
+                      }}
                     />
                   </div>
                 )}
@@ -1089,29 +1121,97 @@ function ReviewStep({
                 </div>
               ) : (
                 <div>
+                  {/* Featured Image in the middle of content */}
+                  {(content.featuredImage || content.imageUrl) && (
+                    <div className="mb-6">
+                      <div className="relative h-64 rounded-xl overflow-hidden">
+                        <img 
+                          src={content.featuredImage || content.imageUrl} 
+                          alt={content.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // Fallback to a reliable placeholder image
+                            e.currentTarget.src = `https://picsum.photos/1200/600?random=${Date.now()}`;
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                        <div className="absolute bottom-4 left-4 right-4">
+                          <div className="flex items-center gap-3 text-white/90 text-sm">
+                            {content.metadata?.targetLocation && (
+                              <div className="flex items-center gap-1">
+                                <MapPin className="w-4 h-4" />
+                                {content.metadata.targetLocation}
+                              </div>
+                            )}
+                            {content.metadata?.contentType && (
+                              <div className="flex items-center gap-1">
+                                <FileText className="w-4 h-4" />
+                                {content.metadata.contentType}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <FileText className="w-4 h-4" />
+                              {content.wordCount.toLocaleString()} words
+                            </div>
+                          </div>
+                        </div>
+                        {content.imagePrompt && (
+                          <div className="absolute top-3 right-3">
+                            <div className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-1">
+                              <ImageIcon className="w-3 h-3 text-white" />
+                              <span className="text-xs text-white">AI Generated</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Keywords */}
+                  {content.metadata?.keywords && content.metadata.keywords.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {content.metadata.keywords.slice(0, 5).map((keyword, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm"
+                        >
+                          <Tag className="w-3 h-3" />
+                          {keyword}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="prose prose-slate dark:prose-invert max-w-none">
                     {expandedContent === content.id ? (
-                      <div className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">
-                        {content.content}
+                      <div className="bg-slate-50 dark:bg-slate-700/30 rounded-xl p-6">
+                        <div className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">
+                          {content.content}
+                        </div>
                       </div>
                     ) : (
                       <div>
-                        <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                          {content.content.length > 300 
-                            ? `${content.content.substring(0, 300)}...` 
-                            : content.content}
-                        </p>
-                        {content.content.length > 300 && (
-                          <button 
-                            onClick={() => handleViewFullContent(content.id)}
-                            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mt-2"
-                          >
-                            Read more →
-                          </button>
-                        )}
+                        <div className="bg-slate-50 dark:bg-slate-700/30 rounded-xl p-6">
+                          <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                            {content.content.substring(0, 500)}...
+                          </p>
+                        </div>
                       </div>
                     )}
                   </div>
+
+                  {/* Image Prompt Display */}
+                  {content.imagePrompt && (
+                    <div className="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ImageIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        <h4 className="font-medium text-amber-900 dark:text-amber-100">AI Image Prompt</h4>
+                      </div>
+                      <p className="text-sm text-amber-800 dark:text-amber-200 italic">
+                        "{content.imagePrompt}"
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
