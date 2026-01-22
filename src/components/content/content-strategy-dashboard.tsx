@@ -222,7 +222,7 @@ export default function ContentStrategyDashboard({
           userKeywords: customKeywords,
           promotedService: serviceToPromote,
           serviceContext: serviceContext,
-          tone: contentContext.tone
+          tone: contentContext?.tone
         }),
       });
 
@@ -652,7 +652,7 @@ export default function ContentStrategyDashboard({
                       Audience
                     </label>
                     <p className="text-sm text-slate-900 dark:text-slate-100 mt-2">
-                      {contentContext.audiencePersona}
+                      {contentContext?.audiencePersona || 'Not specified'}
                     </p>
                   </div>
 
@@ -661,7 +661,7 @@ export default function ContentStrategyDashboard({
                       Tone
                     </label>
                     <p className="text-sm text-slate-900 dark:text-slate-100 mt-2">
-                      {contentContext.tone}
+                      {contentContext?.tone || 'Not specified'}
                     </p>
                   </div>
 
@@ -703,7 +703,7 @@ export default function ContentStrategyDashboard({
                     <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Keywords</span>
                   </div>
                   <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {contentContext.dominantKeywords.length}
+                    {contentContext?.dominantKeywords?.length || 0}
                   </p>
                   <p className="text-sm text-slate-600 dark:text-slate-400">Top Keywords</p>
                 </div>
@@ -714,7 +714,7 @@ export default function ContentStrategyDashboard({
                     <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Gaps</span>
                   </div>
                   <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {contentContext.contentGaps.length}
+                    {contentContext?.contentGaps?.length || 0}
                   </p>
                   <p className="text-sm text-slate-600 dark:text-slate-400">Content Gaps</p>
                 </div>
@@ -756,7 +756,7 @@ export default function ContentStrategyDashboard({
               )}
 
               {/* Writing Style & Content Patterns */}
-              {contentContext.overallWritingStyle && contentContext.contentPatterns && (
+              {contentContext?.overallWritingStyle && contentContext?.contentPatterns && (
                 <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
                     Writing Style & Content Patterns
@@ -768,20 +768,20 @@ export default function ContentStrategyDashboard({
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600 dark:text-slate-400">Dominant Tone</span>
-                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.overallWritingStyle.dominantTone}</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext?.overallWritingStyle?.dominantTone || 'Not specified'}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600 dark:text-slate-400">Formality Level</span>
-                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.overallWritingStyle.averageFormality}</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext?.overallWritingStyle?.averageFormality || 'Not specified'}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600 dark:text-slate-400">Common Perspective</span>
-                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.overallWritingStyle.commonPerspective}</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext?.overallWritingStyle?.commonPerspective || 'Not specified'}</span>
                         </div>
                       </div>
                       <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
                         <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Brand Voice Summary</p>
-                        <p className="text-sm text-slate-700 dark:text-slate-300">{contentContext.overallWritingStyle.brandVoiceSummary}</p>
+                        <p className="text-sm text-slate-700 dark:text-slate-300">{contentContext?.overallWritingStyle?.brandVoiceSummary || 'Not specified'}</p>
                       </div>
                     </div>
 
@@ -792,7 +792,7 @@ export default function ContentStrategyDashboard({
                         <div>
                           <span className="text-sm text-slate-600 dark:text-slate-400">Preferred Content Types</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {contentContext.contentPatterns.preferredContentTypes.map((type, idx) => (
+                            {contentContext?.contentPatterns?.preferredContentTypes?.map((type, idx) => (
                               <span key={idx} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300">
                                 {type}
                               </span>
@@ -801,12 +801,12 @@ export default function ContentStrategyDashboard({
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-600 dark:text-slate-400">Average Post Length</span>
-                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext.contentPatterns.averagePostLength}</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{contentContext?.contentPatterns?.averagePostLength || 'Not specified'}</span>
                         </div>
                         <div>
                           <span className="text-sm text-slate-600 dark:text-slate-400">Common Structures</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {contentContext.contentPatterns.commonStructures.map((structure, idx) => (
+                            {contentContext?.contentPatterns?.commonStructures?.map((structure, idx) => (
                               <span key={idx} className="px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
                                 {structure}
                               </span>
@@ -816,7 +816,7 @@ export default function ContentStrategyDashboard({
                         <div>
                           <span className="text-sm text-slate-600 dark:text-slate-400">CTA Patterns</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {contentContext.contentPatterns.ctaPatterns.map((cta, idx) => (
+                            {contentContext?.contentPatterns?.ctaPatterns?.map((cta, idx) => (
                               <span key={idx} className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 rounded text-xs text-purple-700 dark:text-purple-300">
                                 {cta}
                               </span>
@@ -866,7 +866,7 @@ export default function ContentStrategyDashboard({
                   Top Keywords
                 </h3>
                 <div className="flex flex-wrap gap-2">
-                  {contentContext.dominantKeywords.slice(0, 8).map((keyword, index) => (
+                  {contentContext?.dominantKeywords?.slice(0, 8).map((keyword, index) => (
                     <span
                       key={index}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
@@ -899,8 +899,8 @@ export default function ContentStrategyDashboard({
             </div>
 
             <div className="space-y-4 mb-6">
-              {contentContext.dominantKeywords.map((keyword, index) => {
-                const maxPages = Math.max(...contentContext.dominantKeywords.map(k => k.pages));
+              {contentContext?.dominantKeywords?.map((keyword, index) => {
+                const maxPages = Math.max(...(contentContext?.dominantKeywords?.map(k => k.pages) || [1]));
                 const percentage = (keyword.pages / maxPages) * 100;
                 
                 // Convert density to frequency label
@@ -991,7 +991,7 @@ export default function ContentStrategyDashboard({
                       <h3 className="font-medium text-red-900 dark:text-red-100">High Priority</h3>
                     </div>
                     <p className="text-2xl font-bold text-red-900 dark:text-red-100">
-                      {contentContext.contentGaps.filter(g => g.toLowerCase().includes('no case studies') || g.toLowerCase().includes('lack of')).length}
+                      {contentContext?.contentGaps?.filter(g => g.toLowerCase().includes('no case studies') || g.toLowerCase().includes('lack of')).length || 0}
                     </p>
                     <p className="text-sm text-red-700 dark:text-red-300">
                       Critical gaps needing immediate attention
@@ -1003,7 +1003,7 @@ export default function ContentStrategyDashboard({
                       <h3 className="font-medium text-amber-900 dark:text-amber-100">Medium Priority</h3>
                     </div>
                     <p className="text-2xl font-bold text-amber-900 dark:text-amber-100">
-                      {contentContext.contentGaps.filter(g => !(g.toLowerCase().includes('no case studies') || g.toLowerCase().includes('lack of'))).length}
+                      {contentContext?.contentGaps?.filter(g => !(g.toLowerCase().includes('no case studies') || g.toLowerCase().includes('lack of'))).length || 0}
                     </p>
                     <p className="text-sm text-amber-700 dark:text-amber-300">
                       Opportunities for content improvement
@@ -1015,7 +1015,7 @@ export default function ContentStrategyDashboard({
                       <h3 className="font-medium text-blue-900 dark:text-blue-100">Total Suggestions</h3>
                     </div>
                     <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                      {aiSuggestions.length}
+                      {aiSuggestions?.length || 0}
                     </p>
                     <p className="text-sm text-blue-700 dark:text-blue-300">
                       AI-generated content ideas ready
@@ -1030,17 +1030,17 @@ export default function ContentStrategyDashboard({
                     <strong>Filtering suggestions for:</strong> {selectedGap}
                   </p>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                    Showing {filteredSuggestions.length} of {aiSuggestions.length} suggestions
+                    Showing {filteredSuggestions?.length || 0} of {aiSuggestions?.length || 0} suggestions
                   </p>
                 </div>
               )}
 
               <div className="space-y-4">
-                {contentContext.contentGaps.map((gap, index) => {
+                {contentContext?.contentGaps?.map((gap, index) => {
                   const isSelected = selectedGap === gap;
                   // Determine gap severity based on keywords
                   const isHighPriority = gap.toLowerCase().includes('no case studies') || gap.toLowerCase().includes('lack of');
-                  const gapIcon = isHighPriority ? AlertTriangle : AlertCircle;
+                  const GapIcon = isHighPriority ? AlertTriangle : AlertCircle;
                   
                   return (
                     <div
@@ -1054,7 +1054,7 @@ export default function ContentStrategyDashboard({
                           : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30"
                       }`}
                     >
-                      <gapIcon className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
+                      <GapIcon className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
                         isSelected 
                           ? "text-blue-600 dark:text-blue-400" 
                           : isHighPriority 
@@ -1065,7 +1065,7 @@ export default function ContentStrategyDashboard({
                         <p className="text-sm text-slate-900 dark:text-slate-100 mb-2">
                           {gap}
                         </p>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                             isHighPriority
                               ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
@@ -1078,6 +1078,45 @@ export default function ContentStrategyDashboard({
                               {filteredSuggestions.length} suggestions available
                             </span>
                           )}
+                        </div>
+                        {/* Contextual Action Buttons */}
+                        <div className="flex items-center gap-2 mt-3">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Find a matching suggestion or create a draft directly
+                              const matchingSuggestion = aiSuggestions.find(s => 
+                                s.reason.toLowerCase().includes(gap.toLowerCase().split(' ').slice(0, 3).join(' '))
+                              );
+                              if (matchingSuggestion) {
+                                handleOpenDraftModal(matchingSuggestion);
+                              } else {
+                                // Create a new draft with this gap as the topic
+                                const gapSuggestion: AISuggestion = {
+                                  type: "Blog Post",
+                                  title: `Addressing: ${gap.slice(0, 50)}${gap.length > 50 ? '...' : ''}`,
+                                  reason: gap,
+                                  targetKeywords: gap.split(' ').filter(w => w.length > 4).slice(0, 5),
+                                  suggestedTone: contentContext?.tone || 'professional'
+                                };
+                                handleOpenDraftModal(gapSuggestion);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            Generate Solution
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTab("planner");
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                          >
+                            <CalendarIcon className="w-3.5 h-3.5" />
+                            Plan Later
+                          </button>
                         </div>
                       </div>
                       {isSelected && (
@@ -1320,7 +1359,7 @@ export default function ContentStrategyDashboard({
                       // Use per-page keywords if available, otherwise fall back to global keywords
                       const pageKeywords = page.keywords && page.keywords.length > 0
                         ? page.keywords.slice(0, 3)
-                        : contentContext.dominantKeywords.slice(0, 3).map(k => k.term);
+                        : contentContext?.dominantKeywords?.slice(0, 3).map(k => k.term) || [];
                       
                       return (
                         <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors">
@@ -1615,7 +1654,7 @@ export default function ContentStrategyDashboard({
                                 <div>
                                   <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Key Phrases</p>
                                   <div className="flex flex-wrap gap-1">
-                                    {page.brandVoice.keyPhrases.slice(0, 5).map((phrase, idx) => (
+                                    {page.brandVoice.keyPhrases.slice(0, 5).map((phrase: string, idx: number) => (
                                       <span key={idx} className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 rounded text-xs text-purple-700 dark:text-purple-300">
                                         {phrase}
                                       </span>
@@ -1627,7 +1666,7 @@ export default function ContentStrategyDashboard({
                                 <div>
                                   <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Technical Terms</p>
                                   <div className="flex flex-wrap gap-1">
-                                    {page.brandVoice.terminology.slice(0, 5).map((term, idx) => (
+                                    {page.brandVoice.terminology.slice(0, 5).map((term: string, idx: number) => (
                                       <span key={idx} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300">
                                         {term}
                                       </span>
@@ -1639,7 +1678,7 @@ export default function ContentStrategyDashboard({
                                 <div>
                                   <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Value Propositions</p>
                                   <div className="flex flex-wrap gap-1">
-                                    {page.brandVoice.valuePropositions.slice(0, 3).map((value, idx) => (
+                                    {page.brandVoice.valuePropositions.slice(0, 3).map((value: string, idx: number) => (
                                       <span key={idx} className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 rounded text-xs text-amber-700 dark:text-amber-300">
                                         {value}
                                       </span>
@@ -1656,7 +1695,7 @@ export default function ContentStrategyDashboard({
                           <div>
                             <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Keywords</h4>
                             <div className="flex flex-wrap gap-2">
-                              {page.keywords.map((keyword, kIndex) => (
+                              {page.keywords.map((keyword: string, kIndex: number) => (
                                 <span
                                   key={kIndex}
                                   className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300"
@@ -1721,7 +1760,7 @@ export default function ContentStrategyDashboard({
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-3xl font-bold">{aiSuggestions.length}</p>
+                  <p className="text-3xl font-bold">{aiSuggestions?.length || 0}</p>
                   <p className="text-sm text-purple-100">Suggestions</p>
                 </div>
               </div>

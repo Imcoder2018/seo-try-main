@@ -1,147 +1,188 @@
 "use client";
 
 import React, { useState } from "react";
-import { 
-  LayoutDashboard, 
-  BarChart3, 
-  PenTool, 
-  Calendar, 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  LayoutDashboard,
+  BarChart3,
+  Zap,
+  Calendar,
   History,
+  ChevronLeft,
+  ChevronRight,
+  Globe,
   Menu,
   X,
   Home,
   Target,
-  FileText,
-  Zap
+  Settings,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+
+interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  href: string;
+  badge?: string;
+}
+
+const navItems: NavItem[] = [
+  { id: "home", label: "Home", icon: Home, href: "/" },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/content-strategy?view=dashboard" },
+  { id: "strategy", label: "Strategy", icon: BarChart3, href: "/content-strategy?view=analysis" },
+  { id: "production", label: "Production", icon: Zap, href: "/content-strategy?view=production" },
+  { id: "calendar", label: "Calendar", icon: Calendar, href: "/content-strategy?view=planner" },
+  { id: "history", label: "History", icon: History, href: "/history" },
+];
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
-  activeSection: string;
-  onSectionChange: (section: string) => void;
+  activeView?: string;
+  onViewChange?: (view: string) => void;
 }
 
-const navigation = [
-  { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, description: 'High-level metrics' },
-  { id: 'strategy', name: 'Strategy', icon: BarChart3, description: 'Content analysis' },
-  { id: 'production', name: 'Production', icon: PenTool, description: 'Generate content' },
-  { id: 'planner', name: 'Calendar', icon: Calendar, description: 'Content scheduling' },
-  { id: 'history', name: 'History', icon: History, description: 'Past analyses' },
-];
+export default function SidebarLayout({ children, activeView, onViewChange }: SidebarLayoutProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const pathname = usePathname();
 
-export default function SidebarLayout({ children, activeSection, onSectionChange }: SidebarLayoutProps) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const handleNavClick = (item: NavItem) => {
+    if (onViewChange && item.href.includes("view=")) {
+      const view = new URL(item.href, "http://localhost").searchParams.get("view");
+      if (view) {
+        onViewChange(view);
+      }
+    }
+    setIsMobileOpen(false);
+  };
+
+  const isActive = (item: NavItem) => {
+    if (activeView) {
+      const view = new URL(item.href, "http://localhost").searchParams.get("view");
+      return view === activeView;
+    }
+    return pathname === item.href.split("?")[0];
+  };
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Sidebar */}
-      <aside className={cn(
-        "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 transition-all duration-300 ease-in-out",
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-      )}>
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <Target className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              SEO Roadmap
-            </span>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      {/* Mobile Header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 z-50 flex items-center justify-between px-4">
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+            onClick={() => setIsMobileOpen(!isMobileOpen)}
+            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
-            <X className="w-5 h-5" />
+            {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <div className="flex items-center gap-2">
+            <Globe className="w-6 h-6 text-blue-600" />
+            <span className="font-bold text-lg">SEO Hub</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Overlay */}
+      {isMobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed top-0 left-0 h-full bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-50 transition-all duration-300 ${
+          isCollapsed ? "w-16" : "w-64"
+        } ${isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+      >
+        {/* Logo */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-700">
+          {!isCollapsed && (
+            <div className="flex items-center gap-2">
+              <Globe className="w-7 h-7 text-blue-600" />
+              <span className="font-bold text-xl text-slate-900 dark:text-slate-100">SEO Hub</span>
+            </div>
+          )}
+          {isCollapsed && <Globe className="w-7 h-7 text-blue-600 mx-auto" />}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="hidden lg:flex p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            {isCollapsed ? (
+              <ChevronRight className="w-4 h-4" />
+            ) : (
+              <ChevronLeft className="w-4 h-4" />
+            )}
           </button>
         </div>
 
         {/* Navigation */}
-        <nav className="p-4 space-y-1">
-          {navigation.map((item) => {
+        <nav className="p-3 space-y-1">
+          {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeSection === item.id;
+            const active = isActive(item);
             
             return (
-              <button
+              <Link
                 key={item.id}
-                onClick={() => {
-                  onSectionChange(item.id);
-                  if (window.innerWidth < 1024) {
-                    setIsSidebarOpen(false);
-                  }
-                }}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200",
-                  isActive
-                    ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-l-4 border-blue-500"
-                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100"
-                )}
+                href={item.href}
+                onClick={() => handleNavClick(item)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
+                  active
+                    ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100"
+                } ${isCollapsed ? "justify-center" : ""}`}
+                title={isCollapsed ? item.label : undefined}
               >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium">{item.name}</p>
-                  <p className="text-xs opacity-75">{item.description}</p>
-                </div>
-              </button>
+                <Icon className={`w-5 h-5 flex-shrink-0 ${active ? "text-blue-600 dark:text-blue-400" : ""}`} />
+                {!isCollapsed && (
+                  <>
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge && (
+                      <span className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
+                  </>
+                )}
+              </Link>
             );
           })}
         </nav>
 
-        {/* Quick Actions */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-200 dark:border-slate-700">
-          <div className="space-y-2">
-            <button className="w-full flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200">
-              <Zap className="w-4 h-4" />
-              <span className="text-sm font-medium">Quick Analysis</span>
-            </button>
-            <button className="w-full flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all duration-200">
-              <FileText className="w-4 h-4" />
-              <span className="text-sm font-medium">New Draft</span>
-            </button>
+        {/* Quick Stats (Only when expanded) */}
+        {!isCollapsed && (
+          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-200 dark:border-slate-700">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">Quick Stats</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <p className="text-slate-500 dark:text-slate-400">Health Score</p>
+                  <p className="font-bold text-blue-600">--</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 dark:text-slate-400">Content Gaps</p>
+                  <p className="font-bold text-amber-600">--</p>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Bar */}
-        <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-4">
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                {navigation.find(n => n.id === activeSection)?.name || 'Dashboard'}
-              </h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-                <Home className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Page Content */}
-        <main className="flex-1 overflow-auto">
-          {children}
-        </main>
-      </div>
-
-      {/* Mobile Sidebar Overlay */}
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+      <main
+        className={`transition-all duration-300 ${
+          isCollapsed ? "lg:pl-16" : "lg:pl-64"
+        } pt-16 lg:pt-0`}
+      >
+        {children}
+      </main>
     </div>
   );
 }

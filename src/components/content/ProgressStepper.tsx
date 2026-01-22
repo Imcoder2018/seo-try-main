@@ -1,161 +1,170 @@
 "use client";
 
-import React from "react";
-import { CheckCircle2, Circle, Loader2, Zap, Search, FileText, Brain, Lightbulb } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import {
+  Globe,
+  FileSearch,
+  Brain,
+  Target,
+  CheckCircle2,
+  Loader2,
+  Lightbulb,
+} from "lucide-react";
 
-interface ProgressStep {
+interface Step {
   id: string;
   label: string;
   description: string;
-  status: 'pending' | 'in-progress' | 'completed';
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
 }
 
-interface ProgressStepperProps {
-  currentStep: string;
-  isAnalyzing: boolean;
-}
-
-const seoTips = [
-  "Did you know? Pages with a meta description get 5.8% more clicks than those without.",
-  "Pro tip: Including your target keyword in the first 100 words can improve rankings by 2x.",
-  "SEO fact: Long-form content (2000+ words) ranks higher in 72.3% of cases.",
-  "Tip: Pages with internal links have 43.5% more organic traffic than pages without.",
-  "Did you know? Mobile-friendly pages rank 5x better in mobile search results.",
-  "Pro tip: Images with alt text rank 12% better in image search.",
+const crawlSteps: Step[] = [
+  { id: "discover", label: "Discovering Sitemap", description: "Finding all pages on your website", icon: Globe },
+  { id: "extract", label: "Extracting Content", description: "Reading page content and structure", icon: FileSearch },
+  { id: "categorize", label: "Categorizing Pages", description: "Identifying page types (blog, service, etc.)", icon: Target },
 ];
 
-export default function ProgressStepper({ currentStep, isAnalyzing }: ProgressStepperProps) {
-  const [randomTip] = React.useState(() => 
-    seoTips[Math.floor(Math.random() * seoTips.length)]
-  );
+const analyzeSteps: Step[] = [
+  { id: "extract", label: "Extracting Content", description: "Processing selected pages", icon: FileSearch },
+  { id: "analyze", label: "Analyzing Tone", description: "Understanding your brand voice", icon: Brain },
+  { id: "gaps", label: "Identifying Gaps", description: "Finding content opportunities", icon: Target },
+  { id: "suggest", label: "Generating Suggestions", description: "Creating AI-powered recommendations", icon: Lightbulb },
+];
 
-  const steps: ProgressStep[] = [
-    {
-      id: 'discovering',
-      label: 'Discovering Sitemap',
-      description: 'Finding all pages on your website',
-      status: currentStep === 'discovering' ? 'in-progress' : 
-             currentStep !== 'start' ? 'completed' : 'pending',
-      icon: Search
-    },
-    {
-      id: 'extracting',
-      label: 'Extracting Content',
-      description: 'Analyzing page content and structure',
-      status: currentStep === 'extracting' ? 'in-progress' : 
-             currentStep === 'analyzing' || currentStep === 'identifying' ? 'completed' : 'pending',
-      icon: FileText
-    },
-    {
-      id: 'analyzing',
-      label: 'Analyzing Tone & Style',
-      description: 'Understanding your brand voice',
-      status: currentStep === 'analyzing' ? 'in-progress' : 
-             currentStep === 'identifying' ? 'completed' : 'pending',
-      icon: Brain
-    },
-    {
-      id: 'identifying',
-      label: 'Identifying Gaps',
-      description: 'Finding content opportunities',
-      status: currentStep === 'identifying' ? 'in-progress' : 
-             currentStep === 'complete' ? 'completed' : 'pending',
-      icon: Lightbulb
-    }
-  ];
+const seoTips = [
+  "Long-form content (2000+ words) typically ranks higher in search results.",
+  "Internal linking helps distribute page authority across your site.",
+  "Featured snippets capture about 8% of all clicks for a search query.",
+  "Mobile-first indexing means Google primarily uses mobile content for ranking.",
+  "Page speed is a direct ranking factor for both desktop and mobile searches.",
+  "Content freshness signals can boost rankings for time-sensitive queries.",
+  "Schema markup helps search engines understand your content better.",
+  "User engagement metrics like dwell time influence your rankings.",
+  "Keyword clustering helps you target multiple related terms with one piece of content.",
+  "Content gaps represent untapped opportunities to capture new traffic.",
+];
+
+interface ProgressStepperProps {
+  mode: "crawl" | "analyze";
+  progress?: number;
+  currentStep?: number;
+}
+
+export default function ProgressStepper({ mode, progress = 0, currentStep = 0 }: ProgressStepperProps) {
+  const [tipIndex, setTipIndex] = useState(0);
+  const steps = mode === "crawl" ? crawlSteps : analyzeSteps;
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTipIndex((prev) => (prev + 1) % seoTips.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getStepStatus = (index: number) => {
+    if (index < currentStep) return "completed";
+    if (index === currentStep) return "active";
+    return "pending";
+  };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-8">
-      <div className="max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 dark:bg-blue-900/20 rounded-full mb-4">
-            {isAnalyzing ? (
-              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-            ) : (
-              <Zap className="w-8 h-8 text-blue-600" />
-            )}
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-            {isAnalyzing ? 'Analyzing Your Website' : 'Analysis Complete!'}
-          </h2>
-          <p className="text-slate-600 dark:text-slate-400">
-            {isAnalyzing ? 'This usually takes 2-3 minutes' : 'Your SEO roadmap is ready'}
-          </p>
+    <div className="w-full p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+      {/* Progress Bar */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+            {mode === "crawl" ? "Crawling Website" : "Analyzing Content"}
+          </span>
+          <span className="text-sm text-blue-700 dark:text-blue-300">
+            {Math.round(progress)}%
+          </span>
         </div>
+        <div className="h-2 bg-blue-100 dark:bg-blue-900/50 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
 
-        {/* Progress Steps */}
-        <div className="space-y-4 mb-8">
-          {steps.map((step, index) => {
-            const Icon = step.icon;
-            const isActive = step.status === 'in-progress';
-            const isCompleted = step.status === 'completed';
-            
-            return (
-              <div key={step.id} className="flex items-start gap-4">
-                <div className="relative">
-                  <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all duration-300 ${
-                    isCompleted 
-                      ? 'bg-green-100 border-green-500' 
-                      : isActive 
-                      ? 'bg-blue-100 border-blue-500' 
-                      : 'bg-slate-100 border-slate-300 dark:bg-slate-700 dark:border-slate-600'
-                  }`}>
-                    {isCompleted ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    ) : isActive ? (
-                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                    ) : (
-                      <Circle className="w-5 h-5 text-slate-400" />
-                    )}
-                  </div>
-                  {index < steps.length - 1 && (
-                    <div className={`absolute top-10 left-5 w-0.5 h-8 -translate-x-1/2 transition-colors duration-300 ${
-                      isCompleted ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'
-                    }`} />
-                  )}
-                </div>
-                <div className="flex-1 pb-8">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Icon className={`w-4 h-4 ${
-                      isCompleted ? 'text-green-600' : 
-                      isActive ? 'text-blue-600' : 
-                      'text-slate-400'
-                    }`} />
-                    <p className={`font-medium ${
-                      isCompleted ? 'text-green-700 dark:text-green-300' : 
-                      isActive ? 'text-blue-700 dark:text-blue-300' : 
-                      'text-slate-500 dark:text-slate-400'
-                    }`}>
-                      {step.label}
-                    </p>
-                  </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {step.description}
-                  </p>
-                </div>
+      {/* Steps */}
+      <div className="space-y-3 mb-6">
+        {steps.map((step, index) => {
+          const Icon = step.icon;
+          const status = getStepStatus(index);
+
+          return (
+            <div
+              key={step.id}
+              className={`flex items-center gap-4 p-3 rounded-lg transition-all ${
+                status === "active"
+                  ? "bg-white dark:bg-slate-800 shadow-sm border border-blue-200 dark:border-blue-700"
+                  : status === "completed"
+                  ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
+                  : "opacity-50"
+              }`}
+            >
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  status === "completed"
+                    ? "bg-green-100 dark:bg-green-900/50"
+                    : status === "active"
+                    ? "bg-blue-100 dark:bg-blue-900/50"
+                    : "bg-slate-100 dark:bg-slate-700"
+                }`}
+              >
+                {status === "completed" ? (
+                  <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                ) : status === "active" ? (
+                  <Loader2 className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />
+                ) : (
+                  <Icon className="w-5 h-5 text-slate-400" />
+                )}
               </div>
-            );
-          })}
-        </div>
-
-        {/* SEO Tip */}
-        {isAnalyzing && (
-          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-            <div className="flex gap-3">
-              <Lightbulb className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-amber-900 dark:text-amber-100 mb-1">
-                  SEO Tip
+              <div className="flex-1">
+                <p
+                  className={`font-medium ${
+                    status === "completed"
+                      ? "text-green-900 dark:text-green-100"
+                      : status === "active"
+                      ? "text-blue-900 dark:text-blue-100"
+                      : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  {step.label}
                 </p>
-                <p className="text-sm text-amber-700 dark:text-amber-300">
-                  {randomTip}
+                <p
+                  className={`text-sm ${
+                    status === "completed"
+                      ? "text-green-700 dark:text-green-300"
+                      : status === "active"
+                      ? "text-blue-700 dark:text-blue-300"
+                      : "text-slate-400 dark:text-slate-500"
+                  }`}
+                >
+                  {step.description}
                 </p>
               </div>
             </div>
+          );
+        })}
+      </div>
+
+      {/* SEO Tips */}
+      <div className="p-4 bg-white/50 dark:bg-slate-800/50 rounded-lg border border-blue-100 dark:border-blue-800">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+            <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           </div>
-        )}
+          <div>
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-300 mb-1">
+              Did you know?
+            </p>
+            <p className="text-sm text-slate-700 dark:text-slate-300 transition-opacity duration-300">
+              {seoTips[tipIndex]}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

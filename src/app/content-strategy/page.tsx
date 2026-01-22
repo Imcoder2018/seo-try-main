@@ -1,21 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import ContentStrategyDashboard from "@/components/content/content-strategy-dashboard";
 import HistoryPanel from "@/components/content/HistoryPanel";
-import AutoContentEngine from "@/components/content/AutoContentEngine";
-import { 
-  Loader2, 
-  CheckCircle2, 
-  XCircle, 
-  ChevronDown, 
+import AutoContentEngineSplit from "@/components/content/AutoContentEngineSplit";
+import PlannerView from "@/components/content/PlannerView";
+import ProgressStepper from "@/components/content/ProgressStepper";
+import SmartSelectSummary from "@/components/content/SmartSelectSummary";
+import EmptyStateOnboarding from "@/components/content/EmptyStateOnboarding";
+import SEOHealthScore from "@/components/content/SEOHealthScore";
+import PersonaCard from "@/components/content/PersonaCard";
+import GapAnalysisCard from "@/components/content/GapAnalysisCard";
+import {
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  ChevronDown,
   ChevronRight,
   Search,
-  Filter,
   History,
   ArrowLeft,
-  Zap,
-  BarChart3
 } from "lucide-react";
 
 interface CrawledPage {
@@ -25,54 +31,129 @@ interface CrawledPage {
   selected?: boolean;
 }
 
+interface RecentAnalysis {
+  id: string;
+  url: string;
+  date: string;
+  pagesAnalyzed: number;
+  healthScore?: number;
+}
+
+const STORAGE_KEY_DISCOVERY = "seo_discovery_data";
+const STORAGE_KEY_ANALYSIS = "seo_analysis_output";
+
 export default function ContentStrategyPage() {
-  const [analysisOutput, setAnalysisOutput] = useState(null);
+  const searchParams = useSearchParams();
+  const initialView = searchParams.get("view") || "analysis";
+
+  const [activeView, setActiveView] = useState(initialView);
+  const [analysisOutput, setAnalysisOutput] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
+  const [crawlProgress, setCrawlProgress] = useState(0);
+  const [crawlStep, setCrawlStep] = useState(0);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisStep, setAnalysisStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
   const [pages, setPages] = useState<CrawledPage[]>([]);
   const [crawlRunId, setCrawlRunId] = useState<string | null>(null);
   const [crawlPublicToken, setCrawlPublicToken] = useState<string | null>(null);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['service', 'blog']));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["service", "blog"]));
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
-  const [showHistory, setShowHistory] = useState(false);
-  const [activeTab, setActiveTab] = useState("analysis");
+  const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysis[]>([]);
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [draftGapTopic, setDraftGapTopic] = useState("");
 
-  const handleCrawl = async () => {
-    if (!baseUrl) {
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY_ANALYSIS);
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        if (data.analysisOutput && Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          setAnalysisOutput(data.analysisOutput);
+        }
+      } catch (e) {
+        console.error("Failed to restore analysis:", e);
+      }
+    }
+
+    const storedDiscovery = localStorage.getItem(STORAGE_KEY_DISCOVERY);
+    if (storedDiscovery) {
+      try {
+        const data = JSON.parse(storedDiscovery);
+        if (data.pages && Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          setPages(data.pages);
+          if (data.baseUrl) setBaseUrl(data.baseUrl);
+        }
+      } catch (e) {
+        console.error("Failed to restore discovery:", e);
+      }
+    }
+
+    loadRecentAnalyses();
+  }, []);
+
+  const loadRecentAnalyses = async () => {
+    try {
+      const response = await fetch("/api/content/history?limit=3");
+      if (response.ok) {
+        const data = await response.json();
+        setRecentAnalyses(
+          (data.analyses || []).map((a: any) => ({
+            id: a.id,
+            url: a.baseUrl || a.url,
+            date: new Date(a.createdAt).toLocaleDateString(),
+            pagesAnalyzed: a.pagesAnalyzed || 0,
+            healthScore: a.healthScore,
+          }))
+        );
+      }
+    } catch (e) {
+      console.error("Failed to load recent analyses:", e);
+    }
+  };
+
+  const handleCrawl = async (url?: string) => {
+    const targetUrl = url || baseUrl;
+    if (!targetUrl) {
       setError("Please enter a website URL");
       return;
     }
 
+    setBaseUrl(targetUrl);
     setIsCrawling(true);
+    setCrawlProgress(0);
+    setCrawlStep(0);
     setError(null);
     setPages([]);
 
     try {
-      // Start crawl
-      const response = await fetch('/api/crawl', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: baseUrl, maxPages: 50 })
+      const response = await fetch("/api/crawl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: targetUrl, maxPages: 50 }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to start crawl');
+        throw new Error(data.error || "Failed to start crawl");
       }
 
       setCrawlRunId(data.runId);
       setCrawlPublicToken(data.publicToken);
 
-      // Poll for crawl completion
       let attempts = 0;
       const maxAttempts = 60;
 
       while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const progress = Math.min(95, (attempts / maxAttempts) * 100);
+        setCrawlProgress(progress);
+        setCrawlStep(Math.min(2, Math.floor(attempts / 10)));
 
         const pollResponse = await fetch(
           `/api/crawl?runId=${data.runId}&publicToken=${data.publicToken}`
@@ -80,60 +161,67 @@ export default function ContentStrategyPage() {
 
         const pollData = await pollResponse.json();
 
-        if (pollData.status === 'COMPLETED') {
-          // Use urlGroups from crawler output for proper categorization
+        if (pollData.status === "COMPLETED") {
+          setCrawlProgress(100);
+          setCrawlStep(2);
+
           const urlGroups = pollData.output?.urlGroups || {};
           const allPages = pollData.output?.pages || [];
-          
-          // Build pages array with proper types and auto-selection
-          const pagesWithSelection: CrawledPage[] = [];
-          
-          // Map urlGroups to individual pages with types
+
           const typeMapping: Record<string, string> = {
-            core: 'other',
-            blog: 'blog',
-            product: 'product',
-            service: 'service',
-            category: 'other',
-            other: 'other'
+            core: "other",
+            blog: "blog",
+            product: "product",
+            service: "service",
+            category: "other",
+            other: "other",
           };
-          
-          // Process each group
+
+          const pagesWithSelection: CrawledPage[] = [];
+
           Object.entries(urlGroups).forEach(([groupType, urls]) => {
-            const pageType = typeMapping[groupType] || 'other';
-            const shouldAutoSelect = ['service', 'blog'].includes(pageType);
-            
+            const pageType = typeMapping[groupType] || "other";
+            const shouldAutoSelect = ["service", "blog"].includes(pageType);
+
             (urls as string[]).forEach((url: string) => {
               const pageData = allPages.find((p: any) => p.url === url);
               pagesWithSelection.push({
                 url,
                 type: pageType,
-                title: pageData?.title || '',
-                selected: shouldAutoSelect
+                title: pageData?.title || "",
+                selected: shouldAutoSelect,
               });
             });
           });
-          
+
           setPages(pagesWithSelection);
+          localStorage.setItem(
+            STORAGE_KEY_DISCOVERY,
+            JSON.stringify({
+              pages: pagesWithSelection,
+              urlGroups,
+              baseUrl: targetUrl,
+              timestamp: Date.now(),
+            })
+          );
           setIsCrawling(false);
           return;
-        } else if (pollData.status === 'FAILED' || pollData.status === 'CANCELED') {
+        } else if (pollData.status === "FAILED" || pollData.status === "CANCELED") {
           throw new Error(`Crawl failed with status: ${pollData.status}`);
         }
 
         attempts++;
       }
 
-      throw new Error('Crawl timed out');
-
+      throw new Error("Crawl timed out");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during crawl');
+      setError(err instanceof Error ? err.message : "An error occurred during crawl");
       setIsCrawling(false);
     }
   };
 
   const handleAnalysis = async () => {
-    const selectedPages = pages.filter(p => p.selected);
+    const selectedPages = pages.filter((p) => p.selected);
 
     if (selectedPages.length === 0) {
       setError("Please select at least one page to analyze");
@@ -141,39 +229,37 @@ export default function ContentStrategyPage() {
     }
 
     setIsLoading(true);
+    setAnalysisProgress(0);
+    setAnalysisStep(0);
     setError(null);
 
     try {
-      console.log('Starting analysis with', selectedPages.length, 'pages');
-      
-      // Start analysis
-      const response = await fetch('/api/content/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/content/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl,
-          pages: selectedPages.map(p => ({ url: p.url, type: p.type })),
+          pages: selectedPages.map((p) => ({ url: p.url, type: p.type })),
           maxPages: 50,
-          targetAudience: "General audience"
-        })
+          targetAudience: "General audience",
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        const errorMsg = data.error || 'Failed to start analysis';
-        const details = data.details ? `\n\nDetails: ${data.details}` : '';
-        throw new Error(errorMsg + details);
+        throw new Error(data.error || "Failed to start analysis");
       }
 
-      console.log('Analysis started:', data);
-
-      // Poll for results
       let attempts = 0;
-      const maxAttempts = 90; // Increased timeout to 3 minutes
+      const maxAttempts = 90;
 
       while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const progress = Math.min(95, (attempts / maxAttempts) * 100);
+        setAnalysisProgress(progress);
+        setAnalysisStep(Math.min(3, Math.floor(attempts / 15)));
 
         const pollResponse = await fetch(
           `/api/content/analyze?extractionRunId=${data.extractionRunId}&analysisRunId=${data.analysisRunId}&analysisId=${data.analysisId}`
@@ -181,80 +267,77 @@ export default function ContentStrategyPage() {
 
         const pollData = await pollResponse.json();
 
-        console.log('Poll attempt', attempts + 1, ':', {
-          extractionStatus: pollData.extractionStatus,
-          analysisStatus: pollData.analysisStatus,
-          isComplete: pollData.isComplete,
-          hasFailed: pollData.hasFailed
-        });
-
-        // Check for failures
         if (pollData.hasFailed) {
-          const errorMsg = pollData.extractionError || pollData.analysisError || 'Analysis failed';
-          throw new Error(errorMsg);
+          throw new Error(pollData.extractionError || pollData.analysisError || "Analysis failed");
         }
 
-        // Check for completion
         if (pollData.isComplete && pollData.analysisOutput) {
-          console.log('Analysis complete!');
+          setAnalysisProgress(100);
+          setAnalysisStep(3);
           setAnalysisOutput(pollData.analysisOutput);
+          localStorage.setItem(
+            STORAGE_KEY_ANALYSIS,
+            JSON.stringify({
+              analysisOutput: pollData.analysisOutput,
+              timestamp: Date.now(),
+            })
+          );
           setIsLoading(false);
+          loadRecentAnalyses();
           return;
         }
 
         attempts++;
       }
 
-      throw new Error('Analysis timed out after 3 minutes. Please try again.');
-
+      throw new Error("Analysis timed out after 3 minutes. Please try again.");
     } catch (err) {
-      console.error('Analysis error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : "An error occurred");
       setIsLoading(false);
     }
   };
 
   const handleCrawlHistorySelect = (crawlItem: any) => {
-    // Load pages from crawl history
     if (crawlItem.pagesData) {
       const transformedPages = crawlItem.pagesData.map((page: any) => ({
         url: page.url || page,
-        type: page.type || 'unknown',
-        title: page.title || '',
-        selected: true, // Default to selected for convenience
+        type: page.type || "unknown",
+        title: page.title || "",
+        selected: true,
       }));
-      
+
       setPages(transformedPages);
       setBaseUrl(crawlItem.url);
-      setShowHistory(false);
       setIsCrawling(false);
     }
   };
 
   const handleAnalysisHistorySelect = (analysisItem: any) => {
-    // Load analysis output from history
-    console.log("[ContentStrategy] Loading analysis from history:", analysisItem);
     if (analysisItem.analysisOutput) {
-      console.log("[ContentStrategy] Setting analysis output");
       setAnalysisOutput(analysisItem.analysisOutput);
-      setShowHistory(false);
       setIsLoading(false);
-    } else {
-      console.log("[ContentStrategy] No analysis output found in item");
     }
   };
 
-  const handleHistorySelect = (historyItem: any) => {
-    // Legacy handler - determine type based on available data
-    if (historyItem.pagesData) {
-      handleCrawlHistorySelect(historyItem);
-    } else if (historyItem.analysisOutput) {
-      handleAnalysisHistorySelect(historyItem);
-    } else {
-      // Fallback to URL loading
-      setBaseUrl(historyItem.url);
-      setShowHistory(false);
-    }
+  const handleSelectType = (type: string, select: boolean) => {
+    setPages(pages.map((p) => (p.type === type ? { ...p, selected: select } : p)));
+  };
+
+  const handleSelectRecommended = () => {
+    setPages(
+      pages.map((p) => ({
+        ...p,
+        selected: ["service", "blog"].includes(p.type),
+      }))
+    );
+  };
+
+  const handleSelectAll = () => {
+    setPages(pages.map((p) => ({ ...p, selected: true })));
+  };
+
+  const handleDeselectAll = () => {
+    setPages(pages.map((p) => ({ ...p, selected: false })));
   };
 
   const togglePageSelection = (index: number) => {
@@ -273,28 +356,20 @@ export default function ContentStrategyPage() {
     setExpandedGroups(newExpanded);
   };
 
-  const selectAllInGroup = (type: string, selected: boolean) => {
-    const newPages = pages.map(p => 
-      p.type === type ? { ...p, selected } : p
-    );
-    setPages(newPages);
-  };
-
   const getFilteredPages = () => {
     let filtered = pages;
 
-    // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.url.toLowerCase().includes(query) ||
-        (p.title && p.title.toLowerCase().includes(query))
+      filtered = filtered.filter(
+        (p) =>
+          p.url.toLowerCase().includes(query) ||
+          (p.title && p.title.toLowerCase().includes(query))
       );
     }
 
-    // Apply type filter
-    if (filterType !== 'all') {
-      filtered = filtered.filter(p => p.type === filterType);
+    if (filterType !== "all") {
+      filtered = filtered.filter((p) => p.type === filterType);
     }
 
     return filtered;
@@ -304,7 +379,7 @@ export default function ContentStrategyPage() {
     const filtered = getFilteredPages();
     const grouped: Record<string, CrawledPage[]> = {};
 
-    filtered.forEach(page => {
+    filtered.forEach((page) => {
       if (!grouped[page.type]) {
         grouped[page.type] = [];
       }
@@ -314,366 +389,339 @@ export default function ContentStrategyPage() {
     return grouped;
   };
 
-  const pagesByType = getPagesByType();
-  const selectedCount = pages.filter(p => p.selected).length;
-  const filteredPages = getFilteredPages();
+  const handleGenerateFromGap = (gap: string) => {
+    setDraftGapTopic(gap);
+    setActiveView("production");
+  };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header with Navigation */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-            Content Strategy Hub
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mb-6">
-            Comprehensive content analysis and AI-powered content generation tools
+  const handlePlanGap = (gap: string) => {
+    setActiveView("planner");
+  };
+
+  const handleQuickAction = (action: "draft" | "gaps") => {
+    if (action === "draft") {
+      setActiveView("production");
+    } else {
+      if (!analysisOutput) {
+        setError("Please run an analysis first to identify content gaps.");
+      }
+    }
+  };
+
+  const handleLoadHistory = (analysis: RecentAnalysis) => {
+    setActiveView("analysis");
+  };
+
+  const handleViewChange = (view: string) => {
+    setActiveView(view);
+  };
+
+  const pagesByType = getPagesByType();
+  const selectedCount = pages.filter((p) => p.selected).length;
+
+  const renderAnalysisView = () => {
+    if (analysisOutput) {
+      return (
+        <ContentStrategyDashboard
+          analysisOutput={analysisOutput}
+          isLoading={isLoading}
+          onRefresh={handleAnalysis}
+        />
+      );
+    }
+
+    if (pages.length === 0 && !isCrawling && !isLoading) {
+      return (
+        <div className="py-8">
+          <EmptyStateOnboarding
+            recentAnalyses={recentAnalyses}
+            onStartAnalysis={handleCrawl}
+            onLoadHistory={handleLoadHistory}
+            onQuickAction={handleQuickAction}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="max-w-4xl mx-auto py-8">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-8">
+          <div className="space-y-6">
+            {/* URL Input */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Website URL
+              </label>
+              <div className="flex gap-3">
+                <input
+                  type="url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  disabled={isCrawling}
+                  className="flex-1 px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100 disabled:opacity-50"
+                />
+                <button
+                  onClick={() => handleCrawl()}
+                  disabled={isCrawling || !baseUrl}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {isCrawling ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Crawling...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-5 h-5" />
+                      Auto Crawl
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Progress Stepper */}
+            {isCrawling && (
+              <ProgressStepper mode="crawl" progress={crawlProgress} currentStep={crawlStep} />
+            )}
+
+            {isLoading && !isCrawling && (
+              <ProgressStepper mode="analyze" progress={analysisProgress} currentStep={analysisStep} />
+            )}
+
+            {/* Smart Select Summary */}
+            {pages.length > 0 && !isCrawling && !isLoading && (
+              <>
+                <SmartSelectSummary
+                  pages={pages}
+                  onSelectType={handleSelectType}
+                  onSelectRecommended={handleSelectRecommended}
+                  onSelectAll={handleSelectAll}
+                  onDeselectAll={handleDeselectAll}
+                />
+
+                {/* Detailed Page List */}
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-200 dark:divide-slate-700 max-h-96 overflow-y-auto">
+                  {Object.entries(pagesByType).map(([type, typePages]) => (
+                    <div key={type}>
+                      <div
+                        className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                        onClick={() => toggleGroup(type)}
+                      >
+                        <div className="flex items-center gap-3">
+                          {expandedGroups.has(type) ? (
+                            <ChevronDown className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                          ) : (
+                            <ChevronRight className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                          )}
+                          <span
+                            className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                              type === "service"
+                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                : type === "blog"
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                                : type === "product"
+                                ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                                : "bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-slate-300"
+                            }`}
+                          >
+                            {type.charAt(0).toUpperCase() + type.slice(1)}
+                          </span>
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            {typePages.length} pages
+                          </span>
+                        </div>
+                      </div>
+
+                      {expandedGroups.has(type) && (
+                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                          {typePages.map((page) => {
+                            const globalIndex = pages.indexOf(page);
+                            return (
+                              <div
+                                key={page.url}
+                                className="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-700/30"
+                              >
+                                <button
+                                  onClick={() => togglePageSelection(globalIndex)}
+                                  className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                                    page.selected
+                                      ? "bg-blue-600 border-blue-600"
+                                      : "border-slate-300 dark:border-slate-600 hover:border-blue-400"
+                                  }`}
+                                >
+                                  {page.selected && (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                                  )}
+                                </button>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                                    {page.title || page.url}
+                                  </p>
+                                  <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
+                                    {page.url}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {error && (
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-red-900 dark:text-red-100 mb-1">Error</p>
+                    <p className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap">
+                      {error}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {pages.length > 0 && !isCrawling && !isLoading && (
+              <button
+                onClick={handleAnalysis}
+                disabled={isLoading || selectedCount === 0}
+                className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                  />
+                </svg>
+                Start Analysis ({selectedCount} pages)
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDashboardView = () => {
+    if (!analysisOutput) {
+      return (
+        <div className="py-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400 mb-4">
+            No analysis data available. Please run an analysis first.
           </p>
-          
-          {/* Tab Navigation */}
-          <div className="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700">
-            <button
-              onClick={() => setActiveTab("analysis")}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === "analysis"
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-              }`}
-            >
-              <BarChart3 className="w-4 h-4 inline mr-2" />
-              Content Analysis
-            </button>
-            <button
-              onClick={() => setActiveTab("auto-content")}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === "auto-content"
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-              }`}
-            >
-              <Zap className="w-4 h-4 inline mr-2" />
-              Auto-Content Engine
-            </button>
-            <button
-              onClick={() => setShowHistory(true)}
-              className="ml-auto px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
-            >
-              <History className="w-4 h-4 inline mr-2" />
-              History
-            </button>
+          <button
+            onClick={() => setActiveView("analysis")}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Go to Strategy Analysis
+          </button>
+        </div>
+      );
+    }
+
+    const contentContext = analysisOutput.contentContext || {};
+    const pagesData = analysisOutput.pages || [];
+    const totalWordCount = pagesData.reduce((sum: number, p: any) => sum + (p.wordCount || 0), 0);
+    const avgWordCount = pagesData.length > 0 ? Math.round(totalWordCount / pagesData.length) : 0;
+
+    return (
+      <div className="py-8 space-y-6">
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-6">
+          SEO Dashboard
+        </h2>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Health Score */}
+          <SEOHealthScore
+            totalPages={pagesData.length}
+            avgWordCount={avgWordCount}
+            contentGapsCount={contentContext.contentGaps?.length || 0}
+            keywordsCount={contentContext.dominantKeywords?.length || 0}
+          />
+
+          {/* Persona Card */}
+          <PersonaCard
+            audiencePersona={contentContext.audiencePersona}
+            tone={contentContext.tone}
+            writingStyle={contentContext.overallWritingStyle}
+          />
+
+          {/* Gap Analysis */}
+          <div className="lg:col-span-1">
+            <GapAnalysisCard
+              gaps={contentContext.contentGaps || []}
+              onGenerateSolution={handleGenerateFromGap}
+              onPlanForLater={handlePlanGap}
+            />
           </div>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === "analysis" && (
-          !analysisOutput ? (
-            <div className="max-w-6xl mx-auto px-4 py-12">
-              {showHistory ? (
-                <div className="mb-6">
-                  <button
-                    onClick={() => setShowHistory(false)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 transition-colors"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back to Analysis
-                  </button>
-                </div>
-              ) : (
-                <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-                      Content Strategy Analysis
-                    </h1>
-                    <p className="text-slate-600 dark:text-slate-400">
-                      Analyze your website content to identify gaps, keywords, and AI-powered content suggestions
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setShowHistory(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors"
-                  >
-                    <History className="w-4 h-4" />
-                    History
-                  </button>
-                </div>
-              )}
-
-              {showHistory ? (
-                <HistoryPanel 
-                  onSelectCrawlHistory={handleCrawlHistorySelect}
-                  onSelectAnalysisHistory={handleAnalysisHistorySelect}
-                />
-              ) : (
-                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-8">
-                  <div className="space-y-6">
-                    {/* URL Input */}
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Website URL
-                      </label>
-                      <div className="flex gap-3">
-                        <input
-                          type="url"
-                          value={baseUrl}
-                          onChange={(e) => setBaseUrl(e.target.value)}
-                          placeholder="https://example.com"
-                          disabled={isCrawling}
-                          className="flex-1 px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                        <button
-                          onClick={handleCrawl}
-                          disabled={isCrawling || !baseUrl}
-                          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors font-medium"
-                        >
-                          {isCrawling ? (
-                            <>
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                              Crawling...
-                            </>
-                          ) : (
-                            <>
-                              <Search className="w-5 h-5" />
-                              Auto Crawl
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Crawl Progress */}
-                    {isCrawling && (
-                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Loader2 className="w-5 h-5 animate-spin text-blue-600 dark:text-blue-400" />
-                          <div>
-                            <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                              Crawling website...
-                            </p>
-                            <p className="text-xs text-blue-700 dark:text-blue-300">
-                              Discovering and categorizing pages. This may take 30-60 seconds.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Pages Selection */}
-                    {pages.length > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Pages to Analyze
-                            </label>
-                            <p className="text-xs text-slate-600 dark:text-slate-400">
-                              {selectedCount} of {pages.length} pages selected
-                            </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              placeholder="Search pages..."
-                              className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
-                            />
-                            <select
-                              value={filterType}
-                              onChange={(e) => setFilterType(e.target.value)}
-                              className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
-                            >
-                              <option value="all">All Types</option>
-                              <option value="service">Services</option>
-                              <option value="blog">Blogs</option>
-                              <option value="product">Products</option>
-                              <option value="other">Other</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-200 dark:divide-slate-700 max-h-96 overflow-y-auto">
-                          {Object.entries(pagesByType).map(([type, typePages]) => (
-                            <div key={type}>
-                              <div
-                                className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
-                                onClick={() => toggleGroup(type)}
-                              >
-                                <div className="flex items-center gap-3">
-                                  {expandedGroups.has(type) ? (
-                                    <ChevronDown className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                                  ) : (
-                                    <ChevronRight className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                                  )}
-                                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                                    type === 'service' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                                    type === 'blog' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
-                                    type === 'product' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
-                                    'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-slate-300'
-                                  }`}>
-                                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                                  </span>
-                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                    {typePages.length} pages
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); selectAllInGroup(type, true); }}
-                                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-                                  >
-                                    Select All
-                                  </button>
-                                  <span className="text-slate-400 dark:text-slate-600">|</span>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); selectAllInGroup(type, false); }}
-                                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                                  >
-                                    Deselect All
-                                  </button>
-                                </div>
-                              </div>
-
-                              {expandedGroups.has(type) && (
-                                <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                                  {typePages.map((page, index) => {
-                                    const globalIndex = pages.indexOf(page);
-                                    return (
-                                      <div
-                                        key={page.url}
-                                        className="flex items-start gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-700/30"
-                                      >
-                                        <button
-                                          onClick={() => togglePageSelection(globalIndex)}
-                                          className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                                            page.selected
-                                              ? 'bg-blue-600 border-blue-600'
-                                              : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'
-                                          }`}
-                                        >
-                                          {page.selected && (
-                                            <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                                          )}
-                                        </button>
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
-                                            {page.title || page.url}
-                                          </p>
-                                          <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
-                                            {page.url}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {error && (
-                      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <div className="flex items-start gap-3">
-                          <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-sm font-medium text-red-900 dark:text-red-100 mb-1">Error</p>
-                            <p className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap">{error}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={handleAnalysis}
-                      disabled={isLoading || pages.length === 0 || selectedCount === 0}
-                      className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors font-medium"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                          </svg>
-                          Start Analysis ({selectedCount} pages)
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
-                      Quick Start Guide
-                    </h3>
-                    <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4 space-y-2 text-sm">
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 1:</strong> Enter your website URL (e.g., https://datatechconsultants.com.au)
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 2:</strong> Click "Auto Crawl" to discover all pages automatically
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 3:</strong> Review auto-selected pages (services and blogs are pre-selected)
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 4:</strong> Modify selection if needed (add/remove pages)
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 5:</strong> Click "Start Analysis" and wait 30-120 seconds
-                      </p>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        <strong>Step 6:</strong> View your content strategy dashboard with AI insights
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <ContentStrategyDashboard
-              analysisOutput={analysisOutput}
-              isLoading={isLoading}
-              onRefresh={handleAnalysis}
-            />
-          )
-        )}
-
-        {activeTab === "auto-content" && (
-          <AutoContentEngine />
-        )}
-
-        {/* History Modal */}
-        {showHistory && activeTab === "analysis" && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
-              <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Analysis History
-                  </h2>
-                  <button
-                    onClick={() => setShowHistory(false)}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                  >
-                    <XCircle className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 overflow-y-auto max-h-[60vh]">
-                <HistoryPanel 
-                  onSelectCrawlHistory={handleCrawlHistorySelect}
-                  onSelectAnalysisHistory={handleAnalysisHistorySelect}
-                />
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Full Dashboard */}
+        <ContentStrategyDashboard
+          analysisOutput={analysisOutput}
+          isLoading={isLoading}
+          onRefresh={handleAnalysis}
+        />
       </div>
-    </div>
+    );
+  };
+
+  const renderProductionView = () => {
+    return (
+      <div className="py-8">
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-6">
+          Content Production
+        </h2>
+        <AutoContentEngineSplit />
+      </div>
+    );
+  };
+
+  const renderPlannerView = () => {
+    const contentContext = analysisOutput?.contentContext || {};
+    return (
+      <PlannerView
+        contentGaps={contentContext.contentGaps || []}
+        aiSuggestions={analysisOutput?.aiSuggestions || []}
+        contentContext={contentContext}
+      />
+    );
+  };
+
+  const renderContent = () => {
+    switch (activeView) {
+      case "dashboard":
+        return renderDashboardView();
+      case "analysis":
+        return renderAnalysisView();
+      case "production":
+        return renderProductionView();
+      case "planner":
+        return renderPlannerView();
+      default:
+        return renderAnalysisView();
+    }
+  };
+
+  return (
+    <SidebarLayout activeView={activeView} onViewChange={handleViewChange}>
+      <div className="min-h-screen">
+        <div className="max-w-7xl mx-auto px-4 py-6">{renderContent()}</div>
+      </div>
+    </SidebarLayout>
   );
 }

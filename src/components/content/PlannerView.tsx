@@ -75,6 +75,8 @@ interface PlannerViewProps {
     title: string;
     targetKeywords: string[];
     relatedServiceUrl?: string;
+    type?: string;
+    reason?: string;
   }>;
   contentContext?: {
     tone: string;

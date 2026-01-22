@@ -164,7 +164,7 @@ async function generateImageForContent(combination: ContentCombination): Promise
     style: "vivid",
   });
 
-  if (!response.data[0]?.url) {
+  if (!response.data?.[0]?.url) {
     throw new Error("Failed to generate image");
   }
 

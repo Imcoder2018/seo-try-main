@@ -847,7 +847,7 @@ export default function ContentStrategyDashboard({
                           <div>
                             <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Keywords</h4>
                             <div className="flex flex-wrap gap-2">
-                              {page.keywords.map((keyword, kIndex) => (
+                              {page.keywords.map((keyword: string, kIndex: number) => (
                                 <span
                                   key={kIndex}
                                   className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300"
