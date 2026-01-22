@@ -23,7 +23,16 @@ import {
   Globe,
   Calendar as CalendarIcon,
   Zap,
-  Edit3
+  Edit3,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  FileSearch,
+  BarChart3,
+  Filter,
+  Search,
+  Maximize2,
+  Info
 } from "lucide-react";
 import PlannerView from "./PlannerView";
 
@@ -55,11 +64,32 @@ interface AnalysisOutput {
   pages: Array<{
     url: string;
     type: string;
+    title?: string;
     wordCount: number;
     mainTopic?: string;
     summary?: string;
     keywords?: string[];
+    content?: string;
   }>;
+  extractionData?: {
+    baseUrl: string;
+    pagesProcessed: number;
+    extractedPages: Array<{
+      url: string;
+      type: "service" | "blog" | "product" | "other";
+      title?: string;
+      content: string;
+      wordCount: number;
+      mainTopic?: string;
+      summary?: string;
+    }>;
+    aggregatedContent: {
+      services: string[];
+      blogs: string[];
+      products: string[];
+    };
+    totalWordCount: number;
+  };
 }
 
 interface ContentStrategyDashboardProps {
@@ -74,12 +104,13 @@ export default function ContentStrategyDashboard({
   onRefresh 
 }: ContentStrategyDashboardProps) {
   const [selectedSuggestion, setSelectedSuggestion] = useState<AISuggestion | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "keywords" | "gaps" | "pages" | "suggestions" | "planner">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "keywords" | "gaps" | "pages" | "details" | "suggestions" | "planner">("overview");
   const [selectedGap, setSelectedGap] = useState<string | null>(null);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [draftSuggestion, setDraftSuggestion] = useState<AISuggestion | null>(null);
   const [expandedPages, setExpandedPages] = useState<Set<string>>(new Set());
   const [draftActionDropdown, setDraftActionDropdown] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Smart Draft modal state
   const [draftStep, setDraftStep] = useState<1 | 2 | 3>(1);
@@ -318,6 +349,64 @@ export default function ContentStrategyDashboard({
     }
   };
 
+  // Toggle page expansion in detailed view
+  const togglePageExpansion = (pageUrl: string) => {
+    const newExpanded = new Set(expandedPages);
+    if (newExpanded.has(pageUrl)) {
+      newExpanded.delete(pageUrl);
+    } else {
+      newExpanded.add(pageUrl);
+    }
+    setExpandedPages(newExpanded);
+  };
+
+  // Filter pages based on search and type
+  const getFilteredPages = () => {
+    let filtered = pages || [];
+    
+    if (searchQuery) {
+      filtered = filtered.filter(page => 
+        (page.mainTopic || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (page.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        page.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (page.summary || '').toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    if (pageFilterType !== 'all') {
+      filtered = filtered.filter(p => {
+        const typeLower = p.type?.toLowerCase() || '';
+        const urlLower = p.url?.toLowerCase() || '';
+        
+        if (pageFilterType === 'service') {
+          return typeLower === 'service' || typeLower === 'services' || urlLower.includes('/services/');
+        } else if (pageFilterType === 'blog') {
+          return typeLower === 'blog' || urlLower.includes('/blog/');
+        }
+        return false;
+      });
+    }
+    
+    return filtered;
+  };
+
+  // Sort pages
+  const getSortedPages = (pagesToSort: any[]) => {
+    return [...pagesToSort].sort((a, b) => {
+      let comparison = 0;
+      if (pageSortField === 'title') {
+        const titleA = a.mainTopic || a.title || a.url.split('/').pop() || '';
+        const titleB = b.mainTopic || b.title || b.url.split('/').pop() || '';
+        comparison = titleA.localeCompare(titleB);
+      } else if (pageSortField === 'type') {
+        comparison = (a.type || '').localeCompare(b.type || '');
+      } else if (pageSortField === 'wordCount') {
+        comparison = (a.wordCount || 0) - (b.wordCount || 0);
+      }
+      return pageSortDirection === 'asc' ? comparison : -comparison;
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[600px] bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -359,14 +448,16 @@ export default function ContentStrategyDashboard({
     );
   }
 
-  const { contentContext, aiSuggestions, pages } = analysisOutput;
+  const { contentContext, aiSuggestions, pages, extractionData } = analysisOutput;
 
   // Debug data flow
   console.log('All Pages:', pages);
+  console.log('Extraction Data:', extractionData);
   console.log('Content Context:', contentContext);
 
   // Calculate total pages from pages array (fixes "0 pages analyzed" bug)
   const totalPages = pages?.length || 0;
+  const totalWordCount = pages?.reduce((sum, page) => sum + (page.wordCount || 0), 0) || 0;
 
   // Extract service pages (full objects) for dropdown with robust filtering
   const servicePages = pages?.filter(p => {
@@ -446,7 +537,7 @@ export default function ContentStrategyDashboard({
                 Content Strategy Dashboard
               </h1>
               <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                {analysisOutput.baseUrl} • {totalPages} pages analyzed
+                {analysisOutput.baseUrl} • {totalPages} pages analyzed • {totalWordCount.toLocaleString()} total words
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -473,6 +564,7 @@ export default function ContentStrategyDashboard({
               { id: "keywords", label: "Keywords", icon: Target },
               { id: "gaps", label: "Content Gaps", icon: AlertCircle },
               { id: "pages", label: "Pages", icon: Globe },
+              { id: "details", label: "Page Details", icon: FileSearch },
               { id: "suggestions", label: "Suggestions", icon: Lightbulb },
               { id: "planner", label: "Planner", icon: CalendarIcon }
             ].map((tab) => (
@@ -587,6 +679,41 @@ export default function ContentStrategyDashboard({
                   <p className="text-sm text-slate-600 dark:text-slate-400">Content Gaps</p>
                 </div>
               </div>
+
+              {/* Extraction Stats */}
+              {extractionData && (
+                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h2 className="text-xl font-semibold mb-2">
+                        Content Extraction Summary
+                      </h2>
+                      <p className="text-indigo-100 text-sm">
+                        Detailed analysis from Trigger.dev content extraction
+                      </p>
+                    </div>
+                    <BarChart3 className="w-8 h-8 text-indigo-200" />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-3xl font-bold">{extractionData.pagesProcessed}</p>
+                      <p className="text-sm text-indigo-100">Pages Processed</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold">{extractionData.totalWordCount.toLocaleString()}</p>
+                      <p className="text-sm text-indigo-100">Total Words</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold">{extractionData.aggregatedContent.services.length}</p>
+                      <p className="text-sm text-indigo-100">Service Pages</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold">{extractionData.aggregatedContent.blogs.length}</p>
+                      <p className="text-sm text-indigo-100">Blog Posts</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Quick Actions */}
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white">
@@ -996,13 +1123,13 @@ export default function ContentStrategyDashboard({
                     filteredPages = [...filteredPages].sort((a, b) => {
                       let comparison = 0;
                       if (pageSortField === 'title') {
-                        const titleA = a.mainTopic || a.url.split('/').pop() || '';
-                        const titleB = b.mainTopic || b.url.split('/').pop() || '';
+                        const titleA = a.mainTopic || a.title || a.url.split('/').pop() || '';
+                        const titleB = b.mainTopic || b.title || b.url.split('/').pop() || '';
                         comparison = titleA.localeCompare(titleB);
                       } else if (pageSortField === 'type') {
-                        comparison = a.type.localeCompare(b.type);
+                        comparison = (a.type || '').localeCompare(b.type || '');
                       } else if (pageSortField === 'wordCount') {
-                        comparison = a.wordCount - b.wordCount;
+                        comparison = (a.wordCount || 0) - (b.wordCount || 0);
                       }
                       return pageSortDirection === 'asc' ? comparison : -comparison;
                     });
@@ -1020,7 +1147,7 @@ export default function ContentStrategyDashboard({
                               <Globe className="w-4 h-4 text-slate-600 dark:text-slate-400 flex-shrink-0" />
                               <div>
                                 <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                  {page.mainTopic || page.url.split('/').pop() || 'Untitled Page'}
+                                  {page.mainTopic || page.title || page.url.split('/').pop() || 'Untitled Page'}
                                 </div>
                                 <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs">
                                   {page.url}
@@ -1040,7 +1167,7 @@ export default function ContentStrategyDashboard({
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                            {page.wordCount.toLocaleString()}
+                            {(page.wordCount || 0).toLocaleString()}
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex flex-wrap gap-1">
@@ -1076,6 +1203,209 @@ export default function ContentStrategyDashboard({
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* NEW DETAILED PAGE ANALYSIS TAB */}
+        {activeTab === "details" && (
+          <div className="space-y-6">
+            {/* Search and Filter Bar */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search pages by title, URL, or content..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    value={pageFilterType}
+                    onChange={(e) => setPageFilterType(e.target.value as 'all' | 'service' | 'blog')}
+                    className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="all">All Types</option>
+                    <option value="service">Services</option>
+                    <option value="blog">Blogs</option>
+                  </select>
+                  <select
+                    value={pageSortField}
+                    onChange={(e) => setPageSortField(e.target.value as 'title' | 'type' | 'wordCount')}
+                    className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="wordCount">Sort by Words</option>
+                    <option value="title">Sort by Title</option>
+                    <option value="type">Sort by Type</option>
+                  </select>
+                  <button
+                    onClick={() => setPageSortDirection(pageSortDirection === 'asc' ? 'desc' : 'asc')}
+                    className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    {pageSortDirection === 'asc' ? '↑' : '↓'}
+                  </button>
+                </div>
+              </div>
+              
+              {/* Results Summary */}
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Showing {getSortedPages(getFilteredPages()).length} of {totalPages} pages
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setExpandedPages(new Set(getSortedPages(getFilteredPages()).map(p => p.url)))}
+                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    Expand All
+                  </button>
+                  <span className="text-slate-400">•</span>
+                  <button
+                    onClick={() => setExpandedPages(new Set())}
+                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    Collapse All
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Page Cards */}
+            <div className="grid grid-cols-1 gap-6">
+              {getSortedPages(getFilteredPages()).map((page, index) => {
+                const isExpanded = expandedPages.has(page.url);
+                const displayTitle = page.mainTopic || page.title || page.url.split('/').pop() || 'Untitled Page';
+                
+                return (
+                  <div key={page.url} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                    {/* Page Header */}
+                    <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <Globe className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0" />
+                            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                              {displayTitle}
+                            </h3>
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                              page.type === 'service' 
+                                ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' 
+                                : page.type === 'blog'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
+                            }`}>
+                              {page.type || 'other'}
+                            </span>
+                          </div>
+                          <a 
+                            href={page.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 inline-flex items-center gap-1"
+                          >
+                            {page.url}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {page.wordCount?.toLocaleString() || 0}
+                            </p>
+                            <p className="text-xs text-slate-600 dark:text-slate-400">words</p>
+                          </div>
+                          <button
+                            onClick={() => togglePageExpansion(page.url)}
+                            className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                          >
+                            {isExpanded ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Page Content */}
+                    {isExpanded && (
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900/20">
+                        {/* Summary */}
+                        {page.summary && (
+                          <div className="mb-4">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Summary</h4>
+                            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                              {page.summary}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Full Content */}
+                        {page.content && (
+                          <div className="mb-4">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Full Content</h4>
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 max-h-96 overflow-y-auto">
+                              <pre className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-sans">
+                                {page.content}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Keywords */}
+                        {page.keywords && page.keywords.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Keywords</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {page.keywords.map((keyword, kIndex) => (
+                                <span
+                                  key={kIndex}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300"
+                                >
+                                  <Target className="w-2.5 h-2.5" />
+                                  {keyword}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                          <button
+                            onClick={() => navigator.clipboard.writeText(page.content || '')}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                          >
+                            <Copy className="w-3 h-3" />
+                            Copy Content
+                          </button>
+                          <button
+                            onClick={() => window.open(page.url, '_blank')}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Visit Page
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* No Results */}
+            {getFilteredPages().length === 0 && (
+              <div className="text-center py-12">
+                <FileSearch className="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                  No pages found
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Try adjusting your search or filter criteria
+                </p>
+              </div>
+            )}
           </div>
         )}
 

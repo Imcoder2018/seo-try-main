@@ -38,11 +38,32 @@ interface ContentAnalysisOutput {
   pages: Array<{
     url: string;
     type: string;
+    title?: string;
     wordCount: number;
     mainTopic?: string;
     summary?: string;
+    content?: string;
     keywords?: string[];
   }>;
+  extractionData?: {
+    baseUrl: string;
+    pagesProcessed: number;
+    extractedPages: Array<{
+      url: string;
+      type: "service" | "blog" | "product" | "other";
+      title?: string;
+      content: string;
+      wordCount: number;
+      mainTopic?: string;
+      summary?: string;
+    }>;
+    aggregatedContent: {
+      services: string[];
+      blogs: string[];
+      products: string[];
+    };
+    totalWordCount: number;
+  };
 }
 
 // Helper to extract top keywords from text using frequency analysis
@@ -311,9 +332,11 @@ Return ONLY valid JSON in this exact format:
       const formattedPages = finalExtractedPages.map(page => ({
         url: page.url,
         type: page.type,
+        title: page.title,
         wordCount: page.wordCount,
         mainTopic: page.title,
         summary: page.content.substring(0, 200),
+        content: page.content, // Include full content
         keywords: extractTopKeywords(page.content, 5),
       }));
 
@@ -329,6 +352,22 @@ Return ONLY valid JSON in this exact format:
         },
         aiSuggestions: analysisResult.aiSuggestions || [],
         pages: formattedPages,
+        extractionData: {
+          baseUrl,
+          pagesProcessed: finalExtractedPages.length,
+          extractedPages: finalExtractedPages.map(page => ({
+            ...page,
+            type: page.type as "service" | "blog" | "product" | "other",
+            mainTopic: page.title,
+            summary: page.content.substring(0, 200),
+          })),
+          aggregatedContent: {
+            services: finalExtractedPages.filter(p => p.type === 'service').map(p => p.title || p.url),
+            blogs: finalExtractedPages.filter(p => p.type === 'blog').map(p => p.title || p.url),
+            products: finalExtractedPages.filter(p => p.type === 'product').map(p => p.title || p.url),
+          },
+          totalWordCount: finalExtractedPages.reduce((sum, page) => sum + (page.wordCount || 0), 0),
+        },
       };
 
     } catch (error) {
