@@ -391,9 +391,19 @@ export default function HistoryPanel({ onSelectCrawlHistory, onSelectAnalysisHis
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
                         {item.status}
                       </span>
-                      {item.status === "COMPLETED" && item.analysisOutput && (
-                        <span className="text-xs text-blue-600 dark:text-blue-400">
-                          Click to view analysis
+                      {item.status === "COMPLETED" ? (
+                        item.analysisOutput ? (
+                          <span className="text-xs text-blue-600 dark:text-blue-400">
+                            Click to view analysis
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            Processing data...
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          {item.status.toLowerCase()}
                         </span>
                       )}
                     </div>
