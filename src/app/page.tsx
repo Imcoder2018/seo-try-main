@@ -12,7 +12,11 @@ import {
   ArrowRight,
   Sparkles,
   Globe,
-  Target
+  Target,
+  FileText,
+  Calendar,
+  Lightbulb,
+  Layers
 } from "lucide-react";
 import Link from "next/link";
 
@@ -22,44 +26,109 @@ export default function HomePage() {
       <Header />
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="relative py-20 px-4 bg-gradient-to-b from-primary/10 via-primary/5 to-background overflow-hidden">
+        <section className="relative py-24 px-4 bg-gradient-to-br from-blue-600/5 via-indigo-600/5 to-purple-600/5 overflow-hidden">
           <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/20 rounded-full blur-3xl"></div>
-            <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl"></div>
+            <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
+            <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-blue-500/5 to-purple-500/5 rounded-full blur-3xl"></div>
           </div>
           
           <div className="container mx-auto max-w-6xl relative">
             <div className="text-center mb-12">
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full mb-6">
-                <Sparkles className="w-4 h-4 text-primary" />
-                <span className="text-sm font-medium text-primary">Free SEO Audit Tool</span>
+              <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-full mb-8 backdrop-blur-sm">
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">AI-Powered SEO Platform</span>
               </div>
-              <h1 className="text-5xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-slate-900 via-slate-700 to-slate-900 dark:from-white dark:via-slate-200 dark:to-white bg-clip-text text-transparent">
-                Analyze Your Website's SEO Performance
+              <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
+                <span className="bg-gradient-to-r from-slate-900 via-slate-700 to-slate-900 dark:from-white dark:via-slate-200 dark:to-white bg-clip-text text-transparent">
+                  Transform Your
+                </span>
+                <br />
+                <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  Content Strategy
+                </span>
               </h1>
-              <p className="text-xl text-slate-600 dark:text-slate-400 mb-8 max-w-3xl mx-auto">
-                Get comprehensive SEO audits, performance insights, and actionable recommendations to improve your search rankings. Free forever.
+              <p className="text-xl text-slate-600 dark:text-slate-400 mb-10 max-w-3xl mx-auto leading-relaxed">
+                Comprehensive SEO audits, AI-powered content generation, and intelligent strategy planning — all in one platform. Boost your rankings with data-driven insights.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link
-                  href="/history"
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors font-medium"
+                  href="/content-strategy"
+                  className="group inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all font-semibold shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30"
                 >
-                  View Your History
-                  <ArrowRight className="w-5 h-5" />
+                  <Layers className="w-5 h-5" />
+                  Open Content Hub
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
                 <Link
-                  href="/content-strategy"
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors font-medium text-slate-900 dark:text-slate-100"
+                  href="/content-strategy?view=history"
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-slate-900 dark:text-slate-100 shadow-lg"
                 >
-                  Content Strategy
-                  <BarChart3 className="w-5 h-5" />
+                  View History
+                  <ArrowRight className="w-5 h-5" />
                 </Link>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-700">
+            <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-slate-200/50 dark:border-slate-700/50">
               <AuditForm />
+            </div>
+          </div>
+        </section>
+
+        {/* Quick Access Cards */}
+        <section className="py-16 px-4 bg-white dark:bg-slate-900">
+          <div className="container mx-auto max-w-6xl">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+                Your Content Command Center
+              </h2>
+              <p className="text-lg text-slate-600 dark:text-slate-400">
+                Everything you need to create, optimize, and publish winning content
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Link href="/content-strategy?view=analysis" className="group">
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-900/20 dark:to-blue-800/10 rounded-2xl p-6 border border-blue-200/50 dark:border-blue-800/50 hover:shadow-xl hover:shadow-blue-500/10 transition-all h-full">
+                  <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <BarChart3 className="w-6 h-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Strategy Hub</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Analyze your site and discover content opportunities</p>
+                </div>
+              </Link>
+
+              <Link href="/content-strategy?view=auto-content" className="group relative">
+                <div className="absolute -top-2 -right-2 px-2 py-1 bg-gradient-to-r from-pink-500 to-purple-500 text-white text-xs font-bold rounded-full z-10">NEW</div>
+                <div className="bg-gradient-to-br from-purple-50 to-pink-100/50 dark:from-purple-900/20 dark:to-pink-800/10 rounded-2xl p-6 border border-purple-200/50 dark:border-purple-800/50 hover:shadow-xl hover:shadow-purple-500/10 transition-all h-full">
+                  <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Lightbulb className="w-6 h-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Content Wizard</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">6-step guided content generation wizard</p>
+                </div>
+              </Link>
+
+              <Link href="/content-strategy?view=drafts" className="group">
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/20 dark:to-amber-800/10 rounded-2xl p-6 border border-amber-200/50 dark:border-amber-800/50 hover:shadow-xl hover:shadow-amber-500/10 transition-all h-full">
+                  <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <FileText className="w-6 h-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Drafts</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Manage and edit your content drafts</p>
+                </div>
+              </Link>
+
+              <Link href="/content-strategy?view=calendar" className="group">
+                <div className="bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-900/20 dark:to-green-800/10 rounded-2xl p-6 border border-green-200/50 dark:border-green-800/50 hover:shadow-xl hover:shadow-green-500/10 transition-all h-full">
+                  <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Calendar className="w-6 h-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Calendar</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Schedule and track content publishing</p>
+                </div>
+              </Link>
             </div>
           </div>
         </section>

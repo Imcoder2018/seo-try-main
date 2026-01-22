@@ -6,7 +6,10 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import ContentStrategyDashboardV2 from "@/components/content/ContentStrategyDashboardV2";
 import HistoryPanel from "@/components/content/HistoryPanel";
 import AutoContentEngineSplit from "@/components/content/AutoContentEngineSplit";
+import AutoContentEngine from "@/components/content/AutoContentEngine";
 import PlannerView from "@/components/content/PlannerView";
+import DraftsPanel from "@/components/content/DraftsPanel";
+import ContentCalendarPanel from "@/components/content/ContentCalendarPanel";
 import ProgressStepper from "@/components/content/ProgressStepper";
 import SmartSelectSummary from "@/components/content/SmartSelectSummary";
 import EmptyStateOnboarding from "@/components/content/EmptyStateOnboarding";
@@ -421,9 +424,22 @@ export default function ContentStrategyPage() {
   };
 
   const handleAnalysisHistorySelect = (analysisItem: any) => {
+    console.log("[Content Strategy] Loading analysis from history:", analysisItem.id);
     if (analysisItem.analysisOutput) {
-      setAnalysisOutput(analysisItem.analysisOutput);
+      let outputData = analysisItem.analysisOutput;
+      // Unwrap nested json structure if present
+      if (outputData.json) {
+        console.log("[Content Strategy] Unwrapping nested json structure from history");
+        outputData = outputData.json;
+      }
+      console.log("[Content Strategy] Setting analysis output with keys:", Object.keys(outputData));
+      setAnalysisOutput(outputData);
+      setBaseUrl(analysisItem.url || outputData.baseUrl || "");
       setIsLoading(false);
+      setActiveView("analysis");
+      toast.success("Strategy Loaded", `Loaded analysis for ${analysisItem.domain}`);
+    } else {
+      toast.error("Load Failed", "This analysis has no output data available.");
     }
   };
 
@@ -879,6 +895,72 @@ export default function ContentStrategyPage() {
     );
   };
 
+  const renderDraftsView = () => {
+    return (
+      <div className="py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Content Drafts
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 mt-1">
+              Manage your AI-generated content drafts
+            </p>
+          </div>
+        </div>
+        <DraftsPanel />
+      </div>
+    );
+  };
+
+  const renderCalendarView = () => {
+    return (
+      <div className="py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Content Calendar
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 mt-1">
+              Schedule and track your content publishing
+            </p>
+          </div>
+        </div>
+        <ContentCalendarPanel />
+      </div>
+    );
+  };
+
+  const renderHistoryView = () => {
+    return (
+      <div className="py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Analysis History
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 mt-1">
+              View and load previous content analyses
+            </p>
+          </div>
+        </div>
+        <HistoryPanel
+          onSelectCrawlHistory={handleCrawlHistorySelect}
+          onSelectAnalysisHistory={handleAnalysisHistorySelect}
+          currentDomain={currentDomain || undefined}
+        />
+      </div>
+    );
+  };
+
+  const renderAutoContentView = () => {
+    return (
+      <div className="py-8">
+        <AutoContentEngine />
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeView) {
       case "dashboard":
@@ -887,8 +969,16 @@ export default function ContentStrategyPage() {
         return renderAnalysisView();
       case "production":
         return renderProductionView();
+      case "auto-content":
+        return renderAutoContentView();
       case "planner":
         return renderPlannerView();
+      case "drafts":
+        return renderDraftsView();
+      case "calendar":
+        return renderCalendarView();
+      case "history":
+        return renderHistoryView();
       default:
         return renderAnalysisView();
     }

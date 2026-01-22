@@ -400,56 +400,56 @@ export default function AutoContentEngine() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+    <div className="max-w-6xl mx-auto">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
-              <Wand2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+        <div className="p-6 bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
+              <Wand2 className="w-8 h-8 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                Auto-Content Engine
+              <h1 className="text-3xl font-bold">
+                Content Wizard
               </h1>
-              <p className="text-slate-600 dark:text-slate-400">
-                Generate location-specific content at scale with AI
+              <p className="text-white/80 mt-1">
+                6-step guided content generation • AI-powered • Location-specific
               </p>
             </div>
           </div>
 
           {/* Progress Steps */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mt-2">
             {steps.map((step, index) => (
               <div key={step.id} className="flex items-center flex-1">
                 <div className="flex items-center">
-                  <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all ${
                     currentStep >= step.id
-                      ? 'bg-blue-600 border-blue-600 text-white'
-                      : 'border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400'
+                      ? 'bg-white text-indigo-600 border-white shadow-lg'
+                      : 'border-white/40 text-white/60'
                   }`}>
                     {currentStep > step.id ? (
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 className="w-5 h-5" />
                     ) : (
-                      <step.icon className="w-4 h-4" />
+                      <step.icon className="w-5 h-5" />
                     )}
                   </div>
-                  <div className="ml-3 hidden sm:block">
-                    <p className={`text-sm font-medium ${
+                  <div className="ml-3 hidden lg:block">
+                    <p className={`text-sm font-semibold ${
                       currentStep >= step.id
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-500 dark:text-slate-400'
+                        ? 'text-white'
+                        : 'text-white/60'
                     }`}>
                       {step.title}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-500">
+                    <p className="text-xs text-white/50">
                       {step.description}
                     </p>
                   </div>
                 </div>
                 {index < steps.length - 1 && (
-                  <div className={`flex-1 h-px mx-4 ${
-                    currentStep > step.id ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
+                  <div className={`flex-1 h-0.5 mx-4 rounded-full ${
+                    currentStep > step.id ? 'bg-white' : 'bg-white/20'
                   }`} />
                 )}
               </div>
@@ -469,12 +469,12 @@ export default function AutoContentEngine() {
         </div>
 
         {/* Navigation */}
-        <div className="p-6 border-t border-slate-200 dark:border-slate-700">
+        <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
               disabled={currentStep === 1}
-              className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-2.5 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-all"
             >
               <ChevronLeft className="w-4 h-4" />
               Previous
@@ -485,7 +485,7 @@ export default function AutoContentEngine() {
                 <button
                   onClick={generateTopics}
                   disabled={!selectedService || loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 transition-all font-medium"
                 >
                   {loading ? (
                     <>
@@ -505,7 +505,7 @@ export default function AutoContentEngine() {
                 <button
                   onClick={startBulkGeneration}
                   disabled={selectedTopics.length === 0 || selectedLocations.length === 0 || isGenerating}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 transition-all font-medium"
                 >
                   {isGenerating ? (
                     <>
@@ -525,7 +525,7 @@ export default function AutoContentEngine() {
                 <button
                   onClick={() => setCurrentStep(Math.min(6, currentStep + 1))}
                   disabled={!canProceed() || loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/25 transition-all font-medium"
                 >
                   {loading ? (
                     <>
@@ -534,7 +534,7 @@ export default function AutoContentEngine() {
                     </>
                   ) : (
                     <>
-                      Next
+                      Next Step
                       <ChevronRight className="w-4 h-4" />
                     </>
                   )}

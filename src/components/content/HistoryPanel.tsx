@@ -378,8 +378,7 @@ export default function HistoryPanel({ onSelectCrawlHistory, onSelectAnalysisHis
             analysisHistory.map((item) => (
               <div
                 key={item.id}
-                className={`p-4 border border-slate-200 dark:border-slate-700 rounded-lg ${item.status === "COMPLETED" && item.analysisOutput ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : ''} transition-colors`}
-                onClick={() => item.status === "COMPLETED" && item.analysisOutput && handleAnalysisClick(item)}
+                className={`p-4 border border-slate-200 dark:border-slate-700 rounded-lg transition-all ${item.status === "COMPLETED" && item.analysisOutput ? 'hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md' : ''}`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
@@ -391,21 +390,6 @@ export default function HistoryPanel({ onSelectCrawlHistory, onSelectAnalysisHis
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
                         {item.status}
                       </span>
-                      {item.status === "COMPLETED" ? (
-                        item.analysisOutput ? (
-                          <span className="text-xs text-blue-600 dark:text-blue-400">
-                            Click to view analysis
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            Processing data...
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {item.status.toLowerCase()}
-                        </span>
-                      )}
                     </div>
                     
                     <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
@@ -428,8 +412,22 @@ export default function HistoryPanel({ onSelectCrawlHistory, onSelectAnalysisHis
                     )}
                   </div>
                   
-                  <div className="flex items-center ml-4">
+                  <div className="flex items-center gap-2 ml-4">
                     {getStatusIcon(item.status)}
+                    {item.status === "COMPLETED" && item.analysisOutput && (
+                      <button
+                        onClick={() => handleAnalysisClick(item)}
+                        className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Load Strategy
+                      </button>
+                    )}
+                    {item.status === "COMPLETED" && !item.analysisOutput && (
+                      <span className="text-xs text-slate-500 px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                        Processing...
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

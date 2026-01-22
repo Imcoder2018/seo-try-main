@@ -23,6 +23,8 @@ import {
   RefreshCw,
   Download,
   Share2,
+  Wand2,
+  CalendarDays,
 } from "lucide-react";
 
 interface NavItem {
@@ -37,10 +39,12 @@ const navItems: NavItem[] = [
   { id: "home", label: "Home", icon: Home, href: "/" },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/content-strategy?view=dashboard" },
   { id: "strategy", label: "Strategy Hub", icon: BarChart3, href: "/content-strategy?view=analysis" },
-  { id: "production", label: "Production", icon: Zap, href: "/content-strategy?view=production" },
-  { id: "calendar", label: "Calendar", icon: Calendar, href: "/content-strategy?view=planner" },
-  { id: "drafts", label: "Drafts", icon: FileText, href: "/drafts" },
-  { id: "archives", label: "Archives", icon: Archive, href: "/history" },
+  { id: "auto-content", label: "Content Wizard", icon: Wand2, href: "/content-strategy?view=auto-content", badge: "New" },
+  { id: "production", label: "Quick Writer", icon: Zap, href: "/content-strategy?view=production" },
+  { id: "planner", label: "Planner", icon: Calendar, href: "/content-strategy?view=planner" },
+  { id: "drafts", label: "Drafts", icon: FileText, href: "/content-strategy?view=drafts" },
+  { id: "calendar", label: "Calendar", icon: CalendarDays, href: "/content-strategy?view=calendar" },
+  { id: "archives", label: "History", icon: Archive, href: "/content-strategy?view=history" },
 ];
 
 interface SidebarLayoutProps {
