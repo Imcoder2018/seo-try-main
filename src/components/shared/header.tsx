@@ -29,6 +29,12 @@ export function Header() {
               Content Strategy
             </Link>
             <Link
+              href="/auto-content"
+              className="text-muted-foreground hover:text-foreground transition-colors font-medium text-blue-600 dark:text-blue-400"
+            >
+              Auto-Content
+            </Link>
+            <Link
               href="/drafts"
               className="text-muted-foreground hover:text-foreground transition-colors"
             >

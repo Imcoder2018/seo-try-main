@@ -1,0 +1,805 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { 
+  Wand2, 
+  Globe, 
+  MapPin, 
+  FileText, 
+  Image, 
+  ChevronRight, 
+  ChevronLeft, 
+  CheckCircle2, 
+  Loader2, 
+  Search,
+  Target,
+  Settings,
+  Eye,
+  Upload,
+  Clock,
+  Zap
+} from "lucide-react";
+
+interface DiscoveryData {
+  services: string[];
+  locations: string[];
+  aboutSummary: string;
+  targetAudience: string;
+  brandTone: string;
+  contactInfo: {
+    email: string;
+    phone: string;
+    address: string;
+  };
+  existingPages: Array<{
+    url: string;
+    type: string;
+    title: string;
+  }>;
+}
+
+interface Topic {
+  title: string;
+  primaryKeywords: string[];
+  secondaryKeywords: string[];
+  targetLocations: string[];
+  contentType: "blog post" | "landing page";
+  description: string;
+  searchIntent: "informational" | "commercial" | "local";
+  estimatedWordCount?: number;
+  difficulty?: "easy" | "medium" | "hard";
+}
+
+interface GeneratedContent {
+  id: string;
+  title: string;
+  location: string;
+  contentType: string;
+  content: string;
+  imageUrl?: string;
+  status: "generating" | "completed" | "failed";
+  wordCount: number;
+  createdAt: string;
+}
+
+export default function AutoContentEngine() {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [discoveryData, setDiscoveryData] = useState<DiscoveryData | null>(null);
+  const [selectedService, setSelectedService] = useState<string>("");
+  const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [generatedContent, setGeneratedContent] = useState<GeneratedContent[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const steps = [
+    { id: 1, title: "Auto-Discovery", icon: Search, description: "Analyze your website" },
+    { id: 2, title: "Service Selection", icon: Target, description: "Choose a service to grow" },
+    { id: 3, title: "AI Topics", icon: FileText, description: "Review AI-generated topics" },
+    { id: 4, title: "Location Mapping", icon: MapPin, description: "Select target locations" },
+    { id: 5, title: "Generation", icon: Wand2, description: "Generate content & images" },
+    { id: 6, title: "Review & Publish", icon: Eye, description: "Review and publish content" },
+  ];
+
+  useEffect(() => {
+    // Auto-start discovery if we have a recent crawl
+    loadDiscoveryData();
+  }, []);
+
+  const loadDiscoveryData = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/content/auto-discovery?crawlRequestId=latest');
+      const data = await response.json();
+      
+      if (data.success) {
+        setDiscoveryData(data.data);
+        console.log('[Auto-Content] Discovery data loaded:', data.data);
+      }
+    } catch (err) {
+      console.error('[Auto-Content] Failed to load discovery data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateTopics = async () => {
+    if (!selectedService || !discoveryData) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch('/api/content/ai-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedService,
+          locations: discoveryData.locations,
+          existingContent: discoveryData.existingPages,
+          brandTone: discoveryData.brandTone,
+          targetAudience: discoveryData.targetAudience,
+          aboutSummary: discoveryData.aboutSummary,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('[Auto-Content] Generated topics:', data.topics);
+        // Auto-select all topics initially
+        setSelectedTopics(data.topics);
+        setCurrentStep(4); // Skip to location mapping
+      } else {
+        setError(data.error);
+      }
+    } catch (err) {
+      setError('Failed to generate topics');
+      console.error('[Auto-Content] Topic generation error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startBulkGeneration = async () => {
+    if (selectedTopics.length === 0 || selectedLocations.length === 0 || !discoveryData) return;
+
+    try {
+      setIsGenerating(true);
+      setError(null);
+
+      const response = await fetch('/api/content/bulk-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedTopics,
+          selectedLocations,
+          service: selectedService,
+          brandTone: discoveryData.brandTone,
+          targetAudience: discoveryData.targetAudience,
+          aboutSummary: discoveryData.aboutSummary,
+          generateImages: true,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('[Auto-Content] Bulk generation started:', data);
+        setCurrentStep(6); // Move to review step
+        
+        // Simulate progress updates
+        simulateProgress(data.taskId, data.totalCombinations);
+      } else {
+        setError(data.error);
+        setIsGenerating(false);
+      }
+    } catch (err) {
+      setError('Failed to start content generation');
+      setIsGenerating(false);
+      console.error('[Auto-Content] Bulk generation error:', err);
+    }
+  };
+
+  const simulateProgress = (taskId: string, total: number) => {
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += Math.random() * 10;
+      if (progress >= 100) {
+        progress = 100;
+        clearInterval(interval);
+        setIsGenerating(false);
+        
+        // Generate mock content for demo
+        const mockContent: GeneratedContent[] = selectedTopics.slice(0, 3).map((topic, index) => ({
+          id: `content_${index}`,
+          title: topic.title,
+          location: selectedLocations[0],
+          contentType: topic.contentType,
+          content: `This is AI-generated content for "${topic.title}" targeting ${selectedLocations[0]}. The content would be a comprehensive ${topic.contentType} that incorporates the primary keywords: ${topic.primaryKeywords.join(', ')} and secondary keywords: ${topic.secondaryKeywords.join(', ')}.`,
+          imageUrl: 'https://picsum.photos/1024/1024?random=' + index,
+          status: 'completed' as const,
+          wordCount: 1200 + Math.floor(Math.random() * 800),
+          createdAt: new Date().toISOString(),
+        }));
+        
+        setGeneratedContent(mockContent);
+      }
+      setGenerationProgress(progress);
+    }, 1000);
+  };
+
+  const toggleTopicSelection = (topic: Topic) => {
+    setSelectedTopics(prev => 
+      prev.some(t => t.title === topic.title)
+        ? prev.filter(t => t.title !== topic.title)
+        : [...prev, topic]
+    );
+  };
+
+  const toggleLocationSelection = (location: string) => {
+    setSelectedLocations(prev => 
+      prev.includes(location)
+        ? prev.filter(l => l !== location)
+        : [...prev, location]
+    );
+  };
+
+  const canProceed = () => {
+    switch (currentStep) {
+      case 1: return discoveryData !== null;
+      case 2: return selectedService !== "";
+      case 3: return selectedTopics.length > 0;
+      case 4: return selectedLocations.length > 0;
+      case 5: return !isGenerating;
+      case 6: return generatedContent.length > 0;
+      default: return false;
+    }
+  };
+
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return <DiscoveryStep discoveryData={discoveryData} loading={loading} />;
+      case 2:
+        return <ServiceSelectionStep 
+          services={discoveryData?.services || []}
+          selectedService={selectedService}
+          onSelectService={setSelectedService}
+        />;
+      case 3:
+        return <TopicsStep 
+          topics={selectedTopics}
+          selectedTopics={selectedTopics}
+          onToggleTopic={toggleTopicSelection}
+          loading={loading}
+        />;
+      case 4:
+        return <LocationMappingStep 
+          locations={discoveryData?.locations || []}
+          selectedLocations={selectedLocations}
+          onToggleLocation={toggleLocationSelection}
+        />;
+      case 5:
+        return <GenerationStep 
+          isGenerating={isGenerating}
+          progress={generationProgress}
+          totalCombinations={selectedTopics.length * selectedLocations.length}
+          onStartGeneration={startBulkGeneration}
+        />;
+      case 6:
+        return <ReviewStep 
+          generatedContent={generatedContent}
+          selectedTopics={selectedTopics}
+          selectedLocations={selectedLocations}
+        />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+        {/* Header */}
+        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+              <Wand2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                Auto-Content Engine
+              </h1>
+              <p className="text-slate-600 dark:text-slate-400">
+                Generate location-specific content at scale with AI
+              </p>
+            </div>
+          </div>
+
+          {/* Progress Steps */}
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => (
+              <div key={step.id} className="flex items-center flex-1">
+                <div className="flex items-center">
+                  <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
+                    currentStep >= step.id
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400'
+                  }`}>
+                    {currentStep > step.id ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <step.icon className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div className="ml-3 hidden sm:block">
+                    <p className={`text-sm font-medium ${
+                      currentStep >= step.id
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {step.title}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500">
+                      {step.description}
+                    </p>
+                  </div>
+                </div>
+                {index < steps.length - 1 && (
+                  <div className={`flex-1 h-px mx-4 ${
+                    currentStep > step.id ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
+                  }`} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Step Content */}
+        <div className="p-6">
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
+
+          {renderStepContent()}
+        </div>
+
+        {/* Navigation */}
+        <div className="p-6 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
+              disabled={currentStep === 1}
+              className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </button>
+
+            <div className="flex items-center gap-3">
+              {currentStep === 2 && (
+                <button
+                  onClick={generateTopics}
+                  disabled={!selectedService || loading}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Zap className="w-4 h-4" />
+                  Generate AI Topics
+                </button>
+              )}
+              
+              {currentStep === 4 && (
+                <button
+                  onClick={startBulkGeneration}
+                  disabled={selectedTopics.length === 0 || selectedLocations.length === 0 || isGenerating}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  Start Generation
+                </button>
+              )}
+
+              {currentStep !== 2 && currentStep !== 4 && currentStep !== 5 && (
+                <button
+                  onClick={() => setCurrentStep(Math.min(6, currentStep + 1))}
+                  disabled={!canProceed()}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Step Components
+function DiscoveryStep({ discoveryData, loading }: { discoveryData: DiscoveryData | null; loading: boolean }) {
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <Search className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+          Website Auto-Discovery
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400">
+          Analyzing your website to extract services, locations, and brand context...
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="ml-3 text-slate-600 dark:text-slate-400">Discovering your website context...</span>
+        </div>
+      ) : discoveryData ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-medium text-slate-900 dark:text-slate-100">Services Found</h3>
+            </div>
+            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{discoveryData.services.length}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Services identified</p>
+          </div>
+
+          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <MapPin className="w-5 h-5 text-green-600 dark:text-green-400" />
+              <h3 className="font-medium text-slate-900 dark:text-slate-100">Locations</h3>
+            </div>
+            <p className="text-2xl font-bold text-green-600 dark:text-green-400">{discoveryData.locations.length}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Target areas found</p>
+          </div>
+
+          <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <h3 className="font-medium text-slate-900 dark:text-slate-100">Existing Pages</h3>
+            </div>
+            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{discoveryData.existingPages.length}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Pages analyzed</p>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ServiceSelectionStep({ 
+  services, 
+  selectedService, 
+  onSelectService 
+}: { 
+  services: string[]; 
+  selectedService: string; 
+  onSelectService: (service: string) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <Target className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+          Select Service to Grow
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400">
+          Choose which service you want to generate content for
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {services.map((service) => (
+          <button
+            key={service}
+            onClick={() => onSelectService(service)}
+            className={`p-4 border rounded-lg transition-all ${
+              selectedService === service
+                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-4 h-4 rounded-full border-2 ${
+                selectedService === service
+                  ? 'bg-blue-600 border-blue-600'
+                  : 'border-slate-300 dark:border-slate-600'
+              }`}>
+                {selectedService === service && (
+                  <CheckCircle2 className="w-3 h-3 text-white" />
+                )}
+              </div>
+              <span className="font-medium text-slate-900 dark:text-slate-100">
+                {service}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopicsStep({ 
+  topics, 
+  selectedTopics, 
+  onToggleTopic, 
+  loading 
+}: { 
+  topics: Topic[]; 
+  selectedTopics: Topic[]; 
+  onToggleTopic: (topic: Topic) => void; 
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <span className="ml-3 text-slate-600 dark:text-slate-400">Generating AI topics...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <FileText className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+          AI-Generated Topics
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400">
+          Review and select topics for content generation
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {topics.map((topic) => {
+          const isSelected = selectedTopics.some(t => t.title === topic.title);
+          return (
+            <div
+              key={topic.title}
+              className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                isSelected
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+              }`}
+              onClick={() => onToggleTopic(topic)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className={`w-4 h-4 rounded-full border-2 ${
+                      isSelected
+                        ? 'bg-blue-600 border-blue-600'
+                        : 'border-slate-300 dark:border-slate-600'
+                    }`}>
+                      {isSelected && (
+                        <CheckCircle2 className="w-3 h-3 text-white" />
+                      )}
+                    </div>
+                    <h3 className="font-medium text-slate-900 dark:text-slate-100">
+                      {topic.title}
+                    </h3>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      topic.contentType === 'landing page'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
+                    }`}>
+                      {topic.contentType}
+                    </span>
+                  </div>
+                  
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                    {topic.description}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <div className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                      <span className="font-medium">Primary:</span> {topic.primaryKeywords.join(', ')}
+                    </div>
+                    <div className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                      <span className="font-medium">Intent:</span> {topic.searchIntent}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LocationMappingStep({ 
+  locations, 
+  selectedLocations, 
+  onToggleLocation 
+}: { 
+  locations: string[]; 
+  selectedLocations: string[]; 
+  onToggleLocation: (location: string) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <MapPin className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+          Select Target Locations
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400">
+          Choose locations for your content targeting
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {locations.map((location) => {
+          const isSelected = selectedLocations.includes(location);
+          return (
+            <button
+              key={location}
+              onClick={() => onToggleLocation(location)}
+              className={`p-3 border rounded-lg transition-all ${
+                isSelected
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-slate-500" />
+                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {location}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GenerationStep({ 
+  isGenerating, 
+  progress, 
+  totalCombinations, 
+  onStartGeneration 
+}: { 
+  isGenerating: boolean; 
+  progress: number; 
+  totalCombinations: number; 
+  onStartGeneration: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <Wand2 className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+          Content Generation
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400">
+          Generating {totalCombinations} pieces of content with AI
+        </p>
+      </div>
+
+      {!isGenerating ? (
+        <div className="text-center">
+          <button
+            onClick={onStartGeneration}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Wand2 className="w-5 h-5" />
+            Start Bulk Generation
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-slate-600 dark:text-slate-400">
+              Generating content and images...
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600 dark:text-slate-400">Progress</span>
+              <span className="font-medium text-slate-900 dark:text-slate-100">
+                {Math.round(progress)}%
+              </span>
+            </div>
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {Math.round(totalCombinations * progress / 100)}
+              </p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Completed</p>
+            </div>
+            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {totalCombinations - Math.round(totalCombinations * progress / 100)}
+              </p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Remaining</p>
+            </div>
+            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {totalCombinations}
+              </p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Total</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewStep({ 
+  generatedContent, 
+  selectedTopics, 
+  selectedLocations 
+}: { 
+  generatedContent: GeneratedContent[]; 
+  selectedTopics: Topic[]; 
+  selectedLocations: string[]; 
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <Eye className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
+          Review & Publish
+        </h2>
+        <p className="text-slate-600 dark:text-slate-400">
+          Review your generated content and publish to WordPress
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {generatedContent.map((content) => (
+          <div key={content.id} className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
+            <div className="flex items-start gap-4">
+              {content.imageUrl && (
+                <img 
+                  src={content.imageUrl} 
+                  alt={content.title}
+                  className="w-20 h-20 object-cover rounded-lg"
+                />
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="font-medium text-slate-900 dark:text-slate-100">
+                    {content.title}
+                  </h3>
+                  <span className="px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300 rounded-full text-xs">
+                    {content.status}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400 mb-2">
+                  <span>{content.location}</span>
+                  <span>•</span>
+                  <span>{content.wordCount} words</span>
+                  <span>•</span>
+                  <span>{content.contentType}</span>
+                </div>
+
+                <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
+                  {content.content}
+                </p>
+
+                <div className="flex items-center gap-2 mt-3">
+                  <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm">
+                    View Full Content
+                  </button>
+                  <button className="px-3 py-1 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm">
+                    Edit
+                  </button>
+                  <button className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm">
+                    Publish to WordPress
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

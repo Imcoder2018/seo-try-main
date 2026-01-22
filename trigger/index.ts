@@ -11,3 +11,5 @@ export * from "./crawl/site-wide-audit";
 export * from "./ai/ranking-strategy";
 export * from "./content/content-extractor";
 export * from "./content/content-analyzer";
+export * from "./content/content-generator";
+export * from "./content/auto-discovery";
