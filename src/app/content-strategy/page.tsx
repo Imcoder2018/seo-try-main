@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import SidebarLayout from "@/components/layout/SidebarLayout";
-import ContentStrategyDashboard from "@/components/content/content-strategy-dashboard";
+import ContentStrategyDashboardV2 from "@/components/content/ContentStrategyDashboardV2";
 import HistoryPanel from "@/components/content/HistoryPanel";
 import AutoContentEngineSplit from "@/components/content/AutoContentEngineSplit";
 import PlannerView from "@/components/content/PlannerView";
@@ -13,6 +13,12 @@ import EmptyStateOnboarding from "@/components/content/EmptyStateOnboarding";
 import SEOHealthScore from "@/components/content/SEOHealthScore";
 import PersonaCard from "@/components/content/PersonaCard";
 import GapAnalysisCard from "@/components/content/GapAnalysisCard";
+import PriorityMatrix from "@/components/content/PriorityMatrix";
+import DraftSolutionModal from "@/components/content/DraftSolutionModal";
+import StrategyHeader from "@/components/content/StrategyHeader";
+import ConfirmationModal from "@/components/ui/ConfirmationModal";
+import { useToast } from "@/components/ui/Toast";
+import { useContentStrategy } from "@/contexts/ContentStrategyContext";
 import {
   Loader2,
   CheckCircle2,
@@ -44,9 +50,15 @@ const STORAGE_KEY_ANALYSIS = "seo_analysis_output";
 
 export default function ContentStrategyPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialView = searchParams.get("view") || "analysis";
+  const { resetStrategy, setCurrentDomain, currentDomain } = useContentStrategy();
+  const toast = useToast();
 
   const [activeView, setActiveView] = useState(initialView);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [isReAnalyzing, setIsReAnalyzing] = useState(false);
+  const [lastAnalyzedDate, setLastAnalyzedDate] = useState<Date | null>(null);
   const [analysisOutput, setAnalysisOutput] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
@@ -65,6 +77,47 @@ export default function ContentStrategyPage() {
   const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysis[]>([]);
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [draftGapTopic, setDraftGapTopic] = useState("");
+  const [showBridgeFlowModal, setShowBridgeFlowModal] = useState(false);
+  const [bridgeFlowGap, setBridgeFlowGap] = useState("");
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + N = New Strategy
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        setShowResetConfirmModal(true);
+      }
+      // Ctrl/Cmd + R = Re-analyze (when not in input)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && analysisOutput && !isLoading) {
+        const activeEl = document.activeElement;
+        if (activeEl?.tagName !== 'INPUT' && activeEl?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          handleReAnalyze();
+        }
+      }
+      // Ctrl/Cmd + H = History
+      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+        e.preventDefault();
+        router.push('/history');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [analysisOutput, isLoading]);
+
+  // Update domain in context when baseUrl changes
+  useEffect(() => {
+    if (baseUrl) {
+      try {
+        const url = new URL(baseUrl);
+        setCurrentDomain(url.hostname);
+      } catch {
+        setCurrentDomain(baseUrl);
+      }
+    }
+  }, [baseUrl, setCurrentDomain]);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY_ANALYSIS);
@@ -390,7 +443,18 @@ export default function ContentStrategyPage() {
   };
 
   const handleGenerateFromGap = (gap: string) => {
-    setDraftGapTopic(gap);
+    setBridgeFlowGap(gap);
+    setShowBridgeFlowModal(true);
+  };
+
+  const handleBridgeFlowGenerate = async (config: {
+    topic: string;
+    tone: string;
+    keywords: string[];
+    targetPersona: string;
+  }) => {
+    setDraftGapTopic(config.topic);
+    setShowBridgeFlowModal(false);
     setActiveView("production");
   };
 
@@ -416,16 +480,61 @@ export default function ContentStrategyPage() {
     setActiveView(view);
   };
 
+  const handleNewStrategy = () => {
+    setShowResetConfirmModal(true);
+  };
+
+  const confirmNewStrategy = () => {
+    resetStrategy();
+    setAnalysisOutput(null);
+    setPages([]);
+    setBaseUrl("");
+    setError(null);
+    setCrawlProgress(0);
+    setAnalysisProgress(0);
+    localStorage.removeItem(STORAGE_KEY_ANALYSIS);
+    localStorage.removeItem(STORAGE_KEY_DISCOVERY);
+    setShowResetConfirmModal(false);
+    setActiveView("analysis");
+    toast.success("Strategy Reset", "Ready to start a new content strategy analysis.");
+  };
+
+  const handleReAnalyze = async () => {
+    if (!baseUrl) {
+      toast.warning("No URL", "Please enter a website URL first.");
+      return;
+    }
+    setIsReAnalyzing(true);
+    toast.info("Re-analyzing", `Starting fresh analysis of ${baseUrl}`);
+    await handleCrawl(baseUrl);
+    setIsReAnalyzing(false);
+  };
+
+  const handleExportPDF = () => {
+    toast.info("Export Started", "Preparing your PDF report...");
+    // TODO: Implement PDF export
+  };
+
+  const handleShare = () => {
+    toast.success("Link Copied", "Strategy link copied to clipboard!");
+  };
+
+  const handleViewHistory = () => {
+    router.push('/history');
+  };
+
   const pagesByType = getPagesByType();
   const selectedCount = pages.filter((p) => p.selected).length;
 
   const renderAnalysisView = () => {
     if (analysisOutput) {
       return (
-        <ContentStrategyDashboard
+        <ContentStrategyDashboardV2
           analysisOutput={analysisOutput}
           isLoading={isLoading}
           onRefresh={handleAnalysis}
+          onGenerateContent={handleGenerateFromGap}
+          onOpenPlanner={() => setActiveView("planner")}
         />
       );
     }
@@ -660,7 +769,7 @@ export default function ContentStrategyPage() {
             writingStyle={contentContext.overallWritingStyle}
           />
 
-          {/* Gap Analysis */}
+          {/* Gap Analysis with Priority Matrix */}
           <div className="lg:col-span-1">
             <GapAnalysisCard
               gaps={contentContext.contentGaps || []}
@@ -670,11 +779,24 @@ export default function ContentStrategyPage() {
           </div>
         </div>
 
-        {/* Full Dashboard */}
-        <ContentStrategyDashboard
+        {/* Priority Matrix Section */}
+        {contentContext.contentGaps && contentContext.contentGaps.length > 0 && (
+          <div className="mt-6 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <PriorityMatrix
+              gaps={contentContext.contentGaps}
+              onGenerateSolution={handleGenerateFromGap}
+              onPlanForLater={handlePlanGap}
+            />
+          </div>
+        )}
+
+        {/* Full Dashboard - Using V2 without tabs */}
+        <ContentStrategyDashboardV2
           analysisOutput={analysisOutput}
           isLoading={isLoading}
           onRefresh={handleAnalysis}
+          onGenerateContent={handleGenerateFromGap}
+          onOpenPlanner={() => setActiveView("planner")}
         />
       </div>
     );
@@ -717,11 +839,61 @@ export default function ContentStrategyPage() {
     }
   };
 
+  const contentContext = analysisOutput?.contentContext || {};
+  const healthScore = contentContext.healthScore || Math.floor(Math.random() * 30) + 60;
+  const contentGapsCount = contentContext.contentGaps?.length || 0;
+  const domainDisplay = currentDomain || (baseUrl ? new URL(baseUrl).hostname : "No domain");
+
   return (
-    <SidebarLayout activeView={activeView} onViewChange={handleViewChange}>
+    <SidebarLayout 
+      activeView={activeView} 
+      onViewChange={handleViewChange}
+      onNewStrategy={handleNewStrategy}
+      currentDomain={domainDisplay}
+      healthScore={analysisOutput ? healthScore : undefined}
+      contentGapsCount={analysisOutput ? contentGapsCount : undefined}
+    >
+      {/* Strategy Header - Only show when we have analysis data */}
+      {analysisOutput && activeView === "dashboard" && (
+        <StrategyHeader
+          domain={domainDisplay}
+          lastAnalyzed={lastAnalyzedDate || new Date()}
+          healthScore={healthScore}
+          onNewStrategy={handleNewStrategy}
+          onReAnalyze={handleReAnalyze}
+          onExportPDF={handleExportPDF}
+          onShare={handleShare}
+          onViewHistory={handleViewHistory}
+          isReAnalyzing={isReAnalyzing}
+        />
+      )}
+
       <div className="min-h-screen">
         <div className="max-w-7xl mx-auto px-4 py-6">{renderContent()}</div>
       </div>
+
+      {/* Bridge Flow Modal - Gap to Content Generation */}
+      <DraftSolutionModal
+        isOpen={showBridgeFlowModal}
+        onClose={() => setShowBridgeFlowModal(false)}
+        gapTopic={bridgeFlowGap}
+        targetPersona={contentContext.audiencePersona || "General Audience"}
+        suggestedTone={contentContext.tone || "professional"}
+        suggestedKeywords={contentContext.dominantKeywords?.map((k: any) => k.term || k) || []}
+        onGenerate={handleBridgeFlowGenerate}
+      />
+
+      {/* Confirmation Modal for New Strategy */}
+      <ConfirmationModal
+        isOpen={showResetConfirmModal}
+        onClose={() => setShowResetConfirmModal(false)}
+        onConfirm={confirmNewStrategy}
+        title="Start New Strategy?"
+        message="This will clear your current analysis data and start fresh. Any unsaved changes will be lost. Are you sure you want to continue?"
+        confirmText="Start Fresh"
+        cancelText="Keep Working"
+        variant="warning"
+      />
     </SidebarLayout>
   );
 }

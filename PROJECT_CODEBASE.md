@@ -4,663 +4,43 @@
 
 ```text
 .
-├── src/app/api/ai/route.ts
-├── src/app/api/content/ai-topics/route.ts
-├── src/app/api/content/analyze/route.ts
-├── src/app/api/content/auto-discovery/route.ts
-├── src/app/api/content/bulk-generate/route.ts
-├── src/app/api/content/generate/route.ts
-├── src/app/api/content/history/route.ts
-                    ├── route.ts
-                    ├── route.ts
+├── .
+├── src/app/api/content/analyze//route.ts
+├── src/app/api/content/auto-discovery//route.ts
+├── src/app/api/content/auto-plan//route.ts
+├── src/app/api/content/generate-outline//route.ts
+├── src/app/api/content/history//route.ts
                     ├── route.ts
                     ├── route.ts
                     ├── route.ts
                     ├── route.ts
                 ├── route.ts
-                ├── route.ts
+                    ├── route.ts
             ├── page.tsx
-            ├── AutoContentEngine.tsx
             ├── AutoContentEngineSplit.tsx
+            ├── DraftSolutionModal.tsx
             ├── EmptyStateOnboarding.tsx
             ├── GapAnalysisCard.tsx
-            ├── HistoryPanel.tsx
             ├── PagesTable.tsx
             ├── PersonaCard.tsx
             ├── PlannerView.tsx
-            ├── ProgressStepper.tsx
+            ├── PriorityMatrix.tsx
             ├── SEOHealthScore.tsx
-            ├── SmartSelectSummary.tsx
+            ├── SearchResultPreview.tsx
             ├── SuggestionKanbanCard.tsx
             ├── content-strategy-dashboard-improved.tsx
             ├── content-strategy-dashboard.tsx
             ├── SidebarLayout.tsx
         ├── ContentStrategyContext.tsx
-        ├── auto-discovery.ts
-        ├── content-analyzer-backup.ts
-        ├── content-analyzer.ts
 ```
 
 ## 2. File Contents
 
-### src/app/api/ai/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-
-// Lazy initialization to avoid build-time errors
-let openai: OpenAI | null = null;
-
-function getOpenAI(): OpenAI {
-  if (!openai) {
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-  return openai;
-}
-
-export const dynamic = "force-dynamic";
-export const maxDuration = 60;
-
-// Validate API key for WordPress plugin requests
-function validatePluginRequest(request: NextRequest): { valid: boolean; error?: string } {
-  const authHeader = request.headers.get("authorization");
-  const pluginKey = request.headers.get("x-plugin-key");
-  
-  // Accept either Bearer token or plugin key
-  if (!authHeader && !pluginKey) {
-    return { valid: false, error: "Missing authorization" };
-  }
-  
-  // For now, accept any authenticated request from the plugin
-  // In production, you'd validate against stored API keys
-  return { valid: true };
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    // Check for OpenAI API key
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: "OpenAI API Key is not configured. Please add OPENAI_API_KEY to your environment variables in Vercel Dashboard." },
-        { status: 400 }
-      );
-    }
-
-    const validation = validatePluginRequest(request);
-    if (!validation.valid) {
-      return NextResponse.json({ error: validation.error }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { action, data } = body;
-
-    if (!action) {
-      return NextResponse.json({ error: "Action is required" }, { status: 400 });
-    }
-
-    switch (action) {
-      case "generate_alt_text":
-        return await generateAltText(data);
-      
-      case "generate_meta_description":
-        return await generateMetaDescription(data);
-      
-      case "generate_title":
-        return await generateTitle(data);
-      
-      case "generate_author_bio":
-        return await generateAuthorBio(data);
-      
-      case "generate_testimonial_response":
-        return await generateTestimonialResponse(data);
-      
-      case "generate_faq":
-        return await generateFAQ(data);
-      
-      case "generate_service_area_content":
-        return await generateServiceAreaContent(data);
-      
-      case "generate_llms_txt":
-        return await generateLlmsTxt(data);
-      
-      case "analyze_content":
-        return await analyzeContent(data);
-      
-      case "optimize_content":
-        return await optimizeContent(data);
-      
-      default:
-        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
-    }
-  } catch (error) {
-    console.error("AI API error:", error);
-    return NextResponse.json(
-      { error: "AI processing failed", details: String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-// Generate alt text for images
-async function generateAltText(data: { imageUrl?: string; imageName?: string; pageContext?: string }) {
-  const { imageUrl, imageName, pageContext } = data;
-  
-  const prompt = `Generate a concise, descriptive alt text for an image.
-${imageName ? `Image filename: ${imageName}` : ""}
-${pageContext ? `Page context: ${pageContext}` : ""}
-${imageUrl ? `Image URL: ${imageUrl}` : ""}
-
-Requirements:
-- Be descriptive but concise (under 125 characters)
-- Include relevant keywords naturally
-- Don't start with "Image of" or "Picture of"
-- Be specific about what the image shows
-- Consider SEO value
-
-Return ONLY the alt text, nothing else.`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 100,
-    temperature: 0.7,
-  });
-
-  const altText = completion.choices[0]?.message?.content?.trim() || "";
-  
-  return NextResponse.json({ success: true, altText });
-}
-
-// Generate meta description
-async function generateMetaDescription(data: { title?: string; content?: string; keywords?: string[] }) {
-  const { title, content, keywords } = data;
-  
-  const prompt = `Generate an SEO-optimized meta description for a webpage.
-
-Title: ${title || "Unknown"}
-Content summary: ${content?.substring(0, 500) || "No content provided"}
-Target keywords: ${keywords?.join(", ") || "Not specified"}
-
-Requirements:
-- Between 150-160 characters
-- Include primary keyword naturally
-- Include a call-to-action
-- Be compelling and click-worthy
-- Accurately describe the page content
-
-Return ONLY the meta description, nothing else.`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 100,
-    temperature: 0.7,
-  });
-
-  const metaDescription = completion.choices[0]?.message?.content?.trim() || "";
-  
-  return NextResponse.json({ success: true, metaDescription });
-}
-
-// Generate page title
-async function generateTitle(data: { content?: string; keywords?: string[]; businessName?: string }) {
-  const { content, keywords, businessName } = data;
-  
-  const prompt = `Generate an SEO-optimized page title.
-
-Content summary: ${content?.substring(0, 300) || "No content provided"}
-Target keywords: ${keywords?.join(", ") || "Not specified"}
-Business name: ${businessName || ""}
-
-Requirements:
-- Between 50-60 characters
-- Include primary keyword near the beginning
-- Include business name if relevant
-- Be compelling and descriptive
-- Use power words when appropriate
-
-Return ONLY the title, nothing else.`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 80,
-    temperature: 0.7,
-  });
-
-  const title = completion.choices[0]?.message?.content?.trim() || "";
-  
-  return NextResponse.json({ success: true, title });
-}
-
-// Generate author bio
-async function generateAuthorBio(data: { 
-  name: string; 
-  role?: string; 
-  credentials?: string[]; 
-  businessType?: string;
-  yearsExperience?: number;
-}) {
-  const { name, role, credentials, businessType, yearsExperience } = data;
-  
-  const prompt = `Generate a professional author bio for E-E-A-T optimization.
-
-Name: ${name}
-Role: ${role || "Business Owner"}
-Credentials: ${credentials?.join(", ") || "Not specified"}
-Business type: ${businessType || "Local business"}
-Years of experience: ${yearsExperience || "Several"}
-
-Requirements:
-- 2-3 sentences
-- Highlight expertise and experience
-- Include credentials naturally
-- Establish trust and authority
-- Professional but approachable tone
-
-Return ONLY the bio, nothing else.`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 150,
-    temperature: 0.7,
-  });
-
-  const bio = completion.choices[0]?.message?.content?.trim() || "";
-  
-  return NextResponse.json({ success: true, bio });
-}
-
-// Generate response to testimonial
-async function generateTestimonialResponse(data: { 
-  reviewText: string; 
-  rating: number; 
-  businessName: string;
-}) {
-  const { reviewText, rating, businessName } = data;
-  
-  const prompt = `Generate a professional response to a customer review.
-
-Review: "${reviewText}"
-Rating: ${rating}/5 stars
-Business: ${businessName}
-
-Requirements:
-- Thank the customer by name if mentioned
-- Address specific points from the review
-- Be genuine and personalized
-- Keep it brief (2-3 sentences)
-- If negative, be empathetic and offer resolution
-
-Return ONLY the response, nothing else.`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 150,
-    temperature: 0.7,
-  });
-
-  const response = completion.choices[0]?.message?.content?.trim() || "";
-  
-  return NextResponse.json({ success: true, response });
-}
-
-// Generate FAQ content
-async function generateFAQ(data: { 
-  businessType: string; 
-  services?: string[]; 
-  location?: string;
-  count?: number;
-}) {
-  const { businessType, services, location, count = 5 } = data;
-  
-  const prompt = `Generate ${count} FAQ questions and answers for a local business.
-
-Business type: ${businessType}
-Services: ${services?.join(", ") || "General services"}
-Location: ${location || "Local area"}
-
-Requirements:
-- Questions should be what customers actually ask
-- Include "near me" and local intent questions
-- Answers should be 2-3 sentences
-- Be helpful and informative
-- Include service-specific questions
-
-Return as JSON array:
-[{"question": "...", "answer": "..."}, ...]`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 1000,
-    temperature: 0.7,
-  });
-
-  const content = completion.choices[0]?.message?.content?.trim() || "[]";
-  
-  try {
-    const faqs = JSON.parse(content);
-    return NextResponse.json({ success: true, faqs });
-  } catch {
-    return NextResponse.json({ success: true, faqs: [], raw: content });
-  }
-}
-
-// Generate service area page content
-async function generateServiceAreaContent(data: { 
-  service: string; 
-  location: string; 
-  businessName: string;
-  phone?: string;
-}) {
-  const { service, location, businessName, phone } = data;
-  
-  const prompt = `Generate SEO-optimized content for a service area page.
-
-Service: ${service}
-Location: ${location}
-Business: ${businessName}
-Phone: ${phone || ""}
-
-Generate:
-1. Page title (50-60 chars)
-2. Meta description (150-160 chars)
-3. H1 heading
-4. Introduction paragraph (100-150 words)
-5. 3 benefits of choosing this service in this location
-6. Call-to-action text
-
-Return as JSON:
-{
-  "title": "...",
-  "metaDescription": "...",
-  "h1": "...",
-  "intro": "...",
-  "benefits": ["...", "...", "..."],
-  "cta": "..."
-}`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 800,
-    temperature: 0.7,
-  });
-
-  const content = completion.choices[0]?.message?.content?.trim() || "{}";
-  
-  try {
-    const pageContent = JSON.parse(content);
-    return NextResponse.json({ success: true, content: pageContent });
-  } catch {
-    return NextResponse.json({ success: true, content: {}, raw: content });
-  }
-}
-
-// Generate llms.txt content
-async function generateLlmsTxt(data: { 
-  businessName: string; 
-  businessType: string;
-  services?: string[];
-  location?: string;
-  description?: string;
-}) {
-  const { businessName, businessType, services, location, description } = data;
-  
-  const prompt = `Generate an llms.txt file content for AI crawlers.
-
-Business: ${businessName}
-Type: ${businessType}
-Services: ${services?.join(", ") || "Various services"}
-Location: ${location || "Local area"}
-Description: ${description || ""}
-
-The llms.txt format helps AI understand your business. Generate content that:
-- Clearly describes the business
-- Lists key services
-- Mentions location and service areas
-- Includes contact information placeholder
-- Is concise but comprehensive
-
-Return the content in llms.txt format.`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 500,
-    temperature: 0.7,
-  });
-
-  const llmsTxt = completion.choices[0]?.message?.content?.trim() || "";
-  
-  return NextResponse.json({ success: true, llmsTxt });
-}
-
-// Analyze content for SEO improvements
-async function analyzeContent(data: { content: string; targetKeywords?: string[] }) {
-  const { content, targetKeywords } = data;
-  
-  const prompt = `Analyze this content for SEO and provide specific improvements.
-
-Content: "${content.substring(0, 2000)}"
-Target keywords: ${targetKeywords?.join(", ") || "Not specified"}
-
-Analyze:
-1. Keyword usage and density
-2. Readability
-3. Structure (headings, paragraphs)
-4. Call-to-action presence
-5. Local SEO signals
-
-Return as JSON:
-{
-  "score": 0-100,
-  "issues": ["issue1", "issue2"],
-  "suggestions": ["suggestion1", "suggestion2"],
-  "keywordDensity": {"keyword": percentage},
-  "readabilityScore": "easy|medium|hard"
-}`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 600,
-    temperature: 0.5,
-  });
-
-  const result = completion.choices[0]?.message?.content?.trim() || "{}";
-  
-  try {
-    const analysis = JSON.parse(result);
-    return NextResponse.json({ success: true, analysis });
-  } catch {
-    return NextResponse.json({ success: true, analysis: {}, raw: result });
-  }
-}
-
-// Optimize content with AI suggestions
-async function optimizeContent(data: { 
-  content: string; 
-  targetKeywords?: string[];
-  tone?: string;
-}) {
-  const { content, targetKeywords, tone = "professional" } = data;
-  
-  const prompt = `Optimize this content for SEO while maintaining readability.
-
-Original content: "${content.substring(0, 1500)}"
-Target keywords: ${targetKeywords?.join(", ") || "Not specified"}
-Tone: ${tone}
-
-Requirements:
-- Naturally incorporate target keywords
-- Improve readability
-- Add local SEO signals if appropriate
-- Maintain the original meaning
-- Keep approximately the same length
-
-Return ONLY the optimized content, nothing else.`;
-
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 2000,
-    temperature: 0.7,
-  });
-
-  const optimizedContent = completion.choices[0]?.message?.content?.trim() || "";
-  
-  return NextResponse.json({ success: true, optimizedContent });
-}
-
-```
+> Error reading file .: [Errno 13] Permission denied: 'C:\\Users\\PMYLS\\Downloads\\seo-try-main-master\\seo-try-main-master\\.'
 
 ---
 
-### src/app/api/content/ai-topics/route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import OpenAI from "openai";
-
-export const dynamic = "force-dynamic";
-
-export async function POST(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const body = await request.json();
-    const { 
-      selectedService, 
-      locations, 
-      existingContent, 
-      brandTone, 
-      targetAudience,
-      aboutSummary 
-    } = body;
-
-    if (!selectedService) {
-      return NextResponse.json(
-        { error: "Selected service is required" },
-        { status: 400 }
-      );
-    }
-
-    console.log("[AI Topics] Generating topics for service:", selectedService);
-
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    // Create comprehensive prompt for topic generation
-    const prompt = `You are a content strategy expert for a technology company. 
-
-Company Context:
-- Service: ${selectedService}
-- About: ${aboutSummary}
-- Brand Tone: ${brandTone}
-- Target Audience: ${targetAudience}
-- Existing Content: ${existingContent?.map((p: any) => p.title).join(', ') || 'None'}
-- Target Locations: ${locations?.join(', ') || 'Not specified'}
-
-Generate 8-10 high-quality blog post and landing page topics that will:
-1. Target the ${targetAudience} audience
-2. Incorporate the ${selectedService} service
-3. Have SEO potential with specific keywords
-4. Be location-specific where relevant
-5. Fill gaps in existing content
-6. Match the ${brandTone} brand tone
-
-For each topic, provide:
-- A compelling title (60-70 characters max)
-- Primary keywords (3-5)
-- Secondary keywords (5-8)
-- Target locations (if applicable)
-- Content type (blog post or landing page)
-- Brief description (1-2 sentences)
-- Search intent (informational, commercial, local)
-
-Return ONLY a valid JSON object with this structure:
-{
-  "topics": [
-    {
-      "title": "Topic Title",
-      "primaryKeywords": ["keyword1", "keyword2", "keyword3"],
-      "secondaryKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-      "targetLocations": ["Location1", "Location2"],
-      "contentType": "blog post",
-      "description": "Brief description of the topic",
-      "searchIntent": "informational",
-      "estimatedWordCount": 1200,
-      "difficulty": "medium"
-    }
-  ]
-}`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        {
-          role: "system",
-          content: "You are a content strategy expert. Always respond with valid JSON only."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
-
-    const result = response.choices[0]?.message?.content;
-    if (!result) {
-      throw new Error("No response from OpenAI");
-    }
-
-    console.log("[AI Topics] Generated response length:", result.length);
-
-    // Parse the JSON response
-    let topicsData;
-    try {
-      topicsData = JSON.parse(result);
-    } catch (parseError) {
-      console.error("[AI Topics] JSON parse error:", parseError);
-      console.log("[AI Topics] Raw response:", result);
-      throw new Error("Failed to parse AI response as JSON");
-    }
-
-    if (!topicsData.topics || !Array.isArray(topicsData.topics)) {
-      throw new Error("Invalid response structure from AI");
-    }
-
-    console.log("[AI Topics] Generated", topicsData.topics.length, "topics");
-
-    return NextResponse.json({
-      success: true,
-      topics: topicsData.topics,
-      service: selectedService,
-    });
-  } catch (error) {
-    console.error("[AI Topics] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate topics", details: String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src/app/api/content/analyze/route.ts
+### src/app/api/content/analyze//route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
@@ -915,7 +295,7 @@ export async function GET(request: NextRequest) {
 
 ---
 
-### src/app/api/content/auto-discovery/route.ts
+### src/app/api/content/auto-discovery//route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
@@ -1141,785 +521,184 @@ export async function GET(request: NextRequest) {
 
 ---
 
-### src/app/api/content/bulk-generate/route.ts
+### src/app/api/content/auto-plan//route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import { tasks } from "@trigger.dev/sdk/v3";
-
-export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireAuth();
     const body = await request.json();
-    const { 
-      selectedTopics,
-      selectedLocations,
-      service,
-      brandTone,
-      targetAudience,
-      aboutSummary,
-      generateImages = false,
-      singlePage = true // New parameter to generate only one page
-    } = body;
+    const { frequency, days, tone, focus, contentGaps, dominantKeywords } = body;
 
-    if (!selectedTopics || selectedTopics.length === 0) {
-      return NextResponse.json(
-        { error: "At least one topic must be selected" },
-        { status: 400 }
-      );
-    }
+    // Generate a simple auto-plan based on the configuration
+    const events = [];
+    const startDate = new Date();
+    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+    
+    // Get available content ideas
+    const contentIdeas = [
+      ...contentGaps.map((gap: string) => ({
+        title: `Addressing: ${gap}`,
+        type: 'Content Gap',
+        keywords: extractKeywords(gap),
+      })),
+      // Add some default suggestions if no AI suggestions are available
+      {
+        title: "Industry Insights and Trends",
+        type: "Blog Post",
+        keywords: ["industry", "insights", "trends"],
+      },
+      {
+        title: "How-To Guide: Best Practices",
+        type: "Guide",
+        keywords: ["guide", "best practices", "tutorial"],
+      },
+      {
+        title: "Case Study: Success Story",
+        type: "Case Study",
+        keywords: ["case study", "success", "results"],
+      },
+      {
+        title: "Technical Deep Dive",
+        type: "Whitepaper",
+        keywords: ["technical", "deep dive", "analysis"],
+      },
+    ];
 
-    if (!selectedLocations || selectedLocations.length === 0) {
-      return NextResponse.json(
-        { error: "At least one location must be selected" },
-        { status: 400 }
-      );
-    }
+    // Calculate posting schedule
+    const postsPerWeek = frequency || 2;
+    const totalPosts = Math.min(postsPerWeek * 4, contentIdeas.length); // Max 4 weeks worth
+    const daysBetweenPosts = Math.floor(7 / postsPerWeek);
+    
+    let currentDate = new Date(startDate);
+    let postIndex = 0;
 
-    console.log("[Bulk Generate] Starting content generation:", {
-      topics: selectedTopics.length,
-      locations: selectedLocations.length,
-      service,
-      singlePage,
-    });
-
-    // If singlePage is true, only generate one combination (first topic + first location)
-    let combinations = [];
-    if (singlePage) {
-      // Generate only one page using the first topic and first location
-      combinations = [{
-        topic: selectedTopics[0],
-        location: selectedLocations[0],
-        service,
-        brandTone,
-        targetAudience,
-        aboutSummary,
-        generateImages,
-      }];
-      console.log("[Bulk Generate] Single page mode: generating 1 piece of content");
-    } else {
-      // Create all topic-location combinations (original behavior)
-      for (const topic of selectedTopics) {
-        for (const location of selectedLocations) {
-          combinations.push({
-            topic,
-            location,
-            service,
-            brandTone,
-            targetAudience,
-            aboutSummary,
-            generateImages,
-          });
-        }
+    for (let i = 0; i < totalPosts; i++) {
+      // Skip weekends
+      while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+        currentDate.setDate(currentDate.getDate() + 1);
       }
-      console.log("[Bulk Generate] Bulk mode: generating", combinations.length, "pieces of content");
+
+      if (currentDate > endDate) break;
+
+      const idea = contentIdeas[postIndex % contentIdeas.length];
+      
+      events.push({
+        title: idea.title,
+        date: currentDate.toISOString(),
+        keywords: idea.keywords,
+        type: idea.type,
+      });
+
+      postIndex++;
+      currentDate = new Date(currentDate.getTime() + daysBetweenPosts * 24 * 60 * 60 * 1000);
     }
 
-    // Trigger content generation task
-    const handle = await tasks.trigger("content-generator", {
-      combinations,
-      userId: user.id,
-      generateImages,
-      singlePage,
-    });
-
-    return NextResponse.json({
-      success: true,
-      taskId: handle.id,
-      totalCombinations: combinations.length,
-      message: `Started generating ${combinations.length} piece${combinations.length === 1 ? '' : 's'} of content`,
-    });
+    return NextResponse.json({ events });
   } catch (error) {
-    console.error("[Bulk Generate] Error:", error);
+    console.error("Auto-plan generation error:", error);
     return NextResponse.json(
-      { error: "Failed to start content generation", details: String(error) },
+      { error: "Failed to generate auto-plan" },
       { status: 500 }
     );
   }
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const { searchParams } = new URL(request.url);
-    const taskId = searchParams.get("taskId");
-
-    if (!taskId) {
-      return NextResponse.json(
-        { error: "Task ID is required" },
-        { status: 400 }
-      );
-    }
-
-    console.log("[Bulk Generate GET] Checking status for task:", taskId);
-
-    // Return the actual Trigger.dev task results
-    // In a real implementation, you'd use the Trigger.dev SDK to fetch task results
-    // For now, we'll return a structure that matches the real Trigger.dev output
-    const realCompletedResults = {
-      success: true,
-      status: "COMPLETED",
-      progress: 100,
-      total: 1,
-      completed: 1,
-      failed: 0,
-      results: [
-        {
-          id: `content_${Date.now()}_0`,
-          title: "Unlocking Business Potential with Computer Vision Technology",
-          location: "Rawalpindi",
-          contentType: "blog post",
-          content: `Title: "Unlocking Business Potential with Computer Vision Technology in Rawalpindi"
-
-Introduction:
-
-In an era where digital solutions are essential for business performance and growth, Computer Vision Technology stands as a revolutionary force, driving innovation and digital transformation. Specially, in the thriving tech-hub of Rawalpindi, businesses are increasingly seeking cutting-edge digital solutions to stay ahead of the curve. This blog post delves into how Computer Vision Technology is unlocking unprecedented business potential in Rawalpindi.
-
-Understanding Computer Vision Technology:
-
-Computer Vision Technology, a facet of AI technology, is designed to mimic human vision and cognition. It empowers computers to interpret and understand visual data from the physical world, enabling them to make informed decisions based on that data. From facial recognition to object detection, this innovative technology is transforming operations across a plethora of industries.
-
-The Impact of Computer Vision Technology on Businesses:
-
-Computer Vision Technology is becoming integral to many businesses, driving efficiencies, reducing costs, and unlocking new opportunities. By leveraging Computer Vision Services, businesses in Rawalpindi are not only automating processes but also enhancing customer experiences and improving their bottom line.
-
-1. Enhancing Operational Efficiencies:
-
-Computer Vision Technology can automate tedious and time-consuming tasks, freeing up staff to focus on more strategic initiatives. It can significantly reduce human error and streamline workflows, leading to improved operational efficiencies and productivity.
-
-2. Boosting Customer Experiences:
-
-In the age of digital transformation, customer expectations are skyrocketing. Computer Vision Technology can help businesses meet these expectations by providing personalized experiences, enhancing interactions, and ensuring seamless customer journeys.
-
-3. Mitigating Risks:
-
-Computer Vision can also be a game-changer in risk management. From detecting fraud in financial transactions to identifying potential hazards in manufacturing plants, Computer Vision Technology can help businesses mitigate risks and ensure compliance.
-
-The Future of Business with Computer Vision Services:
-
-As AI technology continues to evolve, so too does the potential of Computer Vision. This technology is pushing the boundaries of innovation, enabling businesses in Rawalpindi to pioneer new tech solutions and drive digital transformation.
-
-Whether it's retail businesses using Computer Vision to improve inventory management, healthcare providers leveraging it for accurate diagnoses, or manufacturing plants utilizing it for quality control, the applications are endless and the benefits substantial.
-
-Conclusion:
-
-In the bustling tech landscape of Rawalpindi, businesses that adopt Computer Vision Technology stand to gain a competitive edge. By harnessing this innovative technology, they can unlock immense business potential, revolutionize their operations, and lead their industries into a new era of digital transformation.
-
-Call to Action:
-
-Ready to unlock the potential of your business with Computer Vision Technology? Our team of tech experts in Rawalpindi is here to help. Contact us today to learn more about our cutting-edge Computer Vision Services and start your digital transformation journey. Your future is just a vision away.`,
-          imageUrl: "https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-zkFBoZl2kx0xaCbHyEwCcDlX.png?st=2026-01-22T08%3A31%3A35Z&se=2026-01-22T10%3A31%3A35Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=35890473-cca8-4a54-8305-05a39e0bc9c3&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T09%3A02%3A50Z&ske=2026-01-23T09%3A02%3A50Z&sks=b&skv=2024-08-04&sig=eRVdAp4mOl092XL8RP%2BgsC5bH1IiSImzuCk5rWWvCRg%3D",
-          wordCount: 3420,
-          keywords: [
-            "Computer Vision Technology",
-            "Business Potential",
-            "Digital Solutions",
-            "AI Technology",
-            "Innovation",
-            "Digital Transformation",
-            "Computer Vision Services",
-            "Tech Solutions"
-          ],
-          status: "completed"
-        }
-      ]
-    };
-
-    return NextResponse.json(realCompletedResults);
-  } catch (error) {
-    console.error("[Bulk Generate GET] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to get generation status", details: String(error) },
-      { status: 500 }
-    );
-  }
+function extractKeywords(text: string): string[] {
+  // Simple keyword extraction - in real implementation, this would be more sophisticated
+  const words = text.toLowerCase().split(/\s+/);
+  const keywords = words
+    .filter(word => word.length > 3)
+    .filter(word => !['the', 'and', 'for', 'are', 'with', 'this', 'that', 'from', 'have', 'they', 'been'].includes(word))
+    .slice(0, 3);
+  
+  return keywords;
 }
 
 ```
 
 ---
 
-### src/app/api/content/generate/route.ts
+### src/app/api/content/generate-outline//route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { z } from "zod";
 
-// Lazy initialization to avoid build-time errors
-let openai: OpenAI | null = null;
-
-function getOpenAI(): OpenAI {
-  if (!openai) {
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-  return openai;
-}
-
-// ==================== OUTPUT SCHEMAS ====================
-
-const KeywordResearchSchema = z.object({
-  keywords: z.array(z.object({
-    keyword: z.string(),
-    searchVolume: z.number(),
-    difficulty: z.number().min(1).max(100),
-    intent: z.enum(["informational", "transactional", "navigational", "commercial"]),
-    relevanceScore: z.number().min(1).max(10),
-    suggestedContentType: z.enum(["blog", "service-page", "location-page", "faq", "how-to"]),
-  })),
-  clusterGroups: z.array(z.object({
-    name: z.string(),
-    mainKeyword: z.string(),
-    relatedKeywords: z.array(z.string()),
-  })),
-});
-
-const ContentOutlineSchema = z.object({
-  title: z.string(),
-  slug: z.string(),
-  metaDescription: z.string().max(160),
-  focusKeyword: z.string(),
-  secondaryKeywords: z.array(z.string()),
-  outline: z.array(z.object({
-    heading: z.string(),
-    headingLevel: z.enum(["h2", "h3", "h4"]),
-    keyPoints: z.array(z.string()),
-    targetWordCount: z.number(),
-  })),
-  estimatedWordCount: z.number(),
-  contentType: z.string(),
-  targetAudience: z.string(),
-  callToAction: z.string(),
-});
-
-const FullContentSchema = z.object({
-  title: z.string(),
-  slug: z.string(),
-  content: z.string(),
-  excerpt: z.string().max(300),
-  metaDescription: z.string().max(160),
-  focusKeyword: z.string(),
-  secondaryKeywords: z.array(z.string()),
-  suggestedCategories: z.array(z.string()),
-  suggestedTags: z.array(z.string()),
-  seoScore: z.number().min(0).max(100),
-  readabilityScore: z.number().min(0).max(100),
-  wordCount: z.number(),
-  keywordDensity: z.number(),
-  internalLinkSuggestions: z.array(z.string()),
-  faqSection: z.array(z.object({
-    question: z.string(),
-    answer: z.string(),
-  })).optional(),
-});
-
-const MonthlyContentPlanSchema = z.object({
-  month: z.number(),
-  year: z.number(),
-  totalPosts: z.number(),
-  contentCalendar: z.array(z.object({
-    week: z.number(),
-    posts: z.array(z.object({
-      dayOfWeek: z.string(),
-      suggestedDate: z.string(),
-      title: z.string(),
-      focusKeyword: z.string(),
-      contentType: z.string(),
-      estimatedWordCount: z.number(),
-      priority: z.enum(["high", "medium", "low"]),
-    })),
-  })),
-  keywordDistribution: z.record(z.number()),
-  contentMix: z.object({
-    blogs: z.number(),
-    servicePages: z.number(),
-    locationPages: z.number(),
-    faqs: z.number(),
-  }),
-});
-
-// ==================== AI AGENTS ====================
-
-// Agent 1: Keyword Research Specialist
-async function keywordResearchAgent(params: {
-  businessType: string;
-  services: string[];
-  location: string;
-  competitors?: string[];
-  existingKeywords?: string[];
-}) {
-  const systemPrompt = `You are an expert Local SEO Keyword Research Specialist. Your job is to identify high-value, rankable keywords for local businesses.
-
-EXPERTISE:
-- Local search intent analysis
-- Long-tail keyword discovery
-- Keyword difficulty assessment
-- Search volume estimation
-- Competitor keyword gap analysis
-- Semantic keyword clustering
-
-GUIDELINES:
-1. Focus on keywords with local intent (e.g., "[service] in [city]", "[service] near me")
-2. Include service-specific long-tail keywords
-3. Consider seasonal trends for local businesses
-4. Prioritize keywords with commercial/transactional intent
-5. Group keywords into logical clusters for content planning
-6. Estimate realistic search volumes for local markets
-7. Assess difficulty based on local competition
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Research keywords for the following local business:
-
-Business Type: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-${params.competitors ? `Competitors: ${params.competitors.join(", ")}` : ""}
-${params.existingKeywords?.length ? `Already targeting: ${params.existingKeywords.join(", ")}` : ""}
-
-Generate 20-30 high-value local SEO keywords that can help this business rank on Google. Include a mix of:
-- High-volume head terms
-- Medium-competition body keywords  
-- Low-competition long-tail keywords
-- Location-specific variations
-- Service + location combinations
-- Question-based keywords (for FAQ content)
-
-Group them into semantic clusters for content planning.`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 2: Content Strategy Planner
-async function contentStrategyAgent(params: {
-  businessType: string;
-  services: string[];
-  location: string;
-  keywords: string[];
-  month: number;
-  year: number;
-  postsPerWeek: number;
-}) {
-  const systemPrompt = `You are an expert Content Strategy Planner specializing in Local SEO content calendars. Your job is to create strategic monthly content plans that maximize organic search visibility.
-
-EXPERTISE:
-- Content calendar optimization
-- Keyword-to-content mapping
-- Content type selection (blogs, service pages, location pages, FAQs)
-- Publishing frequency optimization
-- Seasonal content planning
-- Internal linking strategy
-
-GUIDELINES:
-1. Distribute keywords strategically across the month
-2. Mix content types for variety and comprehensive coverage
-3. Schedule high-priority content earlier in the month
-4. Consider local events/seasons in timing
-5. Ensure proper keyword density across content pieces
-6. Plan internal linking opportunities
-7. Balance evergreen and timely content
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Create a monthly content plan for:
-
-Business: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-Target Month: ${params.month}/${params.year}
-Posts Per Week: ${params.postsPerWeek}
-
-Keywords to target:
-${params.keywords.map((k, i) => `${i + 1}. ${k}`).join("\n")}
-
-Create a detailed content calendar that:
-1. Assigns specific keywords to specific posts
-2. Suggests optimal publishing dates
-3. Recommends content types for each keyword
-4. Prioritizes high-value keywords
-5. Ensures keyword diversity throughout the month`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 3: Content Outline Creator
-async function contentOutlineAgent(params: {
-  keyword: string;
-  businessType: string;
-  services: string[];
-  location: string;
-  contentType: string;
-  competitorInsights?: string;
-}) {
-  const systemPrompt = `You are an expert SEO Content Outline Creator. Your job is to create comprehensive, SEO-optimized content outlines that will rank on Google.
-
-EXPERTISE:
-- Search intent analysis
-- SERP feature targeting
-- Content structure optimization
-- Heading hierarchy (H1, H2, H3)
-- Featured snippet optimization
-- People Also Ask targeting
-- E-E-A-T signals incorporation
-
-GUIDELINES:
-1. Analyze search intent for the keyword
-2. Structure content to match top-ranking results
-3. Include LSI keywords naturally in headings
-4. Plan for featured snippet capture
-5. Add FAQ sections targeting PAA questions
-6. Include local trust signals
-7. Plan call-to-action placement
-8. Optimize meta description for CTR
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Create a detailed content outline for:
-
-Target Keyword: "${params.keyword}"
-Business Type: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-Content Type: ${params.contentType}
-${params.competitorInsights ? `\nCompetitor Insights: ${params.competitorInsights}` : ""}
-
-Create an SEO-optimized outline that includes:
-1. Compelling title with keyword
-2. Meta description (max 160 chars)
-3. Complete heading structure (H2s, H3s)
-4. Key points to cover under each heading
-5. Target word count for each section
-6. Secondary keywords to include
-7. FAQ questions to answer
-8. Call-to-action recommendation`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 4: Content Writer
-async function contentWriterAgent(params: {
-  outline: any;
-  keyword: string;
-  businessType: string;
-  businessName: string;
-  services: string[];
-  location: string;
-  tone?: string;
-  targetWordCount?: number;
-}) {
-  const systemPrompt = `You are an expert SEO Content Writer specializing in local business content. Your job is to write high-quality, engaging, SEO-optimized content that ranks on Google and converts readers into customers.
-
-EXPERTISE:
-- SEO copywriting
-- Local business content
-- Conversion optimization
-- E-E-A-T content principles
-- Natural keyword integration
-- Engaging storytelling
-- Technical accuracy
-
-WRITING GUIDELINES:
-1. Write in a ${params.tone || "professional yet friendly"} tone
-2. Include the focus keyword in first 100 words
-3. Use keywords naturally (1-2% density)
-4. Write scannable content with short paragraphs
-5. Include local references and landmarks
-6. Add trust signals (years in business, certifications, etc.)
-7. Use power words for engagement
-8. Include clear calls-to-action
-9. Write compelling meta description
-10. Format with proper HTML headings
-
-LOCAL SEO SPECIFICS:
-- Mention the city/location naturally throughout
-- Include "near me" and location variations
-- Reference local landmarks or areas served
-- Include local phone number format
-- Mention service area coverage
-
-IMPORTANT: You must respond with valid JSON only using the specified schemas.`;
-
-  const userPrompt = `Write a complete blog post based on this outline:
-
-${JSON.stringify(params.outline, null, 2)}
-
-Business Details:
-- Name: ${params.businessName}
-- Type: ${params.businessType}
-- Services: ${params.services.join(", ")}
-- Location: ${params.location}
-- Focus Keyword: "${params.keyword}"
-- Target Word Count: ${params.targetWordCount || 1500}
-
-Write the full content in HTML format with proper heading tags. Make it:
-1. Highly informative and valuable
-2. Optimized for the focus keyword
-3. Engaging and easy to read
-4. Locally relevant
-5. Conversion-focused with clear CTAs
-6. Include an FAQ section at the end`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.8,
-    max_tokens: 4000,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 5: SEO Quality Reviewer
-async function seoReviewerAgent(params: {
-  content: string;
-  focusKeyword: string;
-  metaDescription: string;
-  title: string;
-}) {
-  const systemPrompt = `You are an expert SEO Content Reviewer. Your job is to analyze content for SEO quality and provide actionable improvements.
-
-ANALYSIS CRITERIA:
-1. Keyword optimization (density, placement, variations)
-2. Title tag effectiveness
-3. Meta description quality
-4. Heading structure
-5. Content readability (Flesch-Kincaid)
-6. Internal linking opportunities
-7. E-E-A-T signals
-8. Local SEO elements
-9. Call-to-action effectiveness
-10. Featured snippet potential
-
-Provide scores from 0-100 for:
-- SEO Score: Overall optimization
-- Readability Score: Content clarity and flow
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Review this content for SEO quality:
-
-Title: ${params.title}
-Meta Description: ${params.metaDescription}
-Focus Keyword: "${params.focusKeyword}"
-
-Content:
-${params.content.substring(0, 8000)}
-
-Analyze and provide:
-1. SEO Score (0-100)
-2. Readability Score (0-100)
-3. Keyword density percentage
-4. Word count
-5. Top 3 improvements needed
-6. Internal linking suggestions`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.3,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// ==================== MAIN API HANDLER ====================
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
-  console.log("[Content Generate] Starting request");
-  
+  const { title, aiKeywords, userKeywords, promotedService, serviceContext, tone } = await request.json();
+
+  if (!title) {
+    return NextResponse.json({ error: "Title is required" }, { status: 400 });
+  }
+
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    console.log("[Content Generate] OPENAI_API_KEY exists:", !!apiKey);
-    console.log("[Content Generate] OPENAI_API_KEY length:", apiKey?.length);
-    
-    if (!apiKey) {
-      console.log("[Content Generate] ERROR: OPENAI_API_KEY not configured");
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "OpenAI API Key is not configured. Please add OPENAI_API_KEY to your environment variables in Vercel Dashboard." },
-        { status: 400 }
+        { error: "OpenAI API key is not configured" },
+        { status: 500 }
       );
     }
 
-    console.log("[Content Generate] parsing request body");
-    
-    const body = await request.json();
-    console.log("[Content Generate] Request body received");
-    console.log("[Content Generate] Action:", body.action);
-    
-    const { action, ...params } = body;
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
-    let result;
+    // Combine AI keywords with user keywords
+    const allKeywords = [...(aiKeywords || []), ...(userKeywords || [])];
+    const keywordsString = allKeywords.length > 0 ? allKeywords.join(", ") : "Not specified";
 
-    switch (action) {
-      case "research_keywords":
-        console.log("[Content Generate] Calling keywordResearchAgent with params:", JSON.stringify(params));
-        result = await keywordResearchAgent(params);
-        console.log("[Content Generate] keywordResearchAgent completed successfully");
-        break;
+    let prompt = `
+You are an expert Content Strategist. Create a detailed, specific Blog Post Outline.
 
-      case "create_content_plan":
-        console.log("[Content Generate] Calling contentStrategyAgent with params:", JSON.stringify(params));
-        result = await contentStrategyAgent(params);
-        console.log("[Content Generate] contentStrategyAgent completed successfully");
-        break;
+TITLE: "${title}"
+TARGET KEYWORDS: ${allKeywords.length > 0 ? keywordsString : "Not specified"}
+${promotedService ? `GOAL: This article must subtly sell the user's service: "${promotedService}".` : ''}
+${serviceContext ? `CONTEXT (What the service is):\n${serviceContext}` : ''}
+${tone ? `TONE INSTRUCTIONS: Write this outline in a ${tone} style.` : ''}
+INSTRUCTIONS:
+1. Create 6-8 Headings (H2) that are SPECIFIC to the topic, NOT generic like "Introduction" or "Conclusion"
+2. Under each H2, write 2 bullet points on what to cover
+3. ${promotedService ? `The "Solution" or "Implementation" section MUST mention how "${promotedService}" helps solve the problem.` : ''}
+4. ${promotedService ? `The Conclusion MUST include a Call to Action for "${promotedService}".` : ''}
+5. Do NOT use generic text like "Hook the reader". Be specific to the topic and keywords.
+6. Make each section actionable and practical.
+7. Use real-world examples and data points where appropriate.
+8. ${tone ? `Maintain a ${tone} tone throughout the outline.` : ''}
+Return the response as Markdown with H2 headings and bullet points.
+`;
 
-      case "create_outline":
-        console.log("[Content Generate] Calling contentOutlineAgent with params:", JSON.stringify(params));
-        result = await contentOutlineAgent(params);
-        console.log("[Content Generate] contentOutlineAgent completed successfully");
-        break;
-
-      case "write_content":
-        console.log("[Content Generate] Calling contentWriterAgent with params:", JSON.stringify(params));
-        result = await contentWriterAgent(params);
-        console.log("[Content Generate] contentWriterAgent completed successfully");
-        break;
-
-      case "review_seo":
-        console.log("[Content Generate] Calling seoReviewerAgent with params:", JSON.stringify(params));
-        result = await seoReviewerAgent(params);
-        console.log("[Content Generate] seoReviewerAgent completed successfully");
-        break;
-
-      case "generate_full_content":
-        // Pipeline: Outline -> Write -> Review
-        const outline = await contentOutlineAgent({
-          keyword: params.keyword,
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          contentType: params.contentType || "blog",
-        });
-
-        const written = await contentWriterAgent({
-          outline,
-          keyword: params.keyword,
-          businessType: params.businessType,
-          businessName: params.businessName,
-          services: params.services,
-          location: params.location,
-          tone: params.tone,
-          targetWordCount: params.targetWordCount,
-        });
-
-        const review = await seoReviewerAgent({
-          content: written.content || "",
-          focusKeyword: params.keyword,
-          metaDescription: written.metaDescription || "",
-          title: written.title || "",
-        });
-
-        result = {
-          ...written,
-          outline,
-          seoScore: review.seoScore || review.SEOScore || 75,
-          readabilityScore: review.readabilityScore || review.ReadabilityScore || 80,
-          improvements: review.improvements || [],
-        };
-        break;
-
-      case "generate_monthly_content":
-        // Full pipeline for monthly content generation
-        const keywords = await keywordResearchAgent({
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          existingKeywords: params.existingKeywords,
-        });
-
-        const plan = await contentStrategyAgent({
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          keywords: keywords.keywords?.map((k: any) => k.keyword) || [],
-          month: params.month,
-          year: params.year,
-          postsPerWeek: params.postsPerWeek || 3,
-        });
-
-        result = {
-          keywords: keywords.keywords || [],
-          clusters: keywords.clusterGroups || [],
-          contentPlan: plan,
-        };
-        break;
-
-      default:
-        return NextResponse.json(
-          { error: "Invalid action" },
-          { status: 400 }
-        );
-    }
-
-    return NextResponse.json({ success: true, data: result });
-  } catch (error) {
-    console.error("Content generation error:", error);
-    console.error("Content generation error stack:", error instanceof Error ? error.stack : "No stack");
-    
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const stackTrace = error instanceof Error ? error.stack : "No stack";
-    
-    // Return detailed error in response body so browser can show it
-    return NextResponse.json(
-      { 
-        success: false,
-        error: errorMessage, 
-        details: String(error),
-        // Stack trace for debugging
-        debug: {
-          message: errorMessage,
-          stack: stackTrace,
-          type: error instanceof Error ? error.constructor.name : typeof error
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert content strategist and SEO specialist. You create detailed, specific blog post outlines that are tailored to the target keywords and business goals. You avoid generic placeholders and always provide specific, actionable content."
+        },
+        {
+          role: "user",
+          content: prompt
         }
-      },
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    });
+
+    const outline = completion.choices[0]?.message?.content || "";
+
+    return NextResponse.json({
+      success: true,
+      outline,
+    });
+  } catch (error) {
+    console.error("Error generating outline:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to generate outline";
+    return NextResponse.json(
+      { error: errorMessage },
       { status: 500 }
     );
   }
@@ -1929,7 +708,7 @@ export async function POST(request: NextRequest) {
 
 ---
 
-### src/app/api/content/history/route.ts
+### src/app/api/content/history//route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
@@ -1972,143 +751,6 @@ export async function GET(request: NextRequest) {
     console.error("Error fetching content analysis history:", error);
     return NextResponse.json(
       { error: "Failed to fetch content analysis history" },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src\app\api\content\ai-topics\route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import OpenAI from "openai";
-
-export const dynamic = "force-dynamic";
-
-export async function POST(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const body = await request.json();
-    const { 
-      selectedService, 
-      locations, 
-      existingContent, 
-      brandTone, 
-      targetAudience,
-      aboutSummary 
-    } = body;
-
-    if (!selectedService) {
-      return NextResponse.json(
-        { error: "Selected service is required" },
-        { status: 400 }
-      );
-    }
-
-    console.log("[AI Topics] Generating topics for service:", selectedService);
-
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    // Create comprehensive prompt for topic generation
-    const prompt = `You are a content strategy expert for a technology company. 
-
-Company Context:
-- Service: ${selectedService}
-- About: ${aboutSummary}
-- Brand Tone: ${brandTone}
-- Target Audience: ${targetAudience}
-- Existing Content: ${existingContent?.map((p: any) => p.title).join(', ') || 'None'}
-- Target Locations: ${locations?.join(', ') || 'Not specified'}
-
-Generate 8-10 high-quality blog post and landing page topics that will:
-1. Target the ${targetAudience} audience
-2. Incorporate the ${selectedService} service
-3. Have SEO potential with specific keywords
-4. Be location-specific where relevant
-5. Fill gaps in existing content
-6. Match the ${brandTone} brand tone
-
-For each topic, provide:
-- A compelling title (60-70 characters max)
-- Primary keywords (3-5)
-- Secondary keywords (5-8)
-- Target locations (if applicable)
-- Content type (blog post or landing page)
-- Brief description (1-2 sentences)
-- Search intent (informational, commercial, local)
-
-Return ONLY a valid JSON object with this structure:
-{
-  "topics": [
-    {
-      "title": "Topic Title",
-      "primaryKeywords": ["keyword1", "keyword2", "keyword3"],
-      "secondaryKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-      "targetLocations": ["Location1", "Location2"],
-      "contentType": "blog post",
-      "description": "Brief description of the topic",
-      "searchIntent": "informational",
-      "estimatedWordCount": 1200,
-      "difficulty": "medium"
-    }
-  ]
-}`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        {
-          role: "system",
-          content: "You are a content strategy expert. Always respond with valid JSON only."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-    });
-
-    const result = response.choices[0]?.message?.content;
-    if (!result) {
-      throw new Error("No response from OpenAI");
-    }
-
-    console.log("[AI Topics] Generated response length:", result.length);
-
-    // Parse the JSON response
-    let topicsData;
-    try {
-      topicsData = JSON.parse(result);
-    } catch (parseError) {
-      console.error("[AI Topics] JSON parse error:", parseError);
-      console.log("[AI Topics] Raw response:", result);
-      throw new Error("Failed to parse AI response as JSON");
-    }
-
-    if (!topicsData.topics || !Array.isArray(topicsData.topics)) {
-      throw new Error("Invalid response structure from AI");
-    }
-
-    console.log("[AI Topics] Generated", topicsData.topics.length, "topics");
-
-    return NextResponse.json({
-      success: true,
-      topics: topicsData.topics,
-      service: selectedService,
-    });
-  } catch (error) {
-    console.error("[AI Topics] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate topics", details: String(error) },
       { status: 500 }
     );
   }
@@ -2599,837 +1241,184 @@ export async function GET(request: NextRequest) {
 
 ---
 
-### src\app\api\content\bulk-generate\route.ts
+### src\app\api\content\auto-plan\route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import { tasks } from "@trigger.dev/sdk/v3";
-
-export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireAuth();
     const body = await request.json();
-    const { 
-      selectedTopics,
-      selectedLocations,
-      service,
-      brandTone,
-      targetAudience,
-      aboutSummary,
-      generateImages = false,
-      singlePage = true // New parameter to generate only one page
-    } = body;
+    const { frequency, days, tone, focus, contentGaps, dominantKeywords } = body;
 
-    if (!selectedTopics || selectedTopics.length === 0) {
-      return NextResponse.json(
-        { error: "At least one topic must be selected" },
-        { status: 400 }
-      );
-    }
+    // Generate a simple auto-plan based on the configuration
+    const events = [];
+    const startDate = new Date();
+    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+    
+    // Get available content ideas
+    const contentIdeas = [
+      ...contentGaps.map((gap: string) => ({
+        title: `Addressing: ${gap}`,
+        type: 'Content Gap',
+        keywords: extractKeywords(gap),
+      })),
+      // Add some default suggestions if no AI suggestions are available
+      {
+        title: "Industry Insights and Trends",
+        type: "Blog Post",
+        keywords: ["industry", "insights", "trends"],
+      },
+      {
+        title: "How-To Guide: Best Practices",
+        type: "Guide",
+        keywords: ["guide", "best practices", "tutorial"],
+      },
+      {
+        title: "Case Study: Success Story",
+        type: "Case Study",
+        keywords: ["case study", "success", "results"],
+      },
+      {
+        title: "Technical Deep Dive",
+        type: "Whitepaper",
+        keywords: ["technical", "deep dive", "analysis"],
+      },
+    ];
 
-    if (!selectedLocations || selectedLocations.length === 0) {
-      return NextResponse.json(
-        { error: "At least one location must be selected" },
-        { status: 400 }
-      );
-    }
+    // Calculate posting schedule
+    const postsPerWeek = frequency || 2;
+    const totalPosts = Math.min(postsPerWeek * 4, contentIdeas.length); // Max 4 weeks worth
+    const daysBetweenPosts = Math.floor(7 / postsPerWeek);
+    
+    let currentDate = new Date(startDate);
+    let postIndex = 0;
 
-    console.log("[Bulk Generate] Starting content generation:", {
-      topics: selectedTopics.length,
-      locations: selectedLocations.length,
-      service,
-      singlePage,
-    });
-
-    // If singlePage is true, only generate one combination (first topic + first location)
-    let combinations = [];
-    if (singlePage) {
-      // Generate only one page using the first topic and first location
-      combinations = [{
-        topic: selectedTopics[0],
-        location: selectedLocations[0],
-        service,
-        brandTone,
-        targetAudience,
-        aboutSummary,
-        generateImages,
-      }];
-      console.log("[Bulk Generate] Single page mode: generating 1 piece of content");
-    } else {
-      // Create all topic-location combinations (original behavior)
-      for (const topic of selectedTopics) {
-        for (const location of selectedLocations) {
-          combinations.push({
-            topic,
-            location,
-            service,
-            brandTone,
-            targetAudience,
-            aboutSummary,
-            generateImages,
-          });
-        }
+    for (let i = 0; i < totalPosts; i++) {
+      // Skip weekends
+      while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+        currentDate.setDate(currentDate.getDate() + 1);
       }
-      console.log("[Bulk Generate] Bulk mode: generating", combinations.length, "pieces of content");
+
+      if (currentDate > endDate) break;
+
+      const idea = contentIdeas[postIndex % contentIdeas.length];
+      
+      events.push({
+        title: idea.title,
+        date: currentDate.toISOString(),
+        keywords: idea.keywords,
+        type: idea.type,
+      });
+
+      postIndex++;
+      currentDate = new Date(currentDate.getTime() + daysBetweenPosts * 24 * 60 * 60 * 1000);
     }
 
-    // Trigger content generation task
-    const handle = await tasks.trigger("content-generator", {
-      combinations,
-      userId: user.id,
-      generateImages,
-      singlePage,
-    });
-
-    return NextResponse.json({
-      success: true,
-      taskId: handle.id,
-      totalCombinations: combinations.length,
-      message: `Started generating ${combinations.length} piece${combinations.length === 1 ? '' : 's'} of content`,
-    });
+    return NextResponse.json({ events });
   } catch (error) {
-    console.error("[Bulk Generate] Error:", error);
+    console.error("Auto-plan generation error:", error);
     return NextResponse.json(
-      { error: "Failed to start content generation", details: String(error) },
+      { error: "Failed to generate auto-plan" },
       { status: 500 }
     );
   }
 }
 
-export async function GET(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-    const { searchParams } = new URL(request.url);
-    const taskId = searchParams.get("taskId");
-
-    if (!taskId) {
-      return NextResponse.json(
-        { error: "Task ID is required" },
-        { status: 400 }
-      );
-    }
-
-    console.log("[Bulk Generate GET] Checking status for task:", taskId);
-
-    // Return the actual Trigger.dev task results
-    // In a real implementation, you'd use the Trigger.dev SDK to fetch task results
-    // For now, we'll return a structure that matches the real Trigger.dev output
-    const realCompletedResults = {
-      success: true,
-      status: "COMPLETED",
-      progress: 100,
-      total: 1,
-      completed: 1,
-      failed: 0,
-      results: [
-        {
-          id: `content_${Date.now()}_0`,
-          title: "Unlocking Business Potential with Computer Vision Technology",
-          location: "Rawalpindi",
-          contentType: "blog post",
-          content: `Title: "Unlocking Business Potential with Computer Vision Technology in Rawalpindi"
-
-Introduction:
-
-In an era where digital solutions are essential for business performance and growth, Computer Vision Technology stands as a revolutionary force, driving innovation and digital transformation. Specially, in the thriving tech-hub of Rawalpindi, businesses are increasingly seeking cutting-edge digital solutions to stay ahead of the curve. This blog post delves into how Computer Vision Technology is unlocking unprecedented business potential in Rawalpindi.
-
-Understanding Computer Vision Technology:
-
-Computer Vision Technology, a facet of AI technology, is designed to mimic human vision and cognition. It empowers computers to interpret and understand visual data from the physical world, enabling them to make informed decisions based on that data. From facial recognition to object detection, this innovative technology is transforming operations across a plethora of industries.
-
-The Impact of Computer Vision Technology on Businesses:
-
-Computer Vision Technology is becoming integral to many businesses, driving efficiencies, reducing costs, and unlocking new opportunities. By leveraging Computer Vision Services, businesses in Rawalpindi are not only automating processes but also enhancing customer experiences and improving their bottom line.
-
-1. Enhancing Operational Efficiencies:
-
-Computer Vision Technology can automate tedious and time-consuming tasks, freeing up staff to focus on more strategic initiatives. It can significantly reduce human error and streamline workflows, leading to improved operational efficiencies and productivity.
-
-2. Boosting Customer Experiences:
-
-In the age of digital transformation, customer expectations are skyrocketing. Computer Vision Technology can help businesses meet these expectations by providing personalized experiences, enhancing interactions, and ensuring seamless customer journeys.
-
-3. Mitigating Risks:
-
-Computer Vision can also be a game-changer in risk management. From detecting fraud in financial transactions to identifying potential hazards in manufacturing plants, Computer Vision Technology can help businesses mitigate risks and ensure compliance.
-
-The Future of Business with Computer Vision Services:
-
-As AI technology continues to evolve, so too does the potential of Computer Vision. This technology is pushing the boundaries of innovation, enabling businesses in Rawalpindi to pioneer new tech solutions and drive digital transformation.
-
-Whether it's retail businesses using Computer Vision to improve inventory management, healthcare providers leveraging it for accurate diagnoses, or manufacturing plants utilizing it for quality control, the applications are endless and the benefits substantial.
-
-Conclusion:
-
-In the bustling tech landscape of Rawalpindi, businesses that adopt Computer Vision Technology stand to gain a competitive edge. By harnessing this innovative technology, they can unlock immense business potential, revolutionize their operations, and lead their industries into a new era of digital transformation.
-
-Call to Action:
-
-Ready to unlock the potential of your business with Computer Vision Technology? Our team of tech experts in Rawalpindi is here to help. Contact us today to learn more about our cutting-edge Computer Vision Services and start your digital transformation journey. Your future is just a vision away.`,
-          imageUrl: "https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-zkFBoZl2kx0xaCbHyEwCcDlX.png?st=2026-01-22T08%3A31%3A35Z&se=2026-01-22T10%3A31%3A35Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=35890473-cca8-4a54-8305-05a39e0bc9c3&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T09%3A02%3A50Z&ske=2026-01-23T09%3A02%3A50Z&sks=b&skv=2024-08-04&sig=eRVdAp4mOl092XL8RP%2BgsC5bH1IiSImzuCk5rWWvCRg%3D",
-          wordCount: 3420,
-          keywords: [
-            "Computer Vision Technology",
-            "Business Potential",
-            "Digital Solutions",
-            "AI Technology",
-            "Innovation",
-            "Digital Transformation",
-            "Computer Vision Services",
-            "Tech Solutions"
-          ],
-          status: "completed"
-        }
-      ]
-    };
-
-    return NextResponse.json(realCompletedResults);
-  } catch (error) {
-    console.error("[Bulk Generate GET] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to get generation status", details: String(error) },
-      { status: 500 }
-    );
-  }
+function extractKeywords(text: string): string[] {
+  // Simple keyword extraction - in real implementation, this would be more sophisticated
+  const words = text.toLowerCase().split(/\s+/);
+  const keywords = words
+    .filter(word => word.length > 3)
+    .filter(word => !['the', 'and', 'for', 'are', 'with', 'this', 'that', 'from', 'have', 'they', 'been'].includes(word))
+    .slice(0, 3);
+  
+  return keywords;
 }
 
 ```
 
 ---
 
-### src\app\api\content\generate\route.ts
+### src\app\api\content\generate-outline\route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { z } from "zod";
 
-// Lazy initialization to avoid build-time errors
-let openai: OpenAI | null = null;
-
-function getOpenAI(): OpenAI {
-  if (!openai) {
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-  return openai;
-}
-
-// ==================== OUTPUT SCHEMAS ====================
-
-const KeywordResearchSchema = z.object({
-  keywords: z.array(z.object({
-    keyword: z.string(),
-    searchVolume: z.number(),
-    difficulty: z.number().min(1).max(100),
-    intent: z.enum(["informational", "transactional", "navigational", "commercial"]),
-    relevanceScore: z.number().min(1).max(10),
-    suggestedContentType: z.enum(["blog", "service-page", "location-page", "faq", "how-to"]),
-  })),
-  clusterGroups: z.array(z.object({
-    name: z.string(),
-    mainKeyword: z.string(),
-    relatedKeywords: z.array(z.string()),
-  })),
-});
-
-const ContentOutlineSchema = z.object({
-  title: z.string(),
-  slug: z.string(),
-  metaDescription: z.string().max(160),
-  focusKeyword: z.string(),
-  secondaryKeywords: z.array(z.string()),
-  outline: z.array(z.object({
-    heading: z.string(),
-    headingLevel: z.enum(["h2", "h3", "h4"]),
-    keyPoints: z.array(z.string()),
-    targetWordCount: z.number(),
-  })),
-  estimatedWordCount: z.number(),
-  contentType: z.string(),
-  targetAudience: z.string(),
-  callToAction: z.string(),
-});
-
-const FullContentSchema = z.object({
-  title: z.string(),
-  slug: z.string(),
-  content: z.string(),
-  excerpt: z.string().max(300),
-  metaDescription: z.string().max(160),
-  focusKeyword: z.string(),
-  secondaryKeywords: z.array(z.string()),
-  suggestedCategories: z.array(z.string()),
-  suggestedTags: z.array(z.string()),
-  seoScore: z.number().min(0).max(100),
-  readabilityScore: z.number().min(0).max(100),
-  wordCount: z.number(),
-  keywordDensity: z.number(),
-  internalLinkSuggestions: z.array(z.string()),
-  faqSection: z.array(z.object({
-    question: z.string(),
-    answer: z.string(),
-  })).optional(),
-});
-
-const MonthlyContentPlanSchema = z.object({
-  month: z.number(),
-  year: z.number(),
-  totalPosts: z.number(),
-  contentCalendar: z.array(z.object({
-    week: z.number(),
-    posts: z.array(z.object({
-      dayOfWeek: z.string(),
-      suggestedDate: z.string(),
-      title: z.string(),
-      focusKeyword: z.string(),
-      contentType: z.string(),
-      estimatedWordCount: z.number(),
-      priority: z.enum(["high", "medium", "low"]),
-    })),
-  })),
-  keywordDistribution: z.record(z.number()),
-  contentMix: z.object({
-    blogs: z.number(),
-    servicePages: z.number(),
-    locationPages: z.number(),
-    faqs: z.number(),
-  }),
-});
-
-// ==================== AI AGENTS ====================
-
-// Agent 1: Keyword Research Specialist
-async function keywordResearchAgent(params: {
-  businessType: string;
-  services: string[];
-  location: string;
-  competitors?: string[];
-  existingKeywords?: string[];
-}) {
-  const systemPrompt = `You are an expert Local SEO Keyword Research Specialist. Your job is to identify high-value, rankable keywords for local businesses.
-
-EXPERTISE:
-- Local search intent analysis
-- Long-tail keyword discovery
-- Keyword difficulty assessment
-- Search volume estimation
-- Competitor keyword gap analysis
-- Semantic keyword clustering
-
-GUIDELINES:
-1. Focus on keywords with local intent (e.g., "[service] in [city]", "[service] near me")
-2. Include service-specific long-tail keywords
-3. Consider seasonal trends for local businesses
-4. Prioritize keywords with commercial/transactional intent
-5. Group keywords into logical clusters for content planning
-6. Estimate realistic search volumes for local markets
-7. Assess difficulty based on local competition
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Research keywords for the following local business:
-
-Business Type: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-${params.competitors ? `Competitors: ${params.competitors.join(", ")}` : ""}
-${params.existingKeywords?.length ? `Already targeting: ${params.existingKeywords.join(", ")}` : ""}
-
-Generate 20-30 high-value local SEO keywords that can help this business rank on Google. Include a mix of:
-- High-volume head terms
-- Medium-competition body keywords  
-- Low-competition long-tail keywords
-- Location-specific variations
-- Service + location combinations
-- Question-based keywords (for FAQ content)
-
-Group them into semantic clusters for content planning.`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 2: Content Strategy Planner
-async function contentStrategyAgent(params: {
-  businessType: string;
-  services: string[];
-  location: string;
-  keywords: string[];
-  month: number;
-  year: number;
-  postsPerWeek: number;
-}) {
-  const systemPrompt = `You are an expert Content Strategy Planner specializing in Local SEO content calendars. Your job is to create strategic monthly content plans that maximize organic search visibility.
-
-EXPERTISE:
-- Content calendar optimization
-- Keyword-to-content mapping
-- Content type selection (blogs, service pages, location pages, FAQs)
-- Publishing frequency optimization
-- Seasonal content planning
-- Internal linking strategy
-
-GUIDELINES:
-1. Distribute keywords strategically across the month
-2. Mix content types for variety and comprehensive coverage
-3. Schedule high-priority content earlier in the month
-4. Consider local events/seasons in timing
-5. Ensure proper keyword density across content pieces
-6. Plan internal linking opportunities
-7. Balance evergreen and timely content
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Create a monthly content plan for:
-
-Business: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-Target Month: ${params.month}/${params.year}
-Posts Per Week: ${params.postsPerWeek}
-
-Keywords to target:
-${params.keywords.map((k, i) => `${i + 1}. ${k}`).join("\n")}
-
-Create a detailed content calendar that:
-1. Assigns specific keywords to specific posts
-2. Suggests optimal publishing dates
-3. Recommends content types for each keyword
-4. Prioritizes high-value keywords
-5. Ensures keyword diversity throughout the month`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 3: Content Outline Creator
-async function contentOutlineAgent(params: {
-  keyword: string;
-  businessType: string;
-  services: string[];
-  location: string;
-  contentType: string;
-  competitorInsights?: string;
-}) {
-  const systemPrompt = `You are an expert SEO Content Outline Creator. Your job is to create comprehensive, SEO-optimized content outlines that will rank on Google.
-
-EXPERTISE:
-- Search intent analysis
-- SERP feature targeting
-- Content structure optimization
-- Heading hierarchy (H1, H2, H3)
-- Featured snippet optimization
-- People Also Ask targeting
-- E-E-A-T signals incorporation
-
-GUIDELINES:
-1. Analyze search intent for the keyword
-2. Structure content to match top-ranking results
-3. Include LSI keywords naturally in headings
-4. Plan for featured snippet capture
-5. Add FAQ sections targeting PAA questions
-6. Include local trust signals
-7. Plan call-to-action placement
-8. Optimize meta description for CTR
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Create a detailed content outline for:
-
-Target Keyword: "${params.keyword}"
-Business Type: ${params.businessType}
-Services: ${params.services.join(", ")}
-Location: ${params.location}
-Content Type: ${params.contentType}
-${params.competitorInsights ? `\nCompetitor Insights: ${params.competitorInsights}` : ""}
-
-Create an SEO-optimized outline that includes:
-1. Compelling title with keyword
-2. Meta description (max 160 chars)
-3. Complete heading structure (H2s, H3s)
-4. Key points to cover under each heading
-5. Target word count for each section
-6. Secondary keywords to include
-7. FAQ questions to answer
-8. Call-to-action recommendation`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 4: Content Writer
-async function contentWriterAgent(params: {
-  outline: any;
-  keyword: string;
-  businessType: string;
-  businessName: string;
-  services: string[];
-  location: string;
-  tone?: string;
-  targetWordCount?: number;
-}) {
-  const systemPrompt = `You are an expert SEO Content Writer specializing in local business content. Your job is to write high-quality, engaging, SEO-optimized content that ranks on Google and converts readers into customers.
-
-EXPERTISE:
-- SEO copywriting
-- Local business content
-- Conversion optimization
-- E-E-A-T content principles
-- Natural keyword integration
-- Engaging storytelling
-- Technical accuracy
-
-WRITING GUIDELINES:
-1. Write in a ${params.tone || "professional yet friendly"} tone
-2. Include the focus keyword in first 100 words
-3. Use keywords naturally (1-2% density)
-4. Write scannable content with short paragraphs
-5. Include local references and landmarks
-6. Add trust signals (years in business, certifications, etc.)
-7. Use power words for engagement
-8. Include clear calls-to-action
-9. Write compelling meta description
-10. Format with proper HTML headings
-
-LOCAL SEO SPECIFICS:
-- Mention the city/location naturally throughout
-- Include "near me" and location variations
-- Reference local landmarks or areas served
-- Include local phone number format
-- Mention service area coverage
-
-IMPORTANT: You must respond with valid JSON only using the specified schemas.`;
-
-  const userPrompt = `Write a complete blog post based on this outline:
-
-${JSON.stringify(params.outline, null, 2)}
-
-Business Details:
-- Name: ${params.businessName}
-- Type: ${params.businessType}
-- Services: ${params.services.join(", ")}
-- Location: ${params.location}
-- Focus Keyword: "${params.keyword}"
-- Target Word Count: ${params.targetWordCount || 1500}
-
-Write the full content in HTML format with proper heading tags. Make it:
-1. Highly informative and valuable
-2. Optimized for the focus keyword
-3. Engaging and easy to read
-4. Locally relevant
-5. Conversion-focused with clear CTAs
-6. Include an FAQ section at the end`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.8,
-    max_tokens: 4000,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// Agent 5: SEO Quality Reviewer
-async function seoReviewerAgent(params: {
-  content: string;
-  focusKeyword: string;
-  metaDescription: string;
-  title: string;
-}) {
-  const systemPrompt = `You are an expert SEO Content Reviewer. Your job is to analyze content for SEO quality and provide actionable improvements.
-
-ANALYSIS CRITERIA:
-1. Keyword optimization (density, placement, variations)
-2. Title tag effectiveness
-3. Meta description quality
-4. Heading structure
-5. Content readability (Flesch-Kincaid)
-6. Internal linking opportunities
-7. E-E-A-T signals
-8. Local SEO elements
-9. Call-to-action effectiveness
-10. Featured snippet potential
-
-Provide scores from 0-100 for:
-- SEO Score: Overall optimization
-- Readability Score: Content clarity and flow
-
-IMPORTANT: You must respond with valid JSON only.`;
-
-  const userPrompt = `Review this content for SEO quality:
-
-Title: ${params.title}
-Meta Description: ${params.metaDescription}
-Focus Keyword: "${params.focusKeyword}"
-
-Content:
-${params.content.substring(0, 8000)}
-
-Analyze and provide:
-1. SEO Score (0-100)
-2. Readability Score (0-100)
-3. Keyword density percentage
-4. Word count
-5. Top 3 improvements needed
-6. Internal linking suggestions`;
-
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.3,
-  });
-
-  const content = response.choices[0].message.content;
-  return JSON.parse(content || "{}");
-}
-
-// ==================== MAIN API HANDLER ====================
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
-  console.log("[Content Generate] Starting request");
-  
+  const { title, aiKeywords, userKeywords, promotedService, serviceContext, tone } = await request.json();
+
+  if (!title) {
+    return NextResponse.json({ error: "Title is required" }, { status: 400 });
+  }
+
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    console.log("[Content Generate] OPENAI_API_KEY exists:", !!apiKey);
-    console.log("[Content Generate] OPENAI_API_KEY length:", apiKey?.length);
-    
-    if (!apiKey) {
-      console.log("[Content Generate] ERROR: OPENAI_API_KEY not configured");
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "OpenAI API Key is not configured. Please add OPENAI_API_KEY to your environment variables in Vercel Dashboard." },
-        { status: 400 }
+        { error: "OpenAI API key is not configured" },
+        { status: 500 }
       );
     }
 
-    console.log("[Content Generate] parsing request body");
-    
-    const body = await request.json();
-    console.log("[Content Generate] Request body received");
-    console.log("[Content Generate] Action:", body.action);
-    
-    const { action, ...params } = body;
-
-    let result;
-
-    switch (action) {
-      case "research_keywords":
-        console.log("[Content Generate] Calling keywordResearchAgent with params:", JSON.stringify(params));
-        result = await keywordResearchAgent(params);
-        console.log("[Content Generate] keywordResearchAgent completed successfully");
-        break;
-
-      case "create_content_plan":
-        console.log("[Content Generate] Calling contentStrategyAgent with params:", JSON.stringify(params));
-        result = await contentStrategyAgent(params);
-        console.log("[Content Generate] contentStrategyAgent completed successfully");
-        break;
-
-      case "create_outline":
-        console.log("[Content Generate] Calling contentOutlineAgent with params:", JSON.stringify(params));
-        result = await contentOutlineAgent(params);
-        console.log("[Content Generate] contentOutlineAgent completed successfully");
-        break;
-
-      case "write_content":
-        console.log("[Content Generate] Calling contentWriterAgent with params:", JSON.stringify(params));
-        result = await contentWriterAgent(params);
-        console.log("[Content Generate] contentWriterAgent completed successfully");
-        break;
-
-      case "review_seo":
-        console.log("[Content Generate] Calling seoReviewerAgent with params:", JSON.stringify(params));
-        result = await seoReviewerAgent(params);
-        console.log("[Content Generate] seoReviewerAgent completed successfully");
-        break;
-
-      case "generate_full_content":
-        // Pipeline: Outline -> Write -> Review
-        const outline = await contentOutlineAgent({
-          keyword: params.keyword,
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          contentType: params.contentType || "blog",
-        });
-
-        const written = await contentWriterAgent({
-          outline,
-          keyword: params.keyword,
-          businessType: params.businessType,
-          businessName: params.businessName,
-          services: params.services,
-          location: params.location,
-          tone: params.tone,
-          targetWordCount: params.targetWordCount,
-        });
-
-        const review = await seoReviewerAgent({
-          content: written.content || "",
-          focusKeyword: params.keyword,
-          metaDescription: written.metaDescription || "",
-          title: written.title || "",
-        });
-
-        result = {
-          ...written,
-          outline,
-          seoScore: review.seoScore || review.SEOScore || 75,
-          readabilityScore: review.readabilityScore || review.ReadabilityScore || 80,
-          improvements: review.improvements || [],
-        };
-        break;
-
-      case "generate_monthly_content":
-        // Full pipeline for monthly content generation
-        const keywords = await keywordResearchAgent({
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          existingKeywords: params.existingKeywords,
-        });
-
-        const plan = await contentStrategyAgent({
-          businessType: params.businessType,
-          services: params.services,
-          location: params.location,
-          keywords: keywords.keywords?.map((k: any) => k.keyword) || [],
-          month: params.month,
-          year: params.year,
-          postsPerWeek: params.postsPerWeek || 3,
-        });
-
-        result = {
-          keywords: keywords.keywords || [],
-          clusters: keywords.clusterGroups || [],
-          contentPlan: plan,
-        };
-        break;
-
-      default:
-        return NextResponse.json(
-          { error: "Invalid action" },
-          { status: 400 }
-        );
-    }
-
-    return NextResponse.json({ success: true, data: result });
-  } catch (error) {
-    console.error("Content generation error:", error);
-    console.error("Content generation error stack:", error instanceof Error ? error.stack : "No stack");
-    
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const stackTrace = error instanceof Error ? error.stack : "No stack";
-    
-    // Return detailed error in response body so browser can show it
-    return NextResponse.json(
-      { 
-        success: false,
-        error: errorMessage, 
-        details: String(error),
-        // Stack trace for debugging
-        debug: {
-          message: errorMessage,
-          stack: stackTrace,
-          type: error instanceof Error ? error.constructor.name : typeof error
-        }
-      },
-      { status: 500 }
-    );
-  }
-}
-
-```
-
----
-
-### src\app\api\content\history\route.ts
-
-```typescript
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-
-export const dynamic = "force-dynamic";
-
-export async function GET(request: NextRequest) {
-  try {
-    const user = await requireAuth();
-
-    const analyses = await prisma.contentAnalysis.findMany({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 50,
-      select: {
-        id: true,
-        baseUrl: true,
-        domain: true,
-        status: true,
-        pagesAnalyzed: true,
-        createdAt: true,
-        completedAt: true,
-        analysisOutput: true,
-        dominantKeywords: true,
-        contentGaps: true,
-        audiencePersona: true,
-        tone: true,
-        aiSuggestions: true,
-      },
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
-    return NextResponse.json({ analyses });
+    // Combine AI keywords with user keywords
+    const allKeywords = [...(aiKeywords || []), ...(userKeywords || [])];
+    const keywordsString = allKeywords.length > 0 ? allKeywords.join(", ") : "Not specified";
+
+    let prompt = `
+You are an expert Content Strategist. Create a detailed, specific Blog Post Outline.
+
+TITLE: "${title}"
+TARGET KEYWORDS: ${allKeywords.length > 0 ? keywordsString : "Not specified"}
+${promotedService ? `GOAL: This article must subtly sell the user's service: "${promotedService}".` : ''}
+${serviceContext ? `CONTEXT (What the service is):\n${serviceContext}` : ''}
+${tone ? `TONE INSTRUCTIONS: Write this outline in a ${tone} style.` : ''}
+INSTRUCTIONS:
+1. Create 6-8 Headings (H2) that are SPECIFIC to the topic, NOT generic like "Introduction" or "Conclusion"
+2. Under each H2, write 2 bullet points on what to cover
+3. ${promotedService ? `The "Solution" or "Implementation" section MUST mention how "${promotedService}" helps solve the problem.` : ''}
+4. ${promotedService ? `The Conclusion MUST include a Call to Action for "${promotedService}".` : ''}
+5. Do NOT use generic text like "Hook the reader". Be specific to the topic and keywords.
+6. Make each section actionable and practical.
+7. Use real-world examples and data points where appropriate.
+8. ${tone ? `Maintain a ${tone} tone throughout the outline.` : ''}
+Return the response as Markdown with H2 headings and bullet points.
+`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert content strategist and SEO specialist. You create detailed, specific blog post outlines that are tailored to the target keywords and business goals. You avoid generic placeholders and always provide specific, actionable content."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    });
+
+    const outline = completion.choices[0]?.message?.content || "";
+
+    return NextResponse.json({
+      success: true,
+      outline,
+    });
   } catch (error) {
-    console.error("Error fetching content analysis history:", error);
+    console.error("Error generating outline:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to generate outline";
     return NextResponse.json(
-      { error: "Failed to fetch content analysis history" },
+      { error: errorMessage },
       { status: 500 }
     );
   }
@@ -3647,147 +1636,56 @@ export async function GET(request: NextRequest) {
 
 ---
 
-### src\app\api\history\route.ts
+### src\app\api\crawl\status\route.ts
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
+import { runs } from "@trigger.dev/sdk/v3";
+import { getRunOutput } from "@/lib/trigger-utils";
 
 export const dynamic = "force-dynamic";
-
-// In-memory storage for historical data (for serverless deployment)
-// In production, this would use a database
-interface HistoryEntry {
-  id: string;
-  domain: string;
-  date: string;
-  overallScore: number;
-  seoScore: number;
-  linksScore: number;
-  usabilityScore: number;
-  performanceScore: number;
-  socialScore: number;
-  contentScore?: number;
-  eeatScore?: number;
-}
-
-// Simple storage - in production use database
-const historyStorage = new Map<string, HistoryEntry[]>();
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const domain = searchParams.get("domain");
-    const limit = parseInt(searchParams.get("limit") || "30");
+    const taskId = searchParams.get("taskId");
 
-    if (!domain) {
-      return NextResponse.json({ error: "Domain is required" }, { status: 400 });
+    if (!taskId) {
+      return NextResponse.json({ error: "Task ID is required" }, { status: 400 });
     }
 
-    // Get history from storage
-    const history = historyStorage.get(domain) || [];
-    
-    // Sort by date descending and limit
-    const sortedHistory = history
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, limit);
+    // Get task status from Trigger.dev
+    const run = await runs.retrieve(taskId);
 
-    // Calculate trends
-    const trends = calculateTrends(sortedHistory);
+    if (!run) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+
+    // Get output, handling offloaded outputs
+    let output = null;
+    if (run.status === "COMPLETED") {
+      try {
+        output = await getRunOutput(taskId);
+      } catch (error) {
+        console.error("Error fetching output:", error);
+      }
+    }
 
     return NextResponse.json({
-      domain,
-      history: sortedHistory,
-      trends,
-      totalAudits: history.length,
+      taskId: run.id,
+      status: run.status,
+      output,
+      metadata: run.metadata,
+      createdAt: run.createdAt,
+      finishedAt: run.finishedAt,
     });
   } catch (error) {
-    console.error("History API error:", error);
+    console.error("Crawl status error:", error);
     return NextResponse.json(
-      { error: "Failed to get history", details: String(error) },
+      { error: "Failed to get crawl status", details: String(error) },
       { status: 500 }
     );
   }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { domain, auditData } = body;
-
-    if (!domain || !auditData) {
-      return NextResponse.json({ error: "Domain and audit data are required" }, { status: 400 });
-    }
-
-    const entry: HistoryEntry = {
-      id: `hist_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      domain,
-      date: new Date().toISOString(),
-      overallScore: auditData.overallScore,
-      seoScore: auditData.seoScore,
-      linksScore: auditData.linksScore,
-      usabilityScore: auditData.usabilityScore,
-      performanceScore: auditData.performanceScore,
-      socialScore: auditData.socialScore,
-      contentScore: auditData.contentScore,
-      eeatScore: auditData.eeatScore,
-    };
-
-    // Get existing history for domain
-    const existing = historyStorage.get(domain) || [];
-    existing.push(entry);
-    
-    // Keep only last 100 entries per domain
-    if (existing.length > 100) {
-      existing.shift();
-    }
-    
-    historyStorage.set(domain, existing);
-
-    return NextResponse.json({
-      success: true,
-      entry,
-    });
-  } catch (error) {
-    console.error("History save error:", error);
-    return NextResponse.json(
-      { error: "Failed to save history", details: String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-function calculateTrends(history: HistoryEntry[]): Record<string, { change: number; trend: string }> {
-  if (history.length < 2) {
-    return {
-      overall: { change: 0, trend: "stable" },
-      seo: { change: 0, trend: "stable" },
-      performance: { change: 0, trend: "stable" },
-    };
-  }
-
-  const latest = history[0];
-  const previous = history[1];
-
-  const calculateChange = (current: number, prev: number) => {
-    const change = current - prev;
-    const trend = change > 0 ? "up" : change < 0 ? "down" : "stable";
-    return { change, trend };
-  };
-
-  return {
-    overall: calculateChange(latest.overallScore, previous.overallScore),
-    seo: calculateChange(latest.seoScore, previous.seoScore),
-    links: calculateChange(latest.linksScore, previous.linksScore),
-    usability: calculateChange(latest.usabilityScore, previous.usabilityScore),
-    performance: calculateChange(latest.performanceScore, previous.performanceScore),
-    social: calculateChange(latest.socialScore, previous.socialScore),
-    ...(latest.contentScore !== undefined && previous.contentScore !== undefined
-      ? { content: calculateChange(latest.contentScore, previous.contentScore) }
-      : {}),
-    ...(latest.eeatScore !== undefined && previous.eeatScore !== undefined
-      ? { eeat: calculateChange(latest.eeatScore, previous.eeatScore) }
-      : {}),
-  };
 }
 
 ```
@@ -3812,6 +1710,8 @@ import EmptyStateOnboarding from "@/components/content/EmptyStateOnboarding";
 import SEOHealthScore from "@/components/content/SEOHealthScore";
 import PersonaCard from "@/components/content/PersonaCard";
 import GapAnalysisCard from "@/components/content/GapAnalysisCard";
+import PriorityMatrix from "@/components/content/PriorityMatrix";
+import DraftSolutionModal from "@/components/content/DraftSolutionModal";
 import {
   Loader2,
   CheckCircle2,
@@ -3864,6 +1764,8 @@ export default function ContentStrategyPage() {
   const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysis[]>([]);
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [draftGapTopic, setDraftGapTopic] = useState("");
+  const [showBridgeFlowModal, setShowBridgeFlowModal] = useState(false);
+  const [bridgeFlowGap, setBridgeFlowGap] = useState("");
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY_ANALYSIS);
@@ -4189,7 +2091,18 @@ export default function ContentStrategyPage() {
   };
 
   const handleGenerateFromGap = (gap: string) => {
-    setDraftGapTopic(gap);
+    setBridgeFlowGap(gap);
+    setShowBridgeFlowModal(true);
+  };
+
+  const handleBridgeFlowGenerate = async (config: {
+    topic: string;
+    tone: string;
+    keywords: string[];
+    targetPersona: string;
+  }) => {
+    setDraftGapTopic(config.topic);
+    setShowBridgeFlowModal(false);
     setActiveView("production");
   };
 
@@ -4459,7 +2372,7 @@ export default function ContentStrategyPage() {
             writingStyle={contentContext.overallWritingStyle}
           />
 
-          {/* Gap Analysis */}
+          {/* Gap Analysis with Priority Matrix */}
           <div className="lg:col-span-1">
             <GapAnalysisCard
               gaps={contentContext.contentGaps || []}
@@ -4468,6 +2381,17 @@ export default function ContentStrategyPage() {
             />
           </div>
         </div>
+
+        {/* Priority Matrix Section */}
+        {contentContext.contentGaps && contentContext.contentGaps.length > 0 && (
+          <div className="mt-6 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <PriorityMatrix
+              gaps={contentContext.contentGaps}
+              onGenerateSolution={handleGenerateFromGap}
+              onPlanForLater={handlePlanGap}
+            />
+          </div>
+        )}
 
         {/* Full Dashboard */}
         <ContentStrategyDashboard
@@ -4516,1143 +2440,25 @@ export default function ContentStrategyPage() {
     }
   };
 
+  const contentContext = analysisOutput?.contentContext || {};
+
   return (
     <SidebarLayout activeView={activeView} onViewChange={handleViewChange}>
       <div className="min-h-screen">
         <div className="max-w-7xl mx-auto px-4 py-6">{renderContent()}</div>
       </div>
+
+      {/* Bridge Flow Modal - Gap to Content Generation */}
+      <DraftSolutionModal
+        isOpen={showBridgeFlowModal}
+        onClose={() => setShowBridgeFlowModal(false)}
+        gapTopic={bridgeFlowGap}
+        targetPersona={contentContext.audiencePersona || "General Audience"}
+        suggestedTone={contentContext.tone || "professional"}
+        suggestedKeywords={contentContext.dominantKeywords?.map((k: any) => k.term || k) || []}
+        onGenerate={handleBridgeFlowGenerate}
+      />
     </SidebarLayout>
-  );
-}
-
-```
-
----
-
-### src\components\content\AutoContentEngine.tsx
-
-```typescript
-"use client";
-
-import { useState, useEffect } from "react";
-import { 
-  Wand2, 
-  Globe, 
-  MapPin, 
-  FileText, 
-  Image, 
-  ChevronRight, 
-  ChevronLeft, 
-  CheckCircle2, 
-  Loader2, 
-  Search,
-  Target,
-  Settings,
-  Eye,
-  Upload,
-  Clock,
-  Zap
-} from "lucide-react";
-
-interface DiscoveryData {
-  services: string[];
-  locations: string[];
-  aboutSummary: string;
-  targetAudience: string;
-  brandTone: string;
-  contactInfo: {
-    email: string;
-    phone: string;
-    address: string;
-  };
-  existingPages: Array<{
-    url: string;
-    type: string;
-    title: string;
-  }>;
-}
-
-interface Topic {
-  title: string;
-  primaryKeywords: string[];
-  secondaryKeywords: string[];
-  targetLocations: string[];
-  contentType: "blog post" | "landing page";
-  description: string;
-  searchIntent: "informational" | "commercial" | "local";
-  estimatedWordCount?: number;
-  difficulty?: "easy" | "medium" | "hard";
-}
-
-interface GeneratedContent {
-  id: string;
-  title: string;
-  location: string;
-  contentType: string;
-  content: string;
-  imageUrl?: string;
-  status: "generating" | "completed" | "failed";
-  wordCount: number;
-  createdAt: string;
-}
-
-export default function AutoContentEngine() {
-  const [currentStep, setCurrentStep] = useState(1);
-  const [discoveryData, setDiscoveryData] = useState<DiscoveryData | null>(null);
-  const [selectedService, setSelectedService] = useState<string>("");
-  const [selectedTopics, setSelectedTopics] = useState<Topic[]>([]);
-  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [generatedContent, setGeneratedContent] = useState<GeneratedContent[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [dataSource, setDataSource] = useState<string>("");
-
-  const steps = [
-    { id: 1, title: "Auto-Discovery", icon: Search, description: "Analyze your website" },
-    { id: 2, title: "Service Selection", icon: Target, description: "Choose a service to grow" },
-    { id: 3, title: "AI Topics", icon: FileText, description: "Review AI-generated topics" },
-    { id: 4, title: "Location Mapping", icon: MapPin, description: "Select target locations" },
-    { id: 5, title: "Generation", icon: Wand2, description: "Generate content & images" },
-    { id: 6, title: "Review & Publish", icon: Eye, description: "Review and publish content" },
-  ];
-
-  useEffect(() => {
-    // Auto-start discovery if we have a recent crawl
-    loadDiscoveryData();
-  }, []);
-
-  const loadDiscoveryData = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/content/auto-discovery?crawlRequestId=latest');
-      const data = await response.json();
-      
-      if (data.success) {
-        setDiscoveryData(data.data);
-        setDataSource(data.source || 'unknown');
-        console.log('[Auto-Content] Discovery data loaded from:', data.source);
-        console.log('[Auto-Content] Discovery data:', data.data);
-      } else {
-        throw new Error(data.error || 'Failed to load discovery data');
-      }
-    } catch (error) {
-      console.error('[Auto-Content] Error loading discovery data:', error);
-      setError('Failed to load discovery data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateTopics = async () => {
-    if (!selectedService || !discoveryData) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch('/api/content/ai-topics', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selectedService,
-          locations: selectedLocations,
-          existingContent: discoveryData.existingPages,
-          brandTone: discoveryData.brandTone,
-          targetAudience: discoveryData.targetAudience,
-          aboutSummary: discoveryData.aboutSummary,
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        console.log('[Auto-Content] Generated topics:', data.topics);
-        // Auto-select all topics initially
-        setSelectedTopics(data.topics);
-        setCurrentStep(4); // Skip to location mapping
-      } else {
-        setError(data.error);
-      }
-    } catch (err) {
-      setError('Failed to generate topics');
-      console.error('[Auto-Content] Topic generation error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const startBulkGeneration = async () => {
-    if (selectedTopics.length === 0 || selectedLocations.length === 0 || !discoveryData) return;
-
-    try {
-      setIsGenerating(true);
-      setError(null);
-
-      const response = await fetch('/api/content/bulk-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selectedTopics,
-          selectedLocations,
-          service: selectedService,
-          brandTone: discoveryData.brandTone,
-          targetAudience: discoveryData.targetAudience,
-          aboutSummary: discoveryData.aboutSummary,
-          generateImages: true,
-          singlePage: true, // Generate only one page instead of multiple
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        console.log('[Auto-Content] Content generation started:', data);
-        setCurrentStep(6); // Move to review step
-        
-        // Simulate progress updates for single page
-        simulateProgress(data.taskId, 1);
-      } else {
-        setError(data.error);
-        setIsGenerating(false);
-      }
-    } catch (err) {
-      setError('Failed to start content generation');
-      setIsGenerating(false);
-      console.error('[Auto-Content] Content generation error:', err);
-    }
-  };
-
-  const generateRealisticContent = (topic: Topic, location: string): string => {
-    const sections = [
-      `# ${topic.title}`,
-      '',
-      '## Introduction',
-      `In today's digital landscape, businesses in ${location} are increasingly recognizing the importance of ${topic.primaryKeywords[0]}. This comprehensive guide explores how organizations can leverage these strategies to drive growth and achieve their objectives.`,
-      '',
-      '## Understanding the Landscape',
-      `The market in ${location} presents unique opportunities and challenges for businesses looking to implement ${topic.primaryKeywords.join(' and ')}. With the right approach, companies can establish a strong presence and build lasting relationships with their target audience.`,
-      '',
-      '## Key Benefits',
-      `### 1. Enhanced Visibility`,
-      `Implementing effective ${topic.primaryKeywords[0]} strategies helps businesses in ${location} improve their online presence and reach potential customers more effectively.`,
-      '',
-      `### 2. Increased Engagement`,
-      `By focusing on ${topic.secondaryKeywords[0]} and ${topic.secondaryKeywords[1]}, organizations can create meaningful connections with their audience and foster long-term loyalty.`,
-      '',
-      '## Implementation Strategy',
-      `To successfully implement ${topic.primaryKeywords[0]} in ${location}, businesses should consider the following approaches:`,
-      '',
-      '- **Comprehensive Analysis**: Understand your current position and identify opportunities',
-      '- **Strategic Planning**: Develop a roadmap that aligns with your business goals',
-      '- **Execution**: Implement strategies with precision and consistency',
-      '- **Monitoring**: Track performance and make data-driven adjustments',
-      '',
-      '## Case Studies',
-      `Several businesses in ${location} have successfully implemented ${topic.primaryKeywords[0]} strategies and achieved remarkable results. These success stories demonstrate the potential when approaches are tailored to local market conditions.`,
-      '',
-      '## Best Practices',
-      `When implementing ${topic.primaryKeywords.join(' and ')} in ${location}, consider these best practices:`,
-      '',
-      `1. **Local Market Understanding**: Tailor your approach to the unique characteristics of ${location}`,
-      `2. **Quality Focus**: Prioritize value and relevance over quantity`,
-      `3. **Continuous Improvement**: Regularly assess and refine your strategies`,
-      `4. **Integration**: Ensure all efforts work together cohesively`,
-      '',
-      '## Measuring Success',
-      `Track key performance indicators to measure the effectiveness of your ${topic.primaryKeywords[0]} initiatives:`,
-      '',
-      '- Engagement metrics and conversion rates',
-      '- Return on investment analysis',
-      '- Customer satisfaction scores',
-      '- Market share growth',
-      '',
-      '## Future Trends',
-      `The landscape of ${topic.primaryKeywords[0]} in ${location} continues to evolve. Stay ahead by monitoring emerging trends and adapting your strategies accordingly.`,
-      '',
-      '## Conclusion',
-      `Successfully implementing ${topic.primaryKeywords[0]} strategies in ${location} requires careful planning, execution, and ongoing optimization. By following the approaches outlined in this guide, businesses can achieve sustainable growth and build a strong market presence.`,
-      '',
-      `## Call to Action`,
-      `Ready to transform your business with ${topic.primaryKeywords[0]}? Contact our expert team today to learn how we can help you achieve your goals in ${location}.`,
-      '',
-      `---`,
-      '',
-      `*This content was generated by AI and optimized for businesses in ${location}. For personalized strategies tailored to your specific needs, reach out to our team of experts.*`
-    ];
-    
-    return sections.join('\n');
-  };
-
-  const simulateProgress = async (taskId: string, total: number) => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 15;
-      if (progress >= 95) {
-        progress = 95;
-        clearInterval(interval);
-      }
-      setGenerationProgress(progress);
-    }, 1000);
-
-    // Poll for actual task results
-    try {
-      const maxAttempts = 30; // 30 seconds max wait
-      let attempts = 0;
-      
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        attempts++;
-        
-        // Check task status via Trigger.dev API (mock for now)
-        // In production, you'd use the actual Trigger.dev API
-        if (attempts >= 15) { // Simulate completion after ~15 seconds
-          clearInterval(interval);
-          setGenerationProgress(100);
-          setIsGenerating(false);
-          
-          // Fetch real content from bulk-generate results
-          const response = await fetch(`/api/content/bulk-generate?taskId=${taskId}`);
-          const data = await response.json();
-          
-          if (data.success && data.results) {
-            setGeneratedContent(data.results);
-          } else {
-            // Create realistic content based on the selected topic
-            const realisticContent: GeneratedContent[] = selectedTopics.slice(0, 1).map((topic, index) => {
-              // Generate a comprehensive blog post based on the topic
-              const blogContent = generateRealisticContent(topic, selectedLocations[0]);
-              
-              return {
-                id: `content_${Date.now()}_${index}`,
-                title: topic.title,
-                location: selectedLocations[0],
-                contentType: topic.contentType,
-                content: blogContent,
-                imageUrl: `https://oaidalleapiprodscus.blob.core.windows.net/private/org-qi2NpQOcFSkA7YMqZvCe4RhG/user-6prhmEqvySDclLWU8fqTeqM2/img-${Math.random().toString(36).substring(7)}.png?st=2026-01-22T08%3A19%3A03Z&se=2026-01-22T10%3A19%3A03Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=35890473-cca8-4a54-8305-05a39e0bc9c3&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T07%3A57%3A32Z&ske=2026-01-23T07%3A57%3A32Z&sks=b&skv=2024-08-04&sig=I2g3zDF3bnwAxwHESHEArDXmnPc21/z2Poh11n46h1M%3D`,
-                status: 'completed' as const,
-                wordCount: blogContent.length,
-                createdAt: new Date().toISOString(),
-              };
-            });
-            
-            setGeneratedContent(realisticContent);
-          }
-          break;
-        }
-      }
-    } catch (error) {
-      console.error('Error polling for task results:', error);
-      clearInterval(interval);
-      setGenerationProgress(100);
-      setIsGenerating(false);
-      
-      // Fallback content
-      const fallbackContent: GeneratedContent[] = selectedTopics.slice(0, 1).map((topic, index) => ({
-        id: `content_${Date.now()}_${index}`,
-        title: topic.title,
-        location: selectedLocations[0],
-        contentType: topic.contentType,
-        content: `Content for "${topic.title}" targeting ${selectedLocations[0]}.`,
-        status: 'completed' as const,
-        wordCount: 1000,
-        createdAt: new Date().toISOString(),
-      }));
-      
-      setGeneratedContent(fallbackContent);
-    }
-  };
-
-  const toggleTopicSelection = (topic: Topic) => {
-    setSelectedTopics(prev => 
-      prev.some(t => t.title === topic.title)
-        ? prev.filter(t => t.title !== topic.title)
-        : [...prev, topic]
-    );
-  };
-
-  const toggleLocationSelection = (location: string) => {
-    setSelectedLocations(prev => 
-      prev.includes(location)
-        ? prev.filter(l => l !== location)
-        : [...prev, location]
-    );
-  };
-
-  const canProceed = () => {
-    switch (currentStep) {
-      case 1: return discoveryData !== null;
-      case 2: return selectedService !== "";
-      case 3: return selectedTopics.length > 0;
-      case 4: return selectedLocations.length > 0;
-      case 5: return !isGenerating;
-      case 6: return generatedContent.length > 0;
-      default: return false;
-    }
-  };
-
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 1:
-        return <DiscoveryStep discoveryData={discoveryData} loading={loading} dataSource={dataSource} />;
-      case 2:
-        return <ServiceSelectionStep 
-          services={discoveryData?.services || []}
-          selectedService={selectedService}
-          onSelectService={setSelectedService}
-        />;
-      case 3:
-        return <TopicsStep 
-          topics={selectedTopics}
-          selectedTopics={selectedTopics}
-          onToggleTopic={toggleTopicSelection}
-          loading={loading}
-        />;
-      case 4:
-        return <LocationMappingStep 
-          locations={discoveryData?.locations || []}
-          selectedLocations={selectedLocations}
-          onToggleLocation={toggleLocationSelection}
-        />;
-      case 5:
-        return <GenerationStep 
-          isGenerating={isGenerating}
-          progress={generationProgress}
-          totalCombinations={selectedTopics.length * selectedLocations.length}
-          onStartGeneration={startBulkGeneration}
-        />;
-      case 6:
-        return <ReviewStep 
-          generatedContent={generatedContent}
-          selectedTopics={selectedTopics}
-          selectedLocations={selectedLocations}
-        />;
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-        {/* Header */}
-        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
-              <Wand2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                Auto-Content Engine
-              </h1>
-              <p className="text-slate-600 dark:text-slate-400">
-                Generate location-specific content at scale with AI
-              </p>
-            </div>
-          </div>
-
-          {/* Progress Steps */}
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center flex-1">
-                <div className="flex items-center">
-                  <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
-                    currentStep >= step.id
-                      ? 'bg-blue-600 border-blue-600 text-white'
-                      : 'border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400'
-                  }`}>
-                    {currentStep > step.id ? (
-                      <CheckCircle2 className="w-4 h-4" />
-                    ) : (
-                      <step.icon className="w-4 h-4" />
-                    )}
-                  </div>
-                  <div className="ml-3 hidden sm:block">
-                    <p className={`text-sm font-medium ${
-                      currentStep >= step.id
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-500 dark:text-slate-400'
-                    }`}>
-                      {step.title}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-500">
-                      {step.description}
-                    </p>
-                  </div>
-                </div>
-                {index < steps.length - 1 && (
-                  <div className={`flex-1 h-px mx-4 ${
-                    currentStep > step.id ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
-                  }`} />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Step Content */}
-        <div className="p-6">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-red-600 dark:text-red-400">{error}</p>
-            </div>
-          )}
-
-          {renderStepContent()}
-        </div>
-
-        {/* Navigation */}
-        <div className="p-6 border-t border-slate-200 dark:border-slate-700">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
-              disabled={currentStep === 1}
-              className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
-            </button>
-
-            <div className="flex items-center gap-3">
-              {currentStep === 2 && (
-                <button
-                  onClick={generateTopics}
-                  disabled={!selectedService || loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Generating Topics...
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4" />
-                      Generate AI Topics
-                    </>
-                  )}
-                </button>
-              )}
-              
-              {currentStep === 4 && (
-                <button
-                  onClick={startBulkGeneration}
-                  disabled={selectedTopics.length === 0 || selectedLocations.length === 0 || isGenerating}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Generating Content...
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 className="w-4 h-4" />
-                      Start Generation
-                    </>
-                  )}
-                </button>
-              )}
-
-              {currentStep !== 2 && currentStep !== 4 && currentStep !== 5 && (
-                <button
-                  onClick={() => setCurrentStep(Math.min(6, currentStep + 1))}
-                  disabled={!canProceed() || loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      Next
-                      <ChevronRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Step Components
-function DiscoveryStep({ discoveryData, loading, dataSource }: { discoveryData: DiscoveryData | null; loading: boolean; dataSource: string }) {
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <Search className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-          Website Auto-Discovery
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Analyzing your website to extract services, locations, and brand context...
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-3 text-slate-600 dark:text-slate-400">Discovering your website context...</span>
-        </div>
-      ) : discoveryData ? (
-        <div>
-          {/* Data Source Indicator */}
-          {dataSource && (
-            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm text-blue-700 dark:text-blue-300">
-                  {dataSource === 'content-analysis' 
-                    ? '✅ Using data from your latest Content Analysis' 
-                    : '⚡ Using auto-discovered data'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                <h3 className="font-medium text-slate-900 dark:text-slate-100">Services Found</h3>
-              </div>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{discoveryData.services.length}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Services identified</p>
-            </div>
-
-            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <MapPin className="w-5 h-5 text-green-600 dark:text-green-400" />
-                <h3 className="font-medium text-slate-900 dark:text-slate-100">Locations</h3>
-              </div>
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{discoveryData.locations.length}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Target areas found</p>
-            </div>
-
-            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                <h3 className="font-medium text-slate-900 dark:text-slate-100">Existing Pages</h3>
-              </div>
-              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{discoveryData.existingPages.length}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Pages analyzed</p>
-            </div>
-          </div>
-
-          {/* Brand Context Summary */}
-          <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-            <h4 className="font-medium text-slate-900 dark:text-slate-100 mb-3">Brand Context</h4>
-            <div className="space-y-2 text-sm">
-              <div>
-                <span className="font-medium text-slate-700 dark:text-slate-300">Target Audience:</span>
-                <p className="text-slate-600 dark:text-slate-400">{discoveryData.targetAudience}</p>
-              </div>
-              <div>
-                <span className="font-medium text-slate-700 dark:text-slate-300">Brand Tone:</span>
-                <p className="text-slate-600 dark:text-slate-400">{discoveryData.brandTone}</p>
-              </div>
-              <div>
-                <span className="font-medium text-slate-700 dark:text-slate-300">About:</span>
-                <p className="text-slate-600 dark:text-slate-400">{discoveryData.aboutSummary}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ServiceSelectionStep({ 
-  services, 
-  selectedService, 
-  onSelectService 
-}: { 
-  services: string[]; 
-  selectedService: string; 
-  onSelectService: (service: string) => void;
-}) {
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <Target className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-          Select Service to Grow
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Choose which service you want to generate content for
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {services.map((service) => (
-          <button
-            key={service}
-            onClick={() => onSelectService(service)}
-            className={`p-4 border rounded-lg transition-all ${
-              selectedService === service
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-4 h-4 rounded-full border-2 ${
-                selectedService === service
-                  ? 'bg-blue-600 border-blue-600'
-                  : 'border-slate-300 dark:border-slate-600'
-              }`}>
-                {selectedService === service && (
-                  <CheckCircle2 className="w-3 h-3 text-white" />
-                )}
-              </div>
-              <span className="font-medium text-slate-900 dark:text-slate-100">
-                {service}
-              </span>
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TopicsStep({ 
-  topics, 
-  selectedTopics, 
-  onToggleTopic, 
-  loading 
-}: { 
-  topics: Topic[]; 
-  selectedTopics: Topic[]; 
-  onToggleTopic: (topic: Topic) => void; 
-  loading: boolean;
-}) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-3 text-slate-600 dark:text-slate-400">Generating AI topics...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <FileText className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-          AI-Generated Topics
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Review and select topics for content generation
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        {topics.map((topic) => {
-          const isSelected = selectedTopics.some(t => t.title === topic.title);
-          return (
-            <div
-              key={topic.title}
-              className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                isSelected
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-              }`}
-              onClick={() => onToggleTopic(topic)}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className={`w-4 h-4 rounded-full border-2 ${
-                      isSelected
-                        ? 'bg-blue-600 border-blue-600'
-                        : 'border-slate-300 dark:border-slate-600'
-                    }`}>
-                      {isSelected && (
-                        <CheckCircle2 className="w-3 h-3 text-white" />
-                      )}
-                    </div>
-                    <h3 className="font-medium text-slate-900 dark:text-slate-100">
-                      {topic.title}
-                    </h3>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      topic.contentType === 'landing page'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300'
-                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
-                    }`}>
-                      {topic.contentType}
-                    </span>
-                  </div>
-                  
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                    {topic.description}
-                  </p>
-
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <div className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
-                      <span className="font-medium">Primary:</span> {topic.primaryKeywords.join(', ')}
-                    </div>
-                    <div className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
-                      <span className="font-medium">Intent:</span> {topic.searchIntent}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function LocationMappingStep({ 
-  locations, 
-  selectedLocations, 
-  onToggleLocation 
-}: { 
-  locations: string[]; 
-  selectedLocations: string[]; 
-  onToggleLocation: (location: string) => void;
-}) {
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <MapPin className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-          Select Target Locations
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Choose locations for your content targeting
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {locations.map((location) => {
-          const isSelected = selectedLocations.includes(location);
-          return (
-            <button
-              key={location}
-              onClick={() => onToggleLocation(location)}
-              className={`p-3 border rounded-lg transition-all ${
-                isSelected
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-slate-500" />
-                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {location}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function GenerationStep({ 
-  isGenerating, 
-  progress, 
-  totalCombinations, 
-  onStartGeneration 
-}: { 
-  isGenerating: boolean; 
-  progress: number; 
-  totalCombinations: number; 
-  onStartGeneration: () => void;
-}) {
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <Wand2 className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-          Content Generation
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Generating {totalCombinations} pieces of content with AI
-        </p>
-      </div>
-
-      {!isGenerating ? (
-        <div className="text-center">
-          <button
-            onClick={onStartGeneration}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Wand2 className="w-5 h-5" />
-            Start Bulk Generation
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-slate-600 dark:text-slate-400">
-              Generating content and images...
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600 dark:text-slate-400">Progress</span>
-              <span className="font-medium text-slate-900 dark:text-slate-100">
-                {Math.round(progress)}%
-              </span>
-            </div>
-            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-              <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {Math.round(totalCombinations * progress / 100)}
-              </p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Completed</p>
-            </div>
-            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {totalCombinations - Math.round(totalCombinations * progress / 100)}
-              </p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Remaining</p>
-            </div>
-            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {totalCombinations}
-              </p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Total</p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ReviewStep({ 
-  generatedContent, 
-  selectedTopics, 
-  selectedLocations 
-}: { 
-  generatedContent: GeneratedContent[]; 
-  selectedTopics: Topic[]; 
-  selectedLocations: string[]; 
-}) {
-  const [expandedContent, setExpandedContent] = useState<string | null>(null);
-  const [editingContent, setEditingContent] = useState<string | null>(null);
-  const [editedText, setEditedText] = useState<string>("");
-  const [publishing, setPublishing] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleViewFullContent = (contentId: string) => {
-    setExpandedContent(expandedContent === contentId ? null : contentId);
-  };
-
-  const handleEdit = (content: GeneratedContent) => {
-    setEditingContent(content.id);
-    setEditedText(content.content);
-  };
-
-  const handleSaveEdit = (contentId: string) => {
-    // Update the content in the generatedContent array
-    const updatedContent = generatedContent.map(content => 
-      content.id === contentId 
-        ? { ...content, content: editedText }
-        : content
-    );
-    // This would normally update state, but for now we'll just close the editor
-    setEditingContent(null);
-    setEditedText("");
-  };
-
-  const handlePublishToWordPress = async (content: GeneratedContent) => {
-    try {
-      setPublishing(content.id);
-      
-      const response = await fetch('/api/wordpress/publish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: content.title,
-          content: content.content,
-          featuredImage: content.imageUrl,
-          location: content.location,
-          contentType: content.contentType,
-          tags: selectedTopics[0]?.primaryKeywords || [],
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        alert(`Content "${content.title}" published successfully to WordPress!`);
-      } else {
-        alert(`Failed to publish: ${data.error}`);
-      }
-    } catch (error) {
-      console.error('Publish error:', error);
-      alert('Failed to publish to WordPress');
-    } finally {
-      setPublishing(null);
-    }
-  };
-
-  // Show loading state while content is being prepared
-  if (loading || generatedContent.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-3 text-slate-600 dark:text-slate-400">Preparing your content for review...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <Eye className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">
-          Review & Publish
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Review your generated content and publish to WordPress
-        </p>
-      </div>
-
-      <div className="space-y-6">
-        {generatedContent.map((content) => (
-          <div key={content.id} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-            {/* Header with image */}
-            <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
-              <div className="flex items-start gap-6">
-                {content.imageUrl && (
-                  <div className="flex-shrink-0">
-                    <img 
-                      src={content.imageUrl} 
-                      alt={content.title}
-                      className="w-32 h-32 object-cover rounded-lg shadow-lg"
-                    />
-                  </div>
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3">
-                    <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                      {content.title}
-                    </h3>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300 rounded-full text-sm font-medium">
-                      {content.status}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400 mb-4">
-                    <div className="flex items-center gap-1">
-                      <MapPin className="w-4 h-4" />
-                      <span>{content.location}</span>
-                    </div>
-                    <span>•</span>
-                    <span>{content.wordCount.toLocaleString()} words</span>
-                    <span>•</span>
-                    <span className="capitalize">{content.contentType}</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => handleViewFullContent(content.id)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                    >
-                      {expandedContent === content.id ? 'Show Less' : 'View Full Content'}
-                    </button>
-                    <button 
-                      onClick={() => handleEdit(content)}
-                      className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm font-medium"
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      onClick={() => handlePublishToWordPress(content)}
-                      disabled={publishing === content.id}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors text-sm font-medium"
-                    >
-                      {publishing === content.id ? 'Publishing...' : 'Publish to WordPress'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Content Display */}
-            <div className="p-6">
-              {editingContent === content.id ? (
-                <div>
-                  <textarea
-                    value={editedText}
-                    onChange={(e) => setEditedText(e.target.value)}
-                    className="w-full p-4 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 resize-none min-h-[400px]"
-                    rows={12}
-                  />
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={() => handleSaveEdit(content.id)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setEditingContent(null)}
-                      className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm font-medium"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <div className="prose prose-slate dark:prose-invert max-w-none">
-                    {expandedContent === content.id ? (
-                      <div className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">
-                        {content.content}
-                      </div>
-                    ) : (
-                      <div>
-                        <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                          {content.content.length > 300 
-                            ? `${content.content.substring(0, 300)}...` 
-                            : content.content}
-                        </p>
-                        {content.content.length > 300 && (
-                          <button 
-                            onClick={() => handleViewFullContent(content.id)}
-                            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mt-2"
-                          >
-                            Read more →
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -5685,6 +2491,7 @@ import {
   Download,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import SearchResultPreview from "./SearchResultPreview";
 
 interface DiscoveryData {
   services: string[];
@@ -6047,26 +2854,33 @@ export default function AutoContentEngineSplit() {
             )}
           </div>
 
-          {/* Skeleton State */}
+          {/* Skeleton State with Search Result Preview */}
           {previewMode === "skeleton" && !isGenerating && (
-            <div className="space-y-4">
-              <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded-lg w-3/4 animate-pulse" />
-              <div className="space-y-2">
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-full animate-pulse" />
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-5/6 animate-pulse" />
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-4/6 animate-pulse" />
-              </div>
-              <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded-lg w-1/2 animate-pulse mt-6" />
-              <div className="space-y-2">
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-full animate-pulse" />
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-5/6 animate-pulse" />
-              </div>
-              <div className="text-center py-8">
-                <Sparkles className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-500 dark:text-slate-400">
-                  Configure your content and click Generate to see the preview
-                </p>
-              </div>
+            <div className="space-y-6">
+              {/* Live Search Result Preview */}
+              <SearchResultPreview
+                title={customTopic}
+                url={discoveryData?.existingPages?.[0]?.url || "https://example.com"}
+                keywords={customKeywords.split(",").map((k) => k.trim()).filter(Boolean)}
+              />
+
+              {/* Placeholder skeleton */}
+              {!customTopic && (
+                <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded-lg w-3/4 animate-pulse" />
+                  <div className="space-y-2">
+                    <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-full animate-pulse" />
+                    <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-5/6 animate-pulse" />
+                    <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-4/6 animate-pulse" />
+                  </div>
+                  <div className="text-center py-6">
+                    <Sparkles className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      Enter a topic to see your search preview
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -6099,6 +2913,386 @@ export default function AutoContentEngineSplit() {
               </div>
               <ReactMarkdown>{generatedContent.content}</ReactMarkdown>
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+```
+
+---
+
+### src\components\content\DraftSolutionModal.tsx
+
+```typescript
+"use client";
+
+import React, { useState, useEffect } from "react";
+import {
+  X,
+  Zap,
+  Target,
+  FileText,
+  Loader2,
+  ArrowRight,
+  CheckCircle2,
+  Sparkles,
+  Settings,
+} from "lucide-react";
+
+interface DraftSolutionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  gapTopic: string;
+  targetPersona?: string;
+  suggestedTone?: string;
+  suggestedKeywords?: string[];
+  onGenerate: (config: {
+    topic: string;
+    tone: string;
+    keywords: string[];
+    targetPersona: string;
+  }) => void;
+}
+
+const toneOptions = [
+  { value: "professional", label: "Professional", desc: "Formal and business-focused" },
+  { value: "conversational", label: "Conversational", desc: "Friendly and approachable" },
+  { value: "authoritative", label: "Authoritative", desc: "Expert and confident" },
+  { value: "educational", label: "Educational", desc: "Informative and helpful" },
+];
+
+export default function DraftSolutionModal({
+  isOpen,
+  onClose,
+  gapTopic,
+  targetPersona = "General Audience",
+  suggestedTone = "professional",
+  suggestedKeywords = [],
+  onGenerate,
+}: DraftSolutionModalProps) {
+  const [topic, setTopic] = useState(gapTopic);
+  const [tone, setTone] = useState(suggestedTone);
+  const [keywords, setKeywords] = useState<string[]>(suggestedKeywords);
+  const [customKeyword, setCustomKeyword] = useState("");
+  const [persona, setPersona] = useState(targetPersona);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTopic(gapTopic);
+      setTone(suggestedTone);
+      setKeywords(suggestedKeywords);
+      setPersona(targetPersona);
+      setStep(1);
+    }
+  }, [isOpen, gapTopic, suggestedTone, suggestedKeywords, targetPersona]);
+
+  const handleAddKeyword = () => {
+    if (customKeyword.trim() && !keywords.includes(customKeyword.trim())) {
+      setKeywords([...keywords, customKeyword.trim()]);
+      setCustomKeyword("");
+    }
+  };
+
+  const handleRemoveKeyword = (kw: string) => {
+    setKeywords(keywords.filter((k) => k !== kw));
+  };
+
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    try {
+      await onGenerate({ topic, tone, keywords, targetPersona: persona });
+      onClose();
+    } catch (error) {
+      console.error("Generation failed:", error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+              <Zap className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                Draft Solution
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Generate content to fill this gap
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Steps Indicator */}
+        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  step >= 1
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-200 dark:bg-slate-700 text-slate-500"
+                }`}
+              >
+                {step > 1 ? <CheckCircle2 className="w-5 h-5" /> : "1"}
+              </div>
+              <span
+                className={`text-sm font-medium ${
+                  step >= 1 ? "text-slate-900 dark:text-slate-100" : "text-slate-500"
+                }`}
+              >
+                Configure
+              </span>
+            </div>
+            <div className="flex-1 h-0.5 bg-slate-200 dark:bg-slate-700">
+              <div
+                className={`h-full bg-blue-600 transition-all ${
+                  step >= 2 ? "w-full" : "w-0"
+                }`}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  step >= 2
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-200 dark:bg-slate-700 text-slate-500"
+                }`}
+              >
+                2
+              </div>
+              <span
+                className={`text-sm font-medium ${
+                  step >= 2 ? "text-slate-900 dark:text-slate-100" : "text-slate-500"
+                }`}
+              >
+                Generate
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-280px)]">
+          {step === 1 && (
+            <div className="space-y-6">
+              {/* Topic */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Content Topic
+                </label>
+                <input
+                  type="text"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
+                  placeholder="Enter your topic..."
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Auto-filled from the content gap. Modify if needed.
+                </p>
+              </div>
+
+              {/* Target Persona */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <Target className="w-4 h-4 inline mr-1" />
+                  Target Persona
+                </label>
+                <input
+                  type="text"
+                  value={persona}
+                  onChange={(e) => setPersona(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
+                  placeholder="Who is this content for?"
+                />
+              </div>
+
+              {/* Tone Selection */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Writing Tone
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  {toneOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => setTone(option.value)}
+                      className={`p-3 rounded-lg border-2 text-left transition-all ${
+                        tone === option.value
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30"
+                          : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                      }`}
+                    >
+                      <p className="font-medium text-slate-900 dark:text-slate-100 text-sm">
+                        {option.label}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {option.desc}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Keywords */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Target Keywords
+                </label>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={customKeyword}
+                    onChange={(e) => setCustomKeyword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAddKeyword()}
+                    className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-100"
+                    placeholder="Add a keyword..."
+                  />
+                  <button
+                    onClick={handleAddKeyword}
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {keywords.map((kw, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm"
+                    >
+                      {kw}
+                      <button
+                        onClick={() => handleRemoveKeyword(kw)}
+                        className="hover:text-blue-900 dark:hover:text-blue-100"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {keywords.length === 0 && (
+                    <span className="text-sm text-slate-500 dark:text-slate-400">
+                      No keywords added yet
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="text-center py-8">
+              {isGenerating ? (
+                <div className="space-y-4">
+                  <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto" />
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    Generating Your Content...
+                  </h3>
+                  <p className="text-slate-500 dark:text-slate-400">
+                    This may take a moment. We're crafting high-quality content.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <Sparkles className="w-12 h-12 text-blue-600 mx-auto" />
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    Ready to Generate
+                  </h3>
+                  <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4 text-left max-w-md mx-auto">
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Topic:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{topic}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Tone:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100 capitalize">{tone}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Keywords:</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{keywords.length}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+          {step === 1 ? (
+            <>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setStep(2)}
+                disabled={!topic.trim()}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                Continue
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setStep(1)}
+                disabled={isGenerating}
+                className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 transition-colors font-medium"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    Generate Content
+                  </>
+                )}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -6536,465 +3730,6 @@ export default function GapAnalysisCard({
 
 ---
 
-### src\components\content\HistoryPanel.tsx
-
-```typescript
-"use client";
-
-import { useState, useEffect } from "react";
-import { 
-  History, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  Loader2, 
-  ExternalLink,
-  Calendar,
-  Globe,
-  FileText,
-  Search,
-  Bug,
-  ChevronDown,
-  ChevronUp
-} from "lucide-react";
-
-interface CrawlHistoryItem {
-  id: string;
-  domain: string;
-  url: string;
-  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  pagesFound?: number;
-  maxPages: number;
-  createdAt: string;
-  completedAt?: string;
-  triggerRunId?: string;
-  crawlData?: any;
-  pagesData?: any;
-}
-
-interface AnalysisHistoryItem {
-  id: string;
-  domain: string;
-  url: string;
-  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  pagesAnalyzed?: number;
-  createdAt: string;
-  completedAt?: string;
-  crawlRequestId?: string;
-  analysisOutput?: any;
-}
-
-interface HistoryPanelProps {
-  onSelectCrawlHistory?: (item: CrawlHistoryItem) => void;
-  onSelectAnalysisHistory?: (item: AnalysisHistoryItem) => void;
-  currentDomain?: string;
-}
-
-export default function HistoryPanel({ onSelectCrawlHistory, onSelectAnalysisHistory, currentDomain }: HistoryPanelProps) {
-  const [crawlHistory, setCrawlHistory] = useState<CrawlHistoryItem[]>([]);
-  const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'crawls' | 'analyses'>('crawls');
-  const [expandedCrawl, setExpandedCrawl] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadHistory();
-  }, []);
-
-  const loadHistory = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Load both crawl and analysis history
-      const [crawlResponse, analysisResponse] = await Promise.all([
-        fetch('/api/history/crawl'),
-        fetch('/api/content/history')
-      ]);
-
-      if (!crawlResponse.ok || !analysisResponse.ok) {
-        throw new Error('Failed to load history');
-      }
-
-      const crawlData = await crawlResponse.json();
-      const analysisData = await analysisResponse.json();
-
-      // Transform crawl data
-      const transformedCrawlHistory: CrawlHistoryItem[] = crawlData.crawlHistory.map((item: any) => ({
-        id: item.id,
-        domain: item.domain,
-        url: item.url,
-        status: item.status,
-        pagesFound: item.pagesFound,
-        maxPages: item.maxPages,
-        createdAt: item.createdAt,
-        completedAt: item.completedAt,
-        triggerRunId: item.triggerRunId,
-        crawlData: item.crawlData,
-        pagesData: item.pagesData,
-      }));
-
-      // Transform analysis data
-      const transformedAnalysisHistory: AnalysisHistoryItem[] = analysisData.analyses.map((item: any) => ({
-        id: item.id,
-        domain: item.domain,
-        url: item.baseUrl,
-        status: item.status,
-        pagesAnalyzed: item.pagesAnalyzed,
-        createdAt: item.createdAt,
-        completedAt: item.completedAt,
-        crawlRequestId: item.crawlRequestId,
-        analysisOutput: item.analysisOutput,
-      }));
-
-      setCrawlHistory(transformedCrawlHistory);
-      setAnalysisHistory(transformedAnalysisHistory);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load history');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
-      case "FAILED":
-        return <XCircle className="w-4 h-4 text-red-500" />;
-      case "RUNNING":
-        return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
-      default:
-        return <Clock className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-        return "text-green-700 bg-green-50 dark:text-green-300 dark:bg-green-900/20";
-      case "FAILED":
-        return "text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-900/20";
-      case "RUNNING":
-        return "text-blue-700 bg-blue-50 dark:text-blue-300 dark:bg-blue-900/20";
-      default:
-        return "text-gray-700 bg-gray-50 dark:text-gray-300 dark:bg-gray-900/20";
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const handleCrawlClick = (item: CrawlHistoryItem) => {
-    if (item.status === "COMPLETED" && item.pagesData) {
-      onSelectCrawlHistory?.(item);
-    }
-  };
-
-  const handleAnalysisClick = (item: AnalysisHistoryItem) => {
-    console.log("[HistoryPanel] Analysis clicked:", item);
-    if (item.status === "COMPLETED" && item.analysisOutput) {
-      console.log("[HistoryPanel] Loading analysis output");
-      onSelectAnalysisHistory?.(item);
-    } else {
-      console.log("[HistoryPanel] Analysis not completed or no output:", {
-        status: item.status,
-        hasOutput: !!item.analysisOutput,
-        outputKeys: item.analysisOutput ? Object.keys(item.analysisOutput) : null
-      });
-    }
-  };
-
-  const toggleCrawlExpansion = (crawlId: string) => {
-    setExpandedCrawl(expandedCrawl === crawlId ? null : crawlId);
-  };
-
-  if (loading) {
-    return (
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <History className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            History
-          </h3>
-        </div>
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-          <span className="ml-2 text-slate-600 dark:text-slate-400">Loading history...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <History className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            History
-          </h3>
-        </div>
-        <div className="text-center py-8">
-          <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-red-600 dark:text-red-400">{error}</p>
-          <button
-            onClick={loadHistory}
-            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <History className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            History
-          </h3>
-        </div>
-        <button
-          onClick={loadHistory}
-          className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-        >
-          Refresh
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-700 mb-6">
-        <button
-          onClick={() => setActiveTab('crawls')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'crawls'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Bug className="w-4 h-4" />
-            Crawls ({crawlHistory.length})
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('analyses')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'analyses'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            Analyses ({analysisHistory.length})
-          </div>
-        </button>
-      </div>
-
-      {/* Crawl History */}
-      {activeTab === 'crawls' && (
-        <div className="space-y-3">
-          {crawlHistory.length === 0 ? (
-            <div className="text-center py-8">
-              <Bug className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-600 dark:text-slate-400">No crawl history found</p>
-              <p className="text-sm text-slate-500 dark:text-slate-500 mt-2">
-                Start your first crawl to see it here
-              </p>
-            </div>
-          ) : (
-            crawlHistory.map((item) => (
-              <div key={item.id} className="border border-slate-200 dark:border-slate-700 rounded-lg">
-                <div
-                  className={`p-4 ${item.status === "COMPLETED" && item.pagesData ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : ''} transition-colors`}
-                  onClick={() => item.status === "COMPLETED" && item.pagesData && handleCrawlClick(item)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Globe className="w-4 h-4 text-slate-500" />
-                        <span className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                          {item.domain}
-                        </span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
-                          {item.status}
-                        </span>
-                        {item.status === "COMPLETED" && item.pagesData && (
-                          <span className="text-xs text-blue-600 dark:text-blue-400">
-                            Click to load pages
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {formatDate(item.createdAt)}
-                        </div>
-                        {item.pagesFound && (
-                          <div className="flex items-center gap-1">
-                            <FileText className="w-3 h-3" />
-                            {item.pagesFound}/{item.maxPages} pages
-                          </div>
-                        )}
-                        {item.triggerRunId && (
-                          <div className="flex items-center gap-1">
-                            <ExternalLink className="w-3 h-3" />
-                            <span className="text-xs">ID: {item.triggerRunId.slice(0, 8)}...</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {item.completedAt && (
-                        <div className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-                          Completed: {formatDate(item.completedAt)}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center ml-4">
-                      {getStatusIcon(item.status)}
-                      {item.pagesData && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleCrawlExpansion(item.id);
-                          }}
-                          className="ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                        >
-                          {expandedCrawl === item.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                {expandedCrawl === item.id && item.pagesData && (
-                  <div className="px-4 pb-4 border-t border-slate-200 dark:border-slate-700">
-                    <div className="pt-3">
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                        Crawled Pages ({item.pagesData?.length || 0})
-                      </p>
-                      <div className="max-h-40 overflow-y-auto space-y-1">
-                        {item.pagesData?.slice(0, 10).map((page: any, index: number) => (
-                          <div key={index} className="text-xs text-slate-600 dark:text-slate-400 truncate">
-                            • {page.url || page}
-                          </div>
-                        ))}
-                        {item.pagesData?.length > 10 && (
-                          <div className="text-xs text-slate-500 dark:text-slate-500">
-                            ... and {item.pagesData.length - 10} more pages
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Analysis History */}
-      {activeTab === 'analyses' && (
-        <div className="space-y-3">
-          {analysisHistory.length === 0 ? (
-            <div className="text-center py-8">
-              <FileText className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-600 dark:text-slate-400">No analysis history found</p>
-              <p className="text-sm text-slate-500 dark:text-slate-500 mt-2">
-                Start your first analysis to see it here
-              </p>
-            </div>
-          ) : (
-            analysisHistory.map((item) => (
-              <div
-                key={item.id}
-                className={`p-4 border border-slate-200 dark:border-slate-700 rounded-lg ${item.status === "COMPLETED" && item.analysisOutput ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : ''} transition-colors`}
-                onClick={() => item.status === "COMPLETED" && item.analysisOutput && handleAnalysisClick(item)}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Globe className="w-4 h-4 text-slate-500" />
-                      <span className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                        {item.domain}
-                      </span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
-                        {item.status}
-                      </span>
-                      {item.status === "COMPLETED" ? (
-                        item.analysisOutput ? (
-                          <span className="text-xs text-blue-600 dark:text-blue-400">
-                            Click to view analysis
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            Processing data...
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {item.status.toLowerCase()}
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {formatDate(item.createdAt)}
-                      </div>
-                      {item.pagesAnalyzed && (
-                        <div className="flex items-center gap-1">
-                          <FileText className="w-3 h-3" />
-                          {item.pagesAnalyzed} pages analyzed
-                        </div>
-                      )}
-                    </div>
-
-                    {item.completedAt && (
-                      <div className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-                        Completed: {formatDate(item.completedAt)}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center ml-4">
-                    {getStatusIcon(item.status)}
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Summary */}
-      {(crawlHistory.length > 0 || analysisHistory.length > 0) && (
-        <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Showing {crawlHistory.length} crawls and {analysisHistory.length} analyses
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-```
-
----
-
 ### src\components\content\PagesTable.tsx
 
 ```typescript
@@ -7351,12 +4086,16 @@ interface PersonaCardProps {
     commonPerspective?: string;
     brandVoiceSummary?: string;
   };
+  painPoints?: string[];
+  goals?: string[];
 }
 
 export default function PersonaCard({
   audiencePersona = "General Audience",
   tone = "Professional",
   writingStyle,
+  painPoints = [],
+  goals = [],
 }: PersonaCardProps) {
   const getAvatarGradient = (persona: string) => {
     const hash = persona.split("").reduce((a, b) => {
@@ -7454,6 +4193,57 @@ export default function PersonaCard({
             </div>
           )}
         </div>
+
+        {/* Pain Points & Goals Tags */}
+        {(painPoints.length > 0 || goals.length > 0) && (
+          <div className="mt-4 space-y-3">
+            {painPoints.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+                  Pain Points
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {painPoints.slice(0, 4).map((point, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-2.5 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs font-medium rounded-full"
+                    >
+                      {point}
+                    </span>
+                  ))}
+                  {painPoints.length > 4 && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 px-2 py-1">
+                      +{painPoints.length - 4} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {goals.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+                  Goals
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {goals.slice(0, 4).map((goal, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium rounded-full"
+                    >
+                      {goal}
+                    </span>
+                  ))}
+                  {goals.length > 4 && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 px-2 py-1">
+                      +{goals.length - 4} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Brand Voice Summary */}
         {writingStyle?.brandVoiceSummary && (
@@ -8567,176 +5357,247 @@ export default function PlannerView({
 
 ---
 
-### src\components\content\ProgressStepper.tsx
+### src\components\content\PriorityMatrix.tsx
 
 ```typescript
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
-  Globe,
-  FileSearch,
-  Brain,
+  Zap,
   Target,
-  CheckCircle2,
-  Loader2,
+  TrendingUp,
+  Clock,
+  ArrowRight,
   Lightbulb,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
-interface Step {
-  id: string;
-  label: string;
-  description: string;
-  icon: React.ElementType;
+interface ContentGap {
+  topic: string;
+  impact: "high" | "medium" | "low";
+  effort: "high" | "medium" | "low";
+  keywords?: string[];
+  searchVolume?: number;
 }
 
-const crawlSteps: Step[] = [
-  { id: "discover", label: "Discovering Sitemap", description: "Finding all pages on your website", icon: Globe },
-  { id: "extract", label: "Extracting Content", description: "Reading page content and structure", icon: FileSearch },
-  { id: "categorize", label: "Categorizing Pages", description: "Identifying page types (blog, service, etc.)", icon: Target },
-];
-
-const analyzeSteps: Step[] = [
-  { id: "extract", label: "Extracting Content", description: "Processing selected pages", icon: FileSearch },
-  { id: "analyze", label: "Analyzing Tone", description: "Understanding your brand voice", icon: Brain },
-  { id: "gaps", label: "Identifying Gaps", description: "Finding content opportunities", icon: Target },
-  { id: "suggest", label: "Generating Suggestions", description: "Creating AI-powered recommendations", icon: Lightbulb },
-];
-
-const seoTips = [
-  "Long-form content (2000+ words) typically ranks higher in search results.",
-  "Internal linking helps distribute page authority across your site.",
-  "Featured snippets capture about 8% of all clicks for a search query.",
-  "Mobile-first indexing means Google primarily uses mobile content for ranking.",
-  "Page speed is a direct ranking factor for both desktop and mobile searches.",
-  "Content freshness signals can boost rankings for time-sensitive queries.",
-  "Schema markup helps search engines understand your content better.",
-  "User engagement metrics like dwell time influence your rankings.",
-  "Keyword clustering helps you target multiple related terms with one piece of content.",
-  "Content gaps represent untapped opportunities to capture new traffic.",
-];
-
-interface ProgressStepperProps {
-  mode: "crawl" | "analyze";
-  progress?: number;
-  currentStep?: number;
+interface PriorityMatrixProps {
+  gaps: string[] | ContentGap[];
+  onGenerateSolution: (gap: string) => void;
+  onPlanForLater: (gap: string) => void;
 }
 
-export default function ProgressStepper({ mode, progress = 0, currentStep = 0 }: ProgressStepperProps) {
-  const [tipIndex, setTipIndex] = useState(0);
-  const steps = mode === "crawl" ? crawlSteps : analyzeSteps;
+const categorizeGap = (gap: string | ContentGap, index: number): ContentGap => {
+  if (typeof gap === "object") return gap;
+  
+  // Simple heuristic: first gaps are high impact, lower effort
+  const impactLevels: ("high" | "medium" | "low")[] = ["high", "high", "medium", "medium", "low"];
+  const effortLevels: ("high" | "medium" | "low")[] = ["low", "medium", "low", "high", "medium"];
+  
+  return {
+    topic: gap,
+    impact: impactLevels[index % 5] || "medium",
+    effort: effortLevels[index % 5] || "medium",
+  };
+};
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTipIndex((prev) => (prev + 1) % seoTips.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+const getQuadrant = (gap: ContentGap): "quick-wins" | "big-bets" | "fill-ins" | "time-sinks" => {
+  if (gap.impact === "high" && gap.effort === "low") return "quick-wins";
+  if (gap.impact === "high" && gap.effort !== "low") return "big-bets";
+  if (gap.impact !== "high" && gap.effort === "low") return "fill-ins";
+  return "time-sinks";
+};
 
-  const getStepStatus = (index: number) => {
-    if (index < currentStep) return "completed";
-    if (index === currentStep) return "active";
-    return "pending";
+const quadrantConfig = {
+  "quick-wins": {
+    title: "Quick Wins",
+    subtitle: "High Impact, Low Effort",
+    icon: Zap,
+    bgColor: "bg-green-50 dark:bg-green-900/20",
+    borderColor: "border-green-200 dark:border-green-800",
+    headerBg: "bg-green-100 dark:bg-green-900/40",
+    textColor: "text-green-700 dark:text-green-300",
+    iconColor: "text-green-600 dark:text-green-400",
+  },
+  "big-bets": {
+    title: "Big Bets",
+    subtitle: "High Impact, High Effort",
+    icon: Target,
+    bgColor: "bg-blue-50 dark:bg-blue-900/20",
+    borderColor: "border-blue-200 dark:border-blue-800",
+    headerBg: "bg-blue-100 dark:bg-blue-900/40",
+    textColor: "text-blue-700 dark:text-blue-300",
+    iconColor: "text-blue-600 dark:text-blue-400",
+  },
+  "fill-ins": {
+    title: "Fill-Ins",
+    subtitle: "Low Impact, Low Effort",
+    icon: Clock,
+    bgColor: "bg-slate-50 dark:bg-slate-800/50",
+    borderColor: "border-slate-200 dark:border-slate-700",
+    headerBg: "bg-slate-100 dark:bg-slate-700/50",
+    textColor: "text-slate-700 dark:text-slate-300",
+    iconColor: "text-slate-500 dark:text-slate-400",
+  },
+  "time-sinks": {
+    title: "Consider Later",
+    subtitle: "Low Impact, High Effort",
+    icon: TrendingUp,
+    bgColor: "bg-amber-50 dark:bg-amber-900/20",
+    borderColor: "border-amber-200 dark:border-amber-800",
+    headerBg: "bg-amber-100 dark:bg-amber-900/40",
+    textColor: "text-amber-700 dark:text-amber-300",
+    iconColor: "text-amber-600 dark:text-amber-400",
+  },
+};
+
+export default function PriorityMatrix({
+  gaps,
+  onGenerateSolution,
+  onPlanForLater,
+}: PriorityMatrixProps) {
+  const [expandedQuadrant, setExpandedQuadrant] = useState<string | null>("quick-wins");
+
+  const categorizedGaps = gaps.map((gap, index) => categorizeGap(gap, index));
+  
+  const groupedGaps = {
+    "quick-wins": categorizedGaps.filter((g) => getQuadrant(g) === "quick-wins"),
+    "big-bets": categorizedGaps.filter((g) => getQuadrant(g) === "big-bets"),
+    "fill-ins": categorizedGaps.filter((g) => getQuadrant(g) === "fill-ins"),
+    "time-sinks": categorizedGaps.filter((g) => getQuadrant(g) === "time-sinks"),
   };
 
+  if (gaps.length === 0) {
+    return (
+      <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-8 border border-green-200 dark:border-green-800 text-center">
+        <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center mx-auto mb-4">
+          <Target className="w-8 h-8 text-green-600 dark:text-green-400" />
+        </div>
+        <h3 className="text-xl font-semibold text-green-900 dark:text-green-100 mb-2">
+          No Content Gaps Found
+        </h3>
+        <p className="text-sm text-green-700 dark:text-green-300">
+          Your content strategy is comprehensive. Great work!
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-      {/* Progress Bar */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-            {mode === "crawl" ? "Crawling Website" : "Analyzing Content"}
-          </span>
-          <span className="text-sm text-blue-700 dark:text-blue-300">
-            {Math.round(progress)}%
-          </span>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Lightbulb className="w-5 h-5 text-amber-500" />
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+            Priority Matrix
+          </h3>
         </div>
-        <div className="h-2 bg-blue-100 dark:bg-blue-900/50 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
+        <span className="text-sm text-slate-500 dark:text-slate-400">
+          {gaps.length} opportunities identified
+        </span>
       </div>
 
-      {/* Steps */}
-      <div className="space-y-3 mb-6">
-        {steps.map((step, index) => {
-          const Icon = step.icon;
-          const status = getStepStatus(index);
+      {/* 2x2 Matrix Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {(["quick-wins", "big-bets", "fill-ins", "time-sinks"] as const).map((quadrantKey) => {
+          const config = quadrantConfig[quadrantKey];
+          const Icon = config.icon;
+          const quadrantGaps = groupedGaps[quadrantKey];
+          const isExpanded = expandedQuadrant === quadrantKey;
 
           return (
             <div
-              key={step.id}
-              className={`flex items-center gap-4 p-3 rounded-lg transition-all ${
-                status === "active"
-                  ? "bg-white dark:bg-slate-800 shadow-sm border border-blue-200 dark:border-blue-700"
-                  : status === "completed"
-                  ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
-                  : "opacity-50"
-              }`}
+              key={quadrantKey}
+              className={`${config.bgColor} ${config.borderColor} border rounded-xl overflow-hidden transition-all duration-200`}
             >
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  status === "completed"
-                    ? "bg-green-100 dark:bg-green-900/50"
-                    : status === "active"
-                    ? "bg-blue-100 dark:bg-blue-900/50"
-                    : "bg-slate-100 dark:bg-slate-700"
-                }`}
+              {/* Quadrant Header */}
+              <button
+                onClick={() => setExpandedQuadrant(isExpanded ? null : quadrantKey)}
+                className={`w-full ${config.headerBg} px-4 py-3 flex items-center justify-between`}
               >
-                {status === "completed" ? (
-                  <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
-                ) : status === "active" ? (
-                  <Loader2 className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />
-                ) : (
-                  <Icon className="w-5 h-5 text-slate-400" />
-                )}
-              </div>
-              <div className="flex-1">
-                <p
-                  className={`font-medium ${
-                    status === "completed"
-                      ? "text-green-900 dark:text-green-100"
-                      : status === "active"
-                      ? "text-blue-900 dark:text-blue-100"
-                      : "text-slate-500 dark:text-slate-400"
-                  }`}
-                >
-                  {step.label}
-                </p>
-                <p
-                  className={`text-sm ${
-                    status === "completed"
-                      ? "text-green-700 dark:text-green-300"
-                      : status === "active"
-                      ? "text-blue-700 dark:text-blue-300"
-                      : "text-slate-400 dark:text-slate-500"
-                  }`}
-                >
-                  {step.description}
-                </p>
-              </div>
+                <div className="flex items-center gap-2">
+                  <Icon className={`w-5 h-5 ${config.iconColor}`} />
+                  <div className="text-left">
+                    <h4 className={`font-semibold ${config.textColor}`}>{config.title}</h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{config.subtitle}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${config.textColor}`}>
+                    {quadrantGaps.length}
+                  </span>
+                  {isExpanded ? (
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                  )}
+                </div>
+              </button>
+
+              {/* Quadrant Content */}
+              {isExpanded && quadrantGaps.length > 0 && (
+                <div className="p-3 space-y-2">
+                  {quadrantGaps.map((gap, index) => (
+                    <div
+                      key={index}
+                      className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-700 group"
+                    >
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3 line-clamp-2">
+                        {gap.topic}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onGenerateSolution(gap.topic)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          Draft Solution
+                        </button>
+                        <button
+                          onClick={() => onPlanForLater(gap.topic)}
+                          className="inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          Plan
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {isExpanded && quadrantGaps.length === 0 && (
+                <div className="p-4 text-center">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    No items in this quadrant
+                  </p>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* SEO Tips */}
-      <div className="p-4 bg-white/50 dark:bg-slate-800/50 rounded-lg border border-blue-100 dark:border-blue-800">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
-            <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-amber-700 dark:text-amber-300 mb-1">
-              Did you know?
-            </p>
-            <p className="text-sm text-slate-700 dark:text-slate-300 transition-opacity duration-300">
-              {seoTips[tipIndex]}
-            </p>
-          </div>
-        </div>
+      {/* Quick Actions Footer */}
+      <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          💡 Start with Quick Wins for immediate impact
+        </p>
+        <button
+          onClick={() => {
+            const firstQuickWin = groupedGaps["quick-wins"][0];
+            if (firstQuickWin) onGenerateSolution(firstQuickWin.topic);
+          }}
+          disabled={groupedGaps["quick-wins"].length === 0}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors"
+        >
+          <Zap className="w-4 h-4" />
+          Start First Quick Win
+          <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
@@ -8761,12 +5622,19 @@ import {
   XCircle,
 } from "lucide-react";
 
+interface CriticalIssue {
+  label: string;
+  type: "error" | "warning" | "info";
+}
+
 interface SEOHealthScoreProps {
   score?: number;
   totalPages?: number;
   avgWordCount?: number;
   contentGapsCount?: number;
   keywordsCount?: number;
+  missingMetaCount?: number;
+  lowWordCountPages?: number;
 }
 
 export default function SEOHealthScore({
@@ -8775,8 +5643,32 @@ export default function SEOHealthScore({
   avgWordCount = 0,
   contentGapsCount = 0,
   keywordsCount = 0,
+  missingMetaCount = 0,
+  lowWordCountPages = 0,
 }: SEOHealthScoreProps) {
   const calculatedScore = score ?? calculateScore(avgWordCount, contentGapsCount, keywordsCount, totalPages);
+
+  const getCriticalIssues = (): CriticalIssue[] => {
+    const issues: CriticalIssue[] = [];
+    if (contentGapsCount > 3) {
+      issues.push({ label: `${contentGapsCount} Content Gaps`, type: "warning" });
+    }
+    if (avgWordCount < 500) {
+      issues.push({ label: "Low Word Count", type: "error" });
+    }
+    if (missingMetaCount > 0) {
+      issues.push({ label: `${missingMetaCount} Missing Meta`, type: "error" });
+    }
+    if (lowWordCountPages > 0) {
+      issues.push({ label: `${lowWordCountPages} Thin Pages`, type: "warning" });
+    }
+    if (keywordsCount < 5) {
+      issues.push({ label: "Few Keywords", type: "info" });
+    }
+    return issues;
+  };
+
+  const criticalIssues = getCriticalIssues();
 
   function calculateScore(
     avgWords: number,
@@ -8896,6 +5788,38 @@ export default function SEOHealthScore({
         </div>
       </div>
 
+      {/* Critical Issues Badges */}
+      {criticalIssues.length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+            Critical Issues
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {criticalIssues.map((issue, index) => (
+              <span
+                key={index}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                  issue.type === "error"
+                    ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                    : issue.type === "warning"
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                }`}
+              >
+                {issue.type === "error" ? (
+                  <XCircle className="w-3 h-3" />
+                ) : issue.type === "warning" ? (
+                  <AlertTriangle className="w-3 h-3" />
+                ) : (
+                  <TrendingUp className="w-3 h-3" />
+                )}
+                {issue.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 gap-3">
         <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
@@ -8925,201 +5849,185 @@ export default function SEOHealthScore({
 
 ---
 
-### src\components\content\SmartSelectSummary.tsx
+### src\components\content\SearchResultPreview.tsx
 
 ```typescript
 "use client";
 
-import React from "react";
-import {
-  FileText,
-  BookOpen,
-  ShoppingBag,
-  Globe,
-  CheckCircle2,
-  Zap,
-  Filter,
-} from "lucide-react";
+import React, { useMemo } from "react";
+import { Globe, ArrowUpRight, Eye } from "lucide-react";
 
-interface CrawledPage {
-  url: string;
-  type: string;
+interface SearchResultPreviewProps {
   title?: string;
-  selected?: boolean;
+  url?: string;
+  description?: string;
+  keywords?: string[];
 }
 
-interface PageGroup {
-  type: string;
-  count: number;
-  selected: number;
-  icon: React.ElementType;
-  color: string;
-  bgColor: string;
-  recommended: boolean;
-}
-
-interface SmartSelectSummaryProps {
-  pages: CrawledPage[];
-  onSelectType: (type: string, select: boolean) => void;
-  onSelectRecommended: () => void;
-  onSelectAll: () => void;
-  onDeselectAll: () => void;
-}
-
-export default function SmartSelectSummary({
-  pages,
-  onSelectType,
-  onSelectRecommended,
-  onSelectAll,
-  onDeselectAll,
-}: SmartSelectSummaryProps) {
-  const getPageGroups = (): PageGroup[] => {
-    const groups: Record<string, { count: number; selected: number }> = {};
+export default function SearchResultPreview({
+  title = "",
+  url = "https://example.com/your-article",
+  description = "",
+  keywords = [],
+}: SearchResultPreviewProps) {
+  const generateMetaDescription = useMemo(() => {
+    if (description) return description;
+    if (!title) return "Your meta description will appear here as you type your topic...";
     
-    pages.forEach((page) => {
-      if (!groups[page.type]) {
-        groups[page.type] = { count: 0, selected: 0 };
-      }
-      groups[page.type].count++;
-      if (page.selected) {
-        groups[page.type].selected++;
-      }
-    });
+    const keywordText = keywords.length > 0 
+      ? ` Learn about ${keywords.slice(0, 2).join(", ")} and more.`
+      : "";
+    
+    return `Discover everything you need to know about ${title.toLowerCase()}.${keywordText} Read our comprehensive guide for actionable insights and expert tips.`;
+  }, [title, description, keywords]);
 
-    const typeConfig: Record<string, { icon: React.ElementType; color: string; bgColor: string; recommended: boolean }> = {
-      service: { icon: FileText, color: "text-blue-600", bgColor: "bg-blue-100 dark:bg-blue-900/30", recommended: true },
-      blog: { icon: BookOpen, color: "text-green-600", bgColor: "bg-green-100 dark:bg-green-900/30", recommended: true },
-      product: { icon: ShoppingBag, color: "text-purple-600", bgColor: "bg-purple-100 dark:bg-purple-900/30", recommended: false },
-      other: { icon: Globe, color: "text-slate-600", bgColor: "bg-slate-100 dark:bg-slate-700", recommended: false },
-    };
+  const truncatedTitle = title.length > 60 
+    ? title.substring(0, 57) + "..." 
+    : title || "Your Article Title";
 
-    return Object.entries(groups).map(([type, data]) => ({
-      type,
-      count: data.count,
-      selected: data.selected,
-      icon: typeConfig[type]?.icon || Globe,
-      color: typeConfig[type]?.color || "text-slate-600",
-      bgColor: typeConfig[type]?.bgColor || "bg-slate-100 dark:bg-slate-700",
-      recommended: typeConfig[type]?.recommended || false,
-    }));
+  const truncatedDescription = generateMetaDescription.length > 160
+    ? generateMetaDescription.substring(0, 157) + "..."
+    : generateMetaDescription;
+
+  const formatUrl = (urlStr: string, titleStr: string) => {
+    if (!titleStr) return urlStr;
+    const slug = titleStr
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .substring(0, 50);
+    const baseUrl = urlStr.split("/").slice(0, 3).join("/");
+    return `${baseUrl}/${slug}`;
   };
 
-  const pageGroups = getPageGroups();
-  const totalPages = pages.length;
-  const selectedCount = pages.filter((p) => p.selected).length;
-  const recommendedCount = pageGroups.filter((g) => g.recommended).reduce((sum, g) => sum + g.count, 0);
-  const servicePages = pageGroups.find((g) => g.type === "service");
-  const blogPages = pageGroups.find((g) => g.type === "blog");
+  const displayUrl = formatUrl(url, title);
+
+  const highlightKeywords = (text: string) => {
+    if (keywords.length === 0) return text;
+    
+    let result = text;
+    keywords.forEach((keyword) => {
+      const regex = new RegExp(`(${keyword})`, "gi");
+      result = result.replace(regex, `<strong class="font-semibold">$1</strong>`);
+    });
+    return result;
+  };
 
   return (
     <div className="space-y-4">
-      {/* Summary Card */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-6 border border-blue-200 dark:border-blue-800">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-1">
-              Smart Page Selection
-            </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              We found <span className="font-bold text-blue-600">{totalPages} pages</span>. 
-              We recommend analyzing the{" "}
-              <span className="font-bold text-blue-600">{servicePages?.count || 0} Service Pages</span> and{" "}
-              <span className="font-bold text-green-600">{blogPages?.count || 0} Blog Posts</span>.
-            </p>
+      <div className="flex items-center gap-2 mb-3">
+        <Eye className="w-4 h-4 text-slate-500" />
+        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          Search Result Preview
+        </h3>
+      </div>
+
+      {/* Google-style Search Result */}
+      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4 shadow-sm">
+        {/* URL Breadcrumb */}
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <Globe className="w-4 h-4 text-slate-500" />
           </div>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-slate-500 dark:text-slate-400">
-              {selectedCount} of {totalPages} selected
+          <div className="flex flex-col">
+            <span className="text-xs text-slate-600 dark:text-slate-400">
+              {displayUrl.split("/").slice(0, 3).join("/").replace("https://", "")}
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-500 truncate max-w-[300px]">
+              {displayUrl}
             </span>
           </div>
         </div>
 
-        {/* Quick Select Buttons */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          <button
-            onClick={onSelectRecommended}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            <Zap className="w-4 h-4" />
-            Select Recommended ({recommendedCount})
-          </button>
-          <button
-            onClick={() => onSelectType("service", true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors text-sm font-medium"
-          >
-            <FileText className="w-4 h-4" />
-            Select All Service Pages
-          </button>
-          <button
-            onClick={() => onSelectType("blog", true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors text-sm font-medium"
-          >
-            <BookOpen className="w-4 h-4" />
-            Select All Blog Posts
-          </button>
-          <button
-            onClick={onDeselectAll}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium"
-          >
-            <Filter className="w-4 h-4" />
-            Deselect All
-          </button>
+        {/* Title */}
+        <a 
+          href="#" 
+          className="block text-xl text-blue-600 dark:text-blue-400 hover:underline mb-1 leading-tight"
+          onClick={(e) => e.preventDefault()}
+        >
+          {truncatedTitle || "Enter a topic to see preview"}
+        </a>
+
+        {/* Meta Description */}
+        <p 
+          className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: highlightKeywords(truncatedDescription) }}
+        />
+
+        {/* Rich Snippets Preview */}
+        {keywords.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {keywords.slice(0, 4).map((keyword, index) => (
+              <span
+                key={index}
+                className="text-xs px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded"
+              >
+                {keyword}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* SEO Indicators */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`p-3 rounded-lg border ${
+          title.length >= 30 && title.length <= 60
+            ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+            : title.length > 0
+            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+            : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+        }`}>
+          <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Title Length</p>
+          <div className="flex items-center justify-between">
+            <span className={`text-lg font-bold ${
+              title.length >= 30 && title.length <= 60
+                ? "text-green-600 dark:text-green-400"
+                : title.length > 0
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-slate-400"
+            }`}>
+              {title.length}/60
+            </span>
+            {title.length >= 30 && title.length <= 60 && (
+              <span className="text-xs text-green-600 dark:text-green-400">Optimal</span>
+            )}
+          </div>
         </div>
 
-        {/* Page Type Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {pageGroups.map((group) => {
-            const Icon = group.icon;
-            const isFullySelected = group.selected === group.count;
-            const isPartiallySelected = group.selected > 0 && group.selected < group.count;
-
-            return (
-              <button
-                key={group.type}
-                onClick={() => onSelectType(group.type, !isFullySelected)}
-                className={`relative p-4 rounded-lg border-2 transition-all ${
-                  isFullySelected
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30"
-                    : isPartiallySelected
-                    ? "border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800"
-                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600"
-                }`}
-              >
-                {group.recommended && (
-                  <span className="absolute -top-2 -right-2 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-medium rounded-full">
-                    Recommended
-                  </span>
-                )}
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-8 h-8 rounded-lg ${group.bgColor} flex items-center justify-center`}>
-                    <Icon className={`w-4 h-4 ${group.color}`} />
-                  </div>
-                  {isFullySelected && (
-                    <CheckCircle2 className="w-5 h-5 text-blue-600 ml-auto" />
-                  )}
-                </div>
-                <p className="text-sm font-medium text-slate-900 dark:text-slate-100 capitalize">
-                  {group.type}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {group.selected}/{group.count} selected
-                </p>
-              </button>
-            );
-          })}
+        <div className={`p-3 rounded-lg border ${
+          generateMetaDescription.length >= 120 && generateMetaDescription.length <= 160
+            ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+            : generateMetaDescription.length > 50
+            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+            : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+        }`}>
+          <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Description</p>
+          <div className="flex items-center justify-between">
+            <span className={`text-lg font-bold ${
+              generateMetaDescription.length >= 120 && generateMetaDescription.length <= 160
+                ? "text-green-600 dark:text-green-400"
+                : generateMetaDescription.length > 50
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-slate-400"
+            }`}>
+              {generateMetaDescription.length}/160
+            </span>
+            {generateMetaDescription.length >= 120 && generateMetaDescription.length <= 160 && (
+              <span className="text-xs text-green-600 dark:text-green-400">Optimal</span>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Tips */}
-      <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-        <Zap className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-        <div className="text-sm">
-          <p className="font-medium text-amber-900 dark:text-amber-100 mb-1">Pro Tip</p>
-          <p className="text-amber-700 dark:text-amber-300">
-            Service pages and blogs typically contain the most valuable content for SEO analysis. 
-            Legal pages, contact forms, and utility pages can usually be skipped.
-          </p>
-        </div>
+      <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3">
+        <p className="font-medium mb-1">SEO Tips:</p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li>Keep titles between 30-60 characters for best display</li>
+          <li>Include your primary keyword in the title</li>
+          <li>Meta descriptions should be 120-160 characters</li>
+        </ul>
       </div>
     </div>
   );
@@ -12752,6 +9660,8 @@ import {
   Home,
   Target,
   Settings,
+  Archive,
+  FileText,
 } from "lucide-react";
 
 interface NavItem {
@@ -12765,10 +9675,11 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: "home", label: "Home", icon: Home, href: "/" },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/content-strategy?view=dashboard" },
-  { id: "strategy", label: "Strategy", icon: BarChart3, href: "/content-strategy?view=analysis" },
+  { id: "strategy", label: "Strategy Hub", icon: BarChart3, href: "/content-strategy?view=analysis" },
   { id: "production", label: "Production", icon: Zap, href: "/content-strategy?view=production" },
   { id: "calendar", label: "Calendar", icon: Calendar, href: "/content-strategy?view=planner" },
-  { id: "history", label: "History", icon: History, href: "/history" },
+  { id: "drafts", label: "Drafts", icon: FileText, href: "/drafts" },
+  { id: "archives", label: "Archives", icon: Archive, href: "/history" },
 ];
 
 interface SidebarLayoutProps {
@@ -13060,1267 +9971,6 @@ export function useContentStrategy() {
   }
   return context;
 }
-
-```
-
----
-
-### trigger\content\auto-discovery.ts
-
-```typescript
-import { task, logger } from "@trigger.dev/sdk";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-interface AutoDiscoveryPayload {
-  crawlRequestId: string;
-  extractContext: boolean;
-  extractServices: boolean;
-  extractLocations: boolean;
-  extractAbout: boolean;
-  extractContact: boolean;
-  userId: string;
-}
-
-interface DiscoveryData {
-  services: string[];
-  locations: string[];
-  aboutSummary: string;
-  targetAudience: string;
-  brandTone: string;
-  contactInfo: {
-    email: string;
-    phone: string;
-    address: string;
-  };
-  existingPages: Array<{
-    url: string;
-    type: string;
-    title: string;
-  }>;
-}
-
-export const autoDiscoveryTask = task({
-  id: "auto-discovery",
-  retry: {
-    maxAttempts: 3,
-    factor: 2,
-    minTimeoutInMs: 1000,
-    maxTimeoutInMs: 30000,
-  },
-  run: async (payload: AutoDiscoveryPayload) => {
-    logger.log(`Starting auto-discovery for crawl: ${payload.crawlRequestId}`);
-    
-    try {
-      // Try to fetch real content analysis data first
-      let discoveryData: DiscoveryData;
-      
-      try {
-        // In a real implementation, you would fetch from your database
-        // For now, we'll try to get the latest content analysis data
-        const contentAnalysisData = await fetchLatestContentAnalysis(payload.userId);
-        
-        if (contentAnalysisData) {
-          logger.log(`Using real content analysis data for crawl: ${payload.crawlRequestId}`);
-          discoveryData = extractDiscoveryDataFromAnalysis(contentAnalysisData);
-        } else {
-          logger.log(`No content analysis found, using AI analysis for crawl: ${payload.crawlRequestId}`);
-          const mockCrawledData = await getMockCrawledData(payload.crawlRequestId);
-          discoveryData = await analyzeWebsiteContent(mockCrawledData, payload);
-        }
-      } catch (analysisError) {
-        logger.log(`Failed to fetch content analysis, falling back to AI analysis: ${analysisError}`);
-        const mockCrawledData = await getMockCrawledData(payload.crawlRequestId);
-        discoveryData = await analyzeWebsiteContent(mockCrawledData, payload);
-      }
-      
-      logger.log(`Auto-discovery completed for crawl: ${payload.crawlRequestId}`);
-      logger.log(`Found ${discoveryData.services.length} services and ${discoveryData.locations.length} locations`);
-      
-      return {
-        success: true,
-        crawlRequestId: payload.crawlRequestId,
-        discoveryData,
-        processedAt: new Date().toISOString(),
-      };
-      
-    } catch (error) {
-      logger.error(`Auto-discovery failed for crawl: ${payload.crawlRequestId}`, { error: String(error) });
-      throw error;
-    }
-  },
-});
-
-async function fetchLatestContentAnalysis(userId: string): Promise<any | null> {
-  // In a real implementation, this would query your database for the latest content analysis
-  // For now, we'll return null to trigger the fallback
-  // This would typically be something like:
-  // const analysis = await prisma.contentAnalysis.findFirst({ 
-  //   where: { userId }, 
-  //   orderBy: { createdAt: 'desc' } 
-  // });
-  // return analysis;
-  
-  logger.log(`Fetching latest content analysis for user: ${userId}`);
-  return null; // Return null to use fallback for now
-}
-
-function extractDiscoveryDataFromAnalysis(analysisData: any): DiscoveryData {
-  const output = analysisData.analysisOutput || {};
-  
-  return {
-    services: output.services?.map((s: any) => s.name) || [
-      "Web Development",
-      "Mobile App Development", 
-      "SEO Services",
-      "Digital Marketing"
-    ],
-    locations: output.locations || [
-      "Islamabad",
-      "Rawalpindi", 
-      "Lahore",
-      "Karachi"
-    ],
-    aboutSummary: output.aboutSummary || "Professional technology services provider",
-    targetAudience: output.targetAudience || "Businesses seeking digital solutions",
-    brandTone: output.brandTone || "Professional and innovative",
-    contactInfo: {
-      email: output.contactInfo?.email || "info@datatechconsultants.com.au",
-      phone: output.contactInfo?.phone || "+92-300-1234567",
-      address: output.contactInfo?.address || "123 Business Park, Islamabad, Pakistan"
-    },
-    existingPages: output.pages?.slice(0, 10).map((p: any) => ({
-      url: p.url,
-      type: p.type || 'page',
-      title: p.title || p.url
-    })) || []
-  };
-}
-
-async function getMockCrawledData(crawlRequestId: string): Promise<string> {
-  // In a real implementation, this would fetch the crawled pages from your database
-  // For now, return mock crawled content
-  return `
-    Website: https://datatechconsultants.com.au
-    
-    Pages crawled:
-    1. / - Homepage: "Leading technology solutions provider specializing in custom software development, digital transformation, and innovative IT consulting services."
-    2. /about - About Us: "With over 10 years of experience, we help businesses leverage cutting-edge technology to achieve their goals."
-    3. /services/web-development - Web Development: "Professional web development services including custom applications, responsive design, and e-commerce solutions."
-    4. /services/seo - SEO Services: "Comprehensive SEO services to improve your search rankings and drive organic traffic."
-    5. /services/mobile-app-development - Mobile Apps: "Native and cross-platform mobile app development for iOS and Android."
-    6. /services/digital-marketing - Digital Marketing: "Data-driven digital marketing strategies to grow your online presence."
-    7. /contact - Contact Us: "Contact us at info@datatechconsultants.com.au or +92-300-1234567. Office: 123 Business Park, Islamabad, Pakistan."
-    8. /blog - Blog: "Latest insights on technology trends, digital transformation, and business innovation."
-    
-    Footer information:
-    - Serving clients in Islamabad, Rawalpindi, Lahore, Karachi, Peshawar, Wah Cantt
-    - Email: info@datatechconsultants.com.au
-    - Phone: +92-300-1234567
-    - Address: 123 Business Park, Islamabad, Pakistan
-  `;
-}
-
-async function analyzeWebsiteContent(crawledData: string, payload: AutoDiscoveryPayload): Promise<DiscoveryData> {
-  const prompt = createAnalysisPrompt(crawledData, payload);
-  
-  const response = await openai.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      {
-        role: "system",
-        content: "You are an expert web analyst specializing in extracting business information from website content. Provide structured, accurate analysis."
-      },
-      {
-        role: "user",
-        content: prompt
-      }
-    ],
-    temperature: 0.3,
-    max_tokens: 1500,
-  });
-
-  if (!response.choices[0]?.message.content) {
-    throw new Error("Failed to analyze website content");
-  }
-
-  // Parse the AI response into structured data
-  const analysisText = response.choices[0].message.content;
-  
-  // For now, return structured data based on the mock content
-  // In a real implementation, you'd parse the AI response more robustly
-  return {
-    services: [
-      "Web Development",
-      "Mobile App Development", 
-      "SEO Services",
-      "Digital Marketing",
-      "E-commerce Solutions",
-      "Cloud Computing",
-      "Cybersecurity Services",
-      "Data Analytics",
-      "AI Solutions",
-      "IT Consulting"
-    ],
-    locations: [
-      "Islamabad",
-      "Rawalpindi", 
-      "Lahore",
-      "Karachi",
-      "Peshawar",
-      "Wah Cantt",
-      "Faisalabad",
-      "Multan",
-      "Quetta",
-      "Gujranwala"
-    ],
-    aboutSummary: "Leading technology solutions provider specializing in custom software development, digital transformation, and innovative IT consulting services. With over 10 years of experience, we help businesses leverage cutting-edge technology to achieve their goals.",
-    targetAudience: "Small to medium businesses, startups, and enterprises looking for digital transformation and technology solutions",
-    brandTone: "Professional, innovative, reliable, and customer-focused",
-    contactInfo: {
-      email: "info@datatechconsultants.com.au",
-      phone: "+92-300-1234567",
-      address: "123 Business Park, Islamabad, Pakistan"
-    },
-    existingPages: [
-      { url: "/", type: "homepage", title: "Home" },
-      { url: "/about", type: "page", title: "About Us" },
-      { url: "/services/web-development", type: "service", title: "Web Development Services" },
-      { url: "/services/seo", type: "service", title: "SEO Services" },
-      { url: "/services/mobile-app-development", type: "service", title: "Mobile App Development" },
-      { url: "/services/digital-marketing", type: "service", title: "Digital Marketing" },
-      { url: "/contact", type: "page", title: "Contact Us" },
-      { url: "/blog", type: "blog", title: "Blog" }
-    ]
-  };
-}
-
-function createAnalysisPrompt(crawledData: string, payload: AutoDiscoveryPayload): string {
-  return `Analyze the following website content and extract structured business information:
-
-${crawledData}
-
-Please extract and organize the following information:
-
-1. **Services Offered**: List all services the company provides
-2. **Target Locations**: Extract all geographic locations/areas they serve
-3. **About Summary**: Create a concise summary of what the company does
-4. **Target Audience**: Identify the primary customer segments
-5. **Brand Tone**: Describe the company's communication style (professional, friendly, technical, etc.)
-6. **Contact Information**: Extract email, phone, and address details
-7. **Existing Pages**: List all pages found with their types and titles
-
-Format your response as structured data that can be easily parsed. Focus on accuracy and completeness.`;
-}
-
-```
-
----
-
-### trigger\content\content-analyzer-backup.ts
-
-```typescript
-import { task, metadata, runs } from "@trigger.dev/sdk";
-import OpenAI from "openai";
-
-interface ContentAnalysisPayload {
-  baseUrl: string;
-  targetAudience?: string;
-  extractionRunId?: string; // Optional: if provided, wait for extraction to complete
-  extractedPages?: Array<{
-    url: string;
-    type: string;
-    title?: string;
-    content: string;
-    wordCount: number;
-  }>;
-  analysisId?: string;
-  userId?: string;
-}
-
-interface ContentAnalysisOutput {
-  baseUrl: string;
-  contentContext: {
-    dominantKeywords: Array<{
-      term: string;
-      density: "High" | "Medium" | "Low";
-      pages: number;
-    }>;
-    contentGaps: string[];
-    audiencePersona: string;
-    tone: string;
-  };
-  aiSuggestions: Array<{
-    type: "Blog Post" | "Whitepaper" | "Case Study" | "Guide" | "Infographic";
-    title: string;
-    reason: string;
-    targetKeywords: string[];
-    relatedServiceUrl?: string;
-  }>;
-  pages: Array<{
-    url: string;
-    type: string;
-    title?: string;
-    wordCount: number;
-    mainTopic?: string;
-    summary?: string;
-    content?: string;
-    keywords?: string[];
-  }>;
-  extractionData?: {
-    baseUrl: string;
-    pagesProcessed: number;
-    extractedPages: Array<{
-      url: string;
-      type: "service" | "blog" | "product" | "other";
-      title?: string;
-      content: string;
-      wordCount: number;
-      mainTopic?: string;
-      summary?: string;
-    }>;
-    aggregatedContent: {
-      services: string[];
-      blogs: string[];
-      products: string[];
-    };
-    totalWordCount: number;
-  };
-}
-
-// Helper to extract top keywords from text using frequency analysis
-function extractTopKeywords(text: string, limit: number = 5): string[] {
-  if (!text) return [];
-  
-  // Extract words (4+ characters, alphanumeric)
-  const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g) || [];
-  
-  // Common stop words to exclude
-  const stopWords = new Set([
-    'this', 'that', 'with', 'from', 'have', 'been', 'will', 'would', 'could',
-    'should', 'their', 'what', 'which', 'where', 'when', 'make', 'like', 'just',
-    'also', 'into', 'over', 'such', 'your', 'they', 'them', 'than', 'then', 'look',
-    'only', 'come', 'could', 'after', 'call', 'want', 'been', 'good', 'most', 'well',
-    'even', 'because', 'any', 'give', 'day', 'same', 'find', 'think', 'take', 'work',
-    'know', 'year', 'first', 'last', 'long', 'great', 'much', 'where', 'need', 'help',
-    'try', 'ask', 'world', 'going', 'want', 'school', 'important', 'until', 'form',
-    'food', 'keep', 'children', 'without', 'place', 'old', 'while', 'still', 'learn',
-    'number', 'night', 'point', 'today', 'bring', 'next', 'small', 'large', 'group',
-    'begin', 'seem', 'talk', 'turn', 'start', 'might', 'show', 'hear', 'play', 'run',
-    'move', 'live', 'believe', 'hold', 'bring', 'happen', 'write', 'provide', 'sit',
-    'stand', 'lose', 'pay', 'meet', 'include', 'continue', 'set', 'change', 'lead',
-    'understand', 'watch', 'follow', 'stop', 'create', 'speak', 'read', 'allow', 'add',
-    'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember', 'love', 'consider',
-    'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect', 'build', 'stay', 'fall',
-    'cut', 'reach', 'kill', 'remain', 'suggest', 'raise', 'pass', 'sell', 'require',
-    'report', 'decide', 'pull', 'break', 'receive', 'agree', 'support', 'hit', 'produce',
-    'eat', 'cover', 'catch', 'draw', 'choose', 'cause', 'point', 'listen', 'close',
-    'develop', 'drive', 'include', 'support', 'create', 'serve', 'remain', 'suggest'
-  ]);
-  
-  // Count word frequency
-  const frequency: Record<string, number> = {};
-  words.forEach(word => {
-    if (!stopWords.has(word)) {
-      frequency[word] = (frequency[word] || 0) + 1;
-    }
-  });
-  
-  // Sort by frequency and return top N
-  const sortedWords = Object.entries(frequency)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, limit)
-    .map(([word]) => word);
-  
-  return sortedWords;
-}
-function compressContent(pages: Array<{ url: string; type: string; title?: string; content: string; wordCount: number }>) {
-  return pages.map(page => {
-    const summary = page.content.substring(0, 800); // Limit to ~200 tokens per page
-    return `
-URL: ${page.url}
-Type: ${page.type}
-Title: ${page.title || "N/A"}
-Summary: ${summary}...
-    `.trim();
-  }).join("\n---\n");
-}
-
-export const contentAnalyzerTask = task({
-  id: "content-analyzer",
-  retry: {
-    maxAttempts: 3,
-    factor: 2,
-    minTimeoutInMs: 1000,
-    maxTimeoutInMs: 60000,
-  },
-  run: async (payload: ContentAnalysisPayload): Promise<ContentAnalysisOutput> => {
-    const { baseUrl, targetAudience = "General audience", extractedPages = [], extractionRunId } = payload;
-
-    try {
-      metadata.set("status", {
-        progress: 0,
-        label: "Starting AI content analysis...",
-      } as any);
-
-      // If extractionRunId is provided, wait for extraction to complete
-      let finalExtractedPages = extractedPages;
-      if (extractionRunId && (!extractedPages || extractedPages.length === 0)) {
-        metadata.set("status", {
-          progress: 5,
-          label: "Waiting for content extraction to complete...",
-        } as any);
-
-        let retries = 0;
-        const maxRetries = 60; // Wait up to 2 minutes
-
-        while (retries < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-
-          try {
-            const extractionRun = await runs.retrieve(extractionRunId as string);
-            if (extractionRun.status === "COMPLETED") {
-              const extractionOutput = extractionRun.output as any;
-              if (extractionOutput?.extractedPages) {
-                finalExtractedPages = extractionOutput.extractedPages;
-                break;
-              }
-            } else if (extractionRun.status === "FAILED" || extractionRun.status === "CANCELED") {
-              throw new Error(`Extraction failed with status: ${extractionRun.status}`);
-            }
-          } catch (error) {
-            console.error("Error checking extraction status:", error);
-          }
-
-          retries++;
-        }
-
-        if (!finalExtractedPages || finalExtractedPages.length === 0) {
-          throw new Error("Extraction timed out or failed");
-        }
-      }
-
-      // If no extracted pages provided, return mock data for testing
-      if (!finalExtractedPages || finalExtractedPages.length === 0) {
-        metadata.set("status", {
-          progress: 100,
-          label: "No pages provided, returning mock data",
-        } as any);
-
-        return {
-          baseUrl,
-          contentContext: {
-            dominantKeywords: [
-              { term: "AI Automation", density: "High", pages: 12 },
-              { term: "Healthcare Data", density: "Medium", pages: 5 },
-              { term: "Computer Vision", density: "Medium", pages: 4 },
-            ],
-            contentGaps: [
-              "No case studies mentioned for 'Cybersecurity' service.",
-              "Lack of 'Implementation Guide' style content for Power BI.",
-              "Missing comparison articles (e.g., 'Custom CRM vs Salesforce').",
-            ],
-            audiencePersona: "Technical Decision Makers & Healthcare Administrators",
-            tone: "Professional, Technical, Authority-focused",
-          },
-          aiSuggestions: [
-            {
-              type: "Blog Post",
-              title: "5 Risks of Ignoring AI Cybersecurity in Supply Chains",
-              reason: "You have a Supply Chain service page but no blog content addressing its security risks.",
-              targetKeywords: ["AI Cybersecurity", "Supply Chain Risk", "DataTech Security"],
-            },
-            {
-              type: "Whitepaper",
-              title: "The CTO's Guide to Hospital Operations Automation",
-              reason: "Strong authority on Healthcare solutions; a whitepaper would capture leads better than standard blogs.",
-              targetKeywords: ["Hospital Automation", "CTO Guide", "Healthcare Operations"],
-            },
-          ],
-          pages: [],
-        };
-      }
-
-      // Compress content to reduce token usage
-      metadata.set("status", {
-        progress: 20,
-        label: "Compressing content for AI analysis...",
-      } as any);
-
-      const compressedContext = compressContent(finalExtractedPages);
-
-      // Separate service pages and blog pages for gap analysis
-      const servicePages = finalExtractedPages.filter(p => p.type === 'service');
-      const blogPages = finalExtractedPages.filter(p => p.type === 'blog');
-
-      const serviceSummary = servicePages.length > 0 
-        ? compressContent(servicePages.slice(0, 10)) // Limit to 10 service pages
-        : "No service pages found";
-
-      const blogSummary = blogPages.length > 0
-        ? compressContent(blogPages.slice(0, 10)) // Limit to 10 blog posts
-        : "No blog posts found";
-
-      // Initialize OpenAI client with Vercel environment variable
-      const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
-
-      metadata.set("status", {
-        progress: 40,
-        label: "Analyzing content with AI...",
-      } as any);
-
-      // Call OpenAI API for content analysis
-      const prompt = `
-You are an SEO Content Strategist. Analyze this website content.
-
-TARGET AUDIENCE: ${targetAudience}
-
-SERVICE PAGES (What they sell):
-${serviceSummary}
-
-BLOG POSTS (What they write about):
-${blogSummary}
-
-TASK:
-1. Extract the top 5 semantic keywords (excluding brand names).
-2. Identify the "Audience Persona" based on tone and language.
-3. Find the "Content Gap": What are they selling (Service pages) that they aren't writing about (Blog pages)?
-4. Suggest 5 content pieces (Blog Posts, Whitepapers, Case Studies, Guides, or Infographics) to bridge the gap.
-5. For each suggestion, identify which service page it relates to by finding the matching URL from the service pages.
-
-Return ONLY valid JSON in this exact format:
-{
-  "dominantKeywords": [
-    {"term": "AI Automation", "density": "High", "pages": 12},
-    {"term": "Healthcare Data", "density": "Medium", "pages": 5}
-  ],
-  "contentGaps": [
-    "No case studies mentioned for 'Cybersecurity' service.",
-    "Lack of 'Implementation Guide' style content for Power BI."
-  ],
-  "audiencePersona": "Technical Decision Makers & Healthcare Administrators",
-  "tone": "Professional, Technical, Authority-focused",
-  "aiSuggestions": [
-    {
-      "type": "Blog Post",
-      "title": "5 Risks of Ignoring AI Cybersecurity in Supply Chains",
-      "reason": "You have a Supply Chain service page but no blog content addressing its security risks.",
-      "targetKeywords": ["AI Cybersecurity", "Supply Chain Risk", "DataTech Security"],
-      "relatedServiceUrl": "https://example.com/services/supply-chain"
-    }
-  ]
-}
-`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert SEO Content Strategist. Always respond with valid JSON only, no markdown formatting.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 2000,
-        response_format: { type: "json_object" },
-      });
-
-      metadata.set("status", {
-        progress: 80,
-        label: "Processing AI analysis results...",
-      } as any);
-
-      const aiResponse = completion.choices[0]?.message?.content;
-      
-      if (!aiResponse) {
-        throw new Error("No response from OpenAI");
-      }
-
-      const analysisResult = JSON.parse(aiResponse);
-
-      metadata.set("status", {
-        progress: 100,
-        label: "AI content analysis complete!",
-      } as any);
-
-      // CRITICAL FIX: Use finalExtractedPages (not extractedPages) to ensure pages are included
-      // Format pages for output with keyword extraction
-      const formattedPages = finalExtractedPages.map(page => ({
-        url: page.url,
-        type: page.type,
-        title: page.title,
-        wordCount: page.wordCount,
-        mainTopic: page.title,
-        summary: page.content.substring(0, 200),
-        content: page.content, // Include full content
-        keywords: extractTopKeywords(page.content, 5),
-      }));
-
-      console.log(`[Content Analyzer] Returning ${formattedPages.length} pages`);
-
-      return {
-        baseUrl,
-        contentContext: {
-          dominantKeywords: analysisResult.dominantKeywords || [],
-          contentGaps: analysisResult.contentGaps || [],
-          audiencePersona: analysisResult.audiencePersona || "Unknown",
-          tone: analysisResult.tone || "Unknown",
-        },
-        aiSuggestions: analysisResult.aiSuggestions || [],
-        pages: formattedPages,
-        extractionData: {
-          baseUrl,
-          pagesProcessed: finalExtractedPages.length,
-          extractedPages: finalExtractedPages.map(page => ({
-            ...page,
-            type: page.type as "service" | "blog" | "product" | "other",
-            mainTopic: page.title,
-            summary: page.content.substring(0, 200),
-          })),
-          aggregatedContent: {
-            services: finalExtractedPages.filter(p => p.type === 'service').map(p => p.title || p.url),
-            blogs: finalExtractedPages.filter(p => p.type === 'blog').map(p => p.title || p.url),
-            products: finalExtractedPages.filter(p => p.type === 'product').map(p => p.title || p.url),
-          },
-          totalWordCount: finalExtractedPages.reduce((sum, page) => sum + (page.wordCount || 0), 0),
-        },
-      };
-
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Content analyzer fatal error:", error);
-      metadata.set("status", {
-        progress: 0,
-        label: `Fatal error: ${errorMsg}`,
-        error: errorMsg,
-      } as any);
-      throw error;
-    }
-  },
-});
-
-```
-
----
-
-### trigger\content\content-analyzer.ts
-
-```typescript
-import { task, metadata, runs } from "@trigger.dev/sdk";
-import OpenAI from "openai";
-
-interface ContentAnalysisPayload {
-  baseUrl: string;
-  targetAudience?: string;
-  extractionRunId?: string; // Optional: if provided, wait for extraction to complete
-  extractedPages?: Array<{
-    url: string;
-    type: string;
-    title?: string;
-    content: string;
-    wordCount: number;
-  }>;
-  analysisId?: string;
-  userId?: string;
-}
-
-interface PageAnalysis {
-  url: string;
-  type: string;
-  title?: string;
-  content: string;
-  wordCount: number;
-  mainTopic?: string;
-  summary?: string;
-  keywords?: string[];
-  // New fields for writing style analysis
-  writingStyle: {
-    tone: string;
-    perspective: "First Person" | "Second Person" | "Third Person";
-    formality: "Formal" | "Informal" | "Semi-Formal";
-    sentenceStructure: string;
-    averageSentenceLength: number;
-    readabilityLevel: string;
-    voice: "Active" | "Passive" | "Mixed";
-  };
-  contentStructure: {
-    hasHeadings: boolean;
-    hasSubheadings: boolean;
-    usesLists: boolean;
-    hasCallToAction: boolean;
-    paragraphCount: number;
-    averageParagraphLength: number;
-  };
-  seoElements: {
-    metaDescription?: string;
-    headingStructure: string[];
-    internalLinks: string[];
-    externalLinks: string[];
-  };
-  brandVoice: {
-    keyPhrases: string[];
-    terminology: string[];
-    valuePropositions: string[];
-    differentiators: string[];
-  };
-}
-
-interface ContentAnalysisOutput {
-  baseUrl: string;
-  contentContext: {
-    dominantKeywords: Array<{
-      term: string;
-      density: "High" | "Medium" | "Low";
-      pages: number;
-    }>;
-    contentGaps: string[];
-    audiencePersona: string;
-    tone: string;
-    // New aggregated insights
-    overallWritingStyle: {
-      dominantTone: string;
-      averageFormality: string;
-      commonPerspective: string;
-      brandVoiceSummary: string;
-    };
-    contentPatterns: {
-      preferredContentTypes: string[];
-      averagePostLength: string;
-      commonStructures: string[];
-      ctaPatterns: string[];
-    };
-  };
-  aiSuggestions: Array<{
-    type: "Blog Post" | "Whitepaper" | "Case Study" | "Guide" | "Infographic";
-    title: string;
-    reason: string;
-    targetKeywords: string[];
-    relatedServiceUrl?: string;
-    // New fields for better content generation
-    contentOutline: string[];
-    suggestedTone: string;
-    targetLength: number;
-    keyMessagePoints: string[];
-  }>;
-  pages: PageAnalysis[];
-  extractionData?: {
-    baseUrl: string;
-    pagesProcessed: number;
-    extractedPages: Array<{
-      url: string;
-      type: "service" | "blog" | "product" | "other";
-      title?: string;
-      content: string;
-      wordCount: number;
-      mainTopic?: string;
-      summary?: string;
-    }>;
-    aggregatedContent: {
-      services: string[];
-      blogs: string[];
-      products: string[];
-    };
-    totalWordCount: number;
-  };
-}
-
-// Helper to extract top keywords from text using frequency analysis
-function extractTopKeywords(text: string, limit: number = 5): string[] {
-  if (!text) return [];
-  
-  // Extract words (4+ characters, alphanumeric)
-  const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g) || [];
-  
-  // Common stop words to exclude
-  const stopWords = new Set([
-    'that', 'with', 'have', 'this', 'will', 'your', 'from', 'they', 'know',
-    'want', 'been', 'good', 'much', 'some', 'time', 'very', 'when', 'come',
-    'here', 'just', 'like', 'long', 'make', 'many', 'over', 'such', 'take',
-    'than', 'them', 'well', 'were', 'been', 'call', 'away', 'back', 'come',
-    'could', 'does', 'dont', 'down', 'even', 'every', 'find', 'first', 'give',
-    'going', 'happened', 'hear', 'here', 'keep', 'last', 'leave', 'made',
-    'many', 'might', 'more', 'most', 'never', 'only', 'other', 'see', 'such',
-    'tell', 'their', 'there', 'these', 'think', 'those', 'under', 'upon',
-    'used', 'want', 'way', 'were', 'what', 'where', 'which', 'while', 'who',
-    'would', 'write', 'year', 'you', 'your', 'about', 'above', 'after',
-    'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', 'aren\'t',
-    'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below',
-    'between', 'both', 'but', 'by', 'can\'t', 'cannot', 'could', 'couldn\'t',
-    'did', 'didn\'t', 'do', 'does', 'doesn\'t', 'doing', 'don\'t', 'down',
-    'during', 'each', 'few', 'for', 'from', 'further', 'had', 'hadn\'t',
-    'has', 'hasn\'t', 'have', 'haven\'t', 'having', 'he', 'he\'d', 'he\'ll',
-    'he\'s', 'her', 'here', 'here\'s', 'hers', 'herself', 'him', 'himself',
-    'his', 'how', 'how\'s', 'i', 'i\'d', 'i\'ll', 'i\'m', 'i\'ve', 'if',
-    'in', 'into', 'is', 'isn\'t', 'it', 'it\'s', 'its', 'itself', 'let\'s',
-    'me', 'more', 'most', 'mustn\'t', 'my', 'myself', 'no', 'nor', 'not',
-    'of', 'off', 'on', 'once', 'or', 'other', 'ought', 'our', 'ours',
-    'ourselves', 'out', 'over', 'own', 'same', 'shan\'t', 'she', 'she\'d',
-    'she\'ll', 'she\'s', 'should', 'shouldn\'t', 'so', 'some', 'such', 'than',
-    'that', 'that\'s', 'the', 'their', 'theirs', 'them', 'themselves',
-    'then', 'there', 'there\'s', 'these', 'they', 'they\'d', 'they\'ll',
-    'they\'re', 'they\'ve', 'this', 'those', 'through', 'to', 'too', 'under',
-    'until', 'up', 'very', 'was', 'wasn\'t', 'we', 'we\'d', 'we\'ll',
-    'we\'re', 'we\'ve', 'were', 'weren\'t', 'what', 'what\'s', 'when',
-    'when\'s', 'where', 'where\'s', 'which', 'while', 'who', 'who\'s',
-    'whom', 'why', 'why\'s', 'with', 'won\'t', 'would', 'wouldn\'t', 'you',
-    'you\'d', 'you\'ll', 'you\'re', 'you\'ve', 'your', 'yours', 'yourself',
-    'yourselves'
-  ]);
-  
-  // Filter out stop words and count frequency
-  const wordFreq: { [key: string]: number } = {};
-  words.forEach(word => {
-    if (!stopWords.has(word)) {
-      wordFreq[word] = (wordFreq[word] || 0) + 1;
-    }
-  });
-  
-  // Sort by frequency and return top results
-  return Object.entries(wordFreq)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, limit)
-    .map(([word]) => word);
-}
-
-// Helper to analyze writing style
-function analyzeWritingStyle(content: string): PageAnalysis['writingStyle'] {
-  const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
-  const averageSentenceLength = sentences.reduce((sum, s) => sum + s.split(' ').length, 0) / sentences.length;
-  
-  // Determine perspective
-  const firstPerson = (content.match(/\b(I|we|my|our|us)\b/gi) || []).length;
-  const secondPerson = (content.match(/\b(you|your)\b/gi) || []).length;
-  const thirdPerson = (content.match(/\b(he|she|it|they|them|his|her|its|their)\b/gi) || []).length;
-  
-  let perspective: "First Person" | "Second Person" | "Third Person" = "Third Person";
-  if (firstPerson > secondPerson && firstPerson > thirdPerson) perspective = "First Person";
-  else if (secondPerson > firstPerson && secondPerson > thirdPerson) perspective = "Second Person";
-  
-  // Determine formality
-  const formalWords = /\b(furthermore|consequently|nevertheless|nonetheless|therefore|thus|hence|however|moreover|additionally)\b/gi;
-  const informalWords = /\b(gonna|wanna|kinda|sorta|yeah|nah|hey|hi|bye|awesome|cool|stuff)\b/gi;
-  
-  let formality: "Formal" | "Informal" | "Semi-Formal" = "Semi-Formal";
-  if ((content.match(formalWords) || []).length > 2) formality = "Formal";
-  else if ((content.match(informalWords) || []).length > 2) formality = "Informal";
-  
-  // Determine voice (active vs passive)
-  const passiveIndicators = /\b(is|are|was|were|be|been|being)\s+\w+ed\b/gi;
-  const passiveCount = (content.match(passiveIndicators) || []).length;
-  const voice: "Active" | "Passive" | "Mixed" = passiveCount > sentences.length * 0.3 ? "Passive" : "Active";
-  
-  // Determine readability based on sentence length
-  let readabilityLevel = "Medium";
-  if (averageSentenceLength < 15) readabilityLevel = "Easy";
-  else if (averageSentenceLength > 25) readabilityLevel = "Difficult";
-  
-  return {
-    tone: "Professional", // This will be determined by AI
-    perspective,
-    formality,
-    sentenceStructure: sentences.length > 10 ? "Complex" : "Simple",
-    averageSentenceLength: Math.round(averageSentenceLength),
-    readabilityLevel,
-    voice
-  };
-}
-
-// Helper to analyze content structure
-function analyzeContentStructure(content: string): PageAnalysis['contentStructure'] {
-  const paragraphs = content.split('\n\n').filter(p => p.trim().length > 0);
-  const hasHeadings = /<h[1-6]|^#{1,6}\s/m.test(content);
-  const hasSubheadings = /<h[2-6]|^#{2,6}\s/m.test(content);
-  const usesLists = /<ul|<ol|^\s*[-*+]\s/m.test(content);
-  const hasCallToAction = /\b(contact|call|email|reach out|get in touch|learn more|click here|sign up)\b/gi.test(content);
-  
-  const averageParagraphLength = paragraphs.reduce((sum, p) => sum + p.split(' ').length, 0) / paragraphs.length;
-  
-  return {
-    hasHeadings,
-    hasSubheadings,
-    usesLists,
-    hasCallToAction,
-    paragraphCount: paragraphs.length,
-    averageParagraphLength: Math.round(averageParagraphLength)
-  };
-}
-
-// Helper to extract SEO elements
-function extractSEOElements(content: string, url: string): PageAnalysis['seoElements'] {
-  const headings = content.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/g) || [];
-  const internalLinks = (content.match(/href="\/[^"]*"/g) || []).map(link => link.slice(6, -1));
-  const externalLinks = (content.match(/href="https?:\/\/[^"]*"/g) || []).map(link => link.slice(6, -1));
-  
-  return {
-    headingStructure: headings,
-    internalLinks,
-    externalLinks
-  };
-}
-
-// Helper to analyze brand voice
-function analyzeBrandVoice(content: string): PageAnalysis['brandVoice'] {
-  // Extract key phrases that appear frequently
-  const phrases = content.match(/\b([A-Z][a-z]+\s+[A-Z][a-z]+|[A-Z]{2,})\b/g) || [];
-  const keyPhrases = [...new Set(phrases)].slice(0, 10);
-  
-  // Extract technical terms
-  const technicalTerms = content.match(/\b\w+(?:\s+\w+)?\s+(?:solution|service|technology|platform|system|analytics|intelligence)\b/gi) || [];
-  const terminology = [...new Set(technicalTerms)].slice(0, 10);
-  
-  // Extract value propositions
-  const valueProps = content.match(/\b(improve|enhance|optimize|transform|streamline|increase|reduce|save|boost|maximize)\s+\w+/gi) || [];
-  const valuePropositions = [...new Set(valueProps)].slice(0, 5);
-  
-  // Extract differentiators
-  const differentiators = content.match(/\b(uniquely|exclusively|proprietary|patented|certified|award-winning|industry-leading)\b/gi) || [];
-  
-  return {
-    keyPhrases,
-    terminology: [...new Set(terminology)],
-    valuePropositions: [...new Set(valuePropositions)],
-    differentiators: [...new Set(differentiators)]
-  };
-}
-
-// Compress content to reduce tokens while preserving structure
-function compressContent(pages: any[]): string {
-  return pages.map((page, index) => {
-    const content = page.content || '';
-    const truncated = content.length > 500 ? content.substring(0, 500) + "..." : content;
-    
-    return `
-Page ${index + 1}: ${page.title || 'Untitled'}
-URL: ${page.url}
-Type: ${page.type}
-Words: ${page.wordCount || 0}
-Content: ${truncated}
----
-    `.trim();
-  }).join('\n');
-}
-
-export const contentAnalyzerTask = task({
-  id: "content-analyzer",
-  retry: {
-    maxAttempts: 3,
-    factor: 2,
-    minTimeoutInMs: 1000,
-    maxTimeoutInMs: 60000,
-  },
-  run: async (payload: ContentAnalysisPayload): Promise<ContentAnalysisOutput> => {
-    const { baseUrl, targetAudience = "General audience", extractedPages = [], extractionRunId } = payload;
-
-    try {
-      metadata.set("status", {
-        progress: 0,
-        label: "Starting AI content analysis...",
-      } as any);
-
-      // If extractionRunId is provided, wait for extraction to complete
-      let finalExtractedPages = extractedPages;
-      if (extractionRunId && (!extractedPages || extractedPages.length === 0)) {
-        metadata.set("status", {
-          progress: 5,
-          label: "Waiting for content extraction to complete...",
-        } as any);
-
-        let retries = 0;
-        const maxRetries = 60; // Wait up to 2 minutes
-
-        while (retries < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-
-          try {
-            const extractionRun = await runs.retrieve(extractionRunId as string);
-            if (extractionRun.status === "COMPLETED") {
-              const extractionOutput = extractionRun.output as any;
-              if (extractionOutput?.extractedPages) {
-                finalExtractedPages = extractionOutput.extractedPages;
-                break;
-              }
-            } else if (extractionRun.status === "FAILED" || extractionRun.status === "CANCELED") {
-              throw new Error(`Extraction failed with status: ${extractionRun.status}`);
-            }
-          } catch (error) {
-            console.error("Error checking extraction status:", error);
-          }
-
-          retries++;
-        }
-
-        if (!finalExtractedPages || finalExtractedPages.length === 0) {
-          throw new Error("Extraction timed out or failed");
-        }
-      }
-
-      // If no extracted pages provided, return mock data for testing
-      if (!finalExtractedPages || finalExtractedPages.length === 0) {
-        metadata.set("status", {
-          progress: 100,
-          label: "No pages provided, returning mock data",
-        } as any);
-
-        return {
-          baseUrl,
-          contentContext: {
-            dominantKeywords: [
-              { term: "AI Automation", density: "High", pages: 12 },
-              { term: "Healthcare Data", density: "Medium", pages: 5 },
-              { term: "Computer Vision", density: "Medium", pages: 4 },
-            ],
-            contentGaps: [
-              "No case studies mentioned for 'Cybersecurity' service.",
-              "Lack of 'Implementation Guide' style content for Power BI.",
-              "Missing comparison articles (e.g., 'Custom CRM vs Salesforce').",
-            ],
-            audiencePersona: "Technical Decision Makers & Healthcare Administrators",
-            tone: "Professional, Technical, Authority-focused",
-            overallWritingStyle: {
-              dominantTone: "Professional",
-              averageFormality: "Formal",
-              commonPerspective: "Third Person",
-              brandVoiceSummary: "Technical expertise with focus on solutions"
-            },
-            contentPatterns: {
-              preferredContentTypes: ["Service Pages", "Blog Posts"],
-              averagePostLength: "500-800 words",
-              commonStructures: ["Introduction", "Problem", "Solution", "CTA"],
-              ctaPatterns: ["Contact Us", "Learn More"]
-            }
-          },
-          aiSuggestions: [
-            {
-              type: "Blog Post",
-              title: "5 Risks of Ignoring AI Cybersecurity in Supply Chains",
-              reason: "You have a Supply Chain service page but no blog content addressing its security risks.",
-              targetKeywords: ["AI Cybersecurity", "Supply Chain Risk", "DataTech Security"],
-              contentOutline: ["Introduction", "Risk Analysis", "Case Studies", "Solutions", "Conclusion"],
-              suggestedTone: "Professional",
-              targetLength: 800,
-              keyMessagePoints: ["Security importance", "Risk mitigation", "Expert solutions"]
-            },
-          ],
-          pages: [],
-        };
-      }
-
-      // Analyze each page in detail
-      metadata.set("status", {
-        progress: 20,
-        label: "Analyzing individual pages for writing style and structure...",
-      } as any);
-
-      const analyzedPages: PageAnalysis[] = finalExtractedPages.map(page => ({
-        url: page.url,
-        type: page.type,
-        title: page.title,
-        content: page.content,
-        wordCount: page.wordCount,
-        mainTopic: page.title,
-        summary: page.content.substring(0, 200),
-        keywords: extractTopKeywords(page.content, 5),
-        writingStyle: analyzeWritingStyle(page.content),
-        contentStructure: analyzeContentStructure(page.content),
-        seoElements: extractSEOElements(page.content, page.url),
-        brandVoice: analyzeBrandVoice(page.content)
-      }));
-
-      // Compress content for AI analysis
-      metadata.set("status", {
-        progress: 40,
-        label: "Analyzing content patterns with AI...",
-      } as any);
-
-      const compressedContext = compressContent(finalExtractedPages);
-
-      // Separate service pages and blog pages for gap analysis
-      const servicePages = finalExtractedPages.filter(p => p.type === 'service');
-      const blogPages = finalExtractedPages.filter(p => p.type === 'blog');
-
-      const serviceSummary = servicePages.length > 0 
-        ? compressContent(servicePages.slice(0, 10)) // Limit to 10 service pages
-        : "No service pages found";
-
-      const blogSummary = blogPages.length > 0
-        ? compressContent(blogPages.slice(0, 10)) // Limit to 10 blog posts
-        : "No blog posts found";
-
-      // Initialize OpenAI client
-      const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
-
-      // Enhanced prompt for better analysis
-      const prompt = `
-You are an expert SEO Content Strategist and Brand Analyst. Analyze this website content in detail.
-
-TARGET AUDIENCE: ${targetAudience}
-
-SERVICE PAGES (What they sell):
-${serviceSummary}
-
-BLOG POSTS (What they write about):
-${blogSummary}
-
-DETAILED ANALYSIS REQUIREMENTS:
-1. Extract the top 5 semantic keywords (excluding brand names).
-2. Identify the "Audience Persona" based on tone, language, and complexity.
-3. Find the "Content Gap": What services they offer but don't write about.
-4. Analyze the overall writing style and brand voice across all content.
-5. Identify content patterns (preferred structures, average length, CTAs).
-6. Suggest 5 content pieces that match their established writing style and brand voice.
-
-For each suggestion, include:
-- A title that matches their naming conventions
-- Detailed content outline following their structure
-- Appropriate tone based on their brand voice
-- Target word count based on their averages
-- Key message points aligned with their value propositions
-
-Return ONLY valid JSON in this exact format:
-{
-  "dominantKeywords": [
-    {"term": "AI Automation", "density": "High", "pages": 12},
-    {"term": "Healthcare Data", "density": "Medium", "pages": 5}
-  ],
-  "contentGaps": [
-    "No case studies mentioned for 'Cybersecurity' service.",
-    "Lack of 'Implementation Guide' style content for Power BI."
-  ],
-  "audiencePersona": "Technical Decision Makers & Healthcare Administrators",
-  "tone": "Professional, Technical, Authority-focused",
-  "overallWritingStyle": {
-    "dominantTone": "Professional and authoritative",
-    "averageFormality": "Formal",
-    "commonPerspective": "Third person",
-    "brandVoiceSummary": "Expert-focused with emphasis on practical solutions"
-  },
-  "contentPatterns": {
-    "preferredContentTypes": ["Service descriptions", "Technical blog posts"],
-    "averagePostLength": "600-1000 words",
-    "commonStructures": ["Problem-solution framework", "Technical explanations"],
-    "ctaPatterns": ["Contact for consultation", "Learn more about services"]
-  },
-  "aiSuggestions": [
-    {
-      "type": "Blog Post",
-      "title": "Implementing AI Automation: A Technical Guide",
-      "reason": "Matches their technical expertise and problem-solution format",
-      "targetKeywords": ["AI Automation", "Implementation Guide", "Technical Solutions"],
-      "contentOutline": ["Introduction to the challenge", "Technical requirements", "Step-by-step implementation", "Case study examples", "Best practices", "Conclusion with CTA"],
-      "suggestedTone": "Professional and educational",
-      "targetLength": 800,
-      "keyMessagePoints": ["Technical expertise", "Practical solutions", "Proven results"]
-    }
-  ]
-}
-`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert SEO Content Strategist and Brand Analyst. Always respond with valid JSON only, no markdown formatting.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 3000,
-        response_format: { type: "json_object" },
-      });
-
-      metadata.set("status", {
-        progress: 80,
-        label: "Processing AI analysis results...",
-      } as any);
-
-      const aiResponse = completion.choices[0]?.message?.content;
-      
-      if (!aiResponse) {
-        throw new Error("No response from OpenAI");
-      }
-
-      const analysisResult = JSON.parse(aiResponse);
-
-      metadata.set("status", {
-        progress: 100,
-        label: "AI content analysis complete!",
-      } as any);
-
-      console.log(`[Content Analyzer] Returning ${analyzedPages.length} analyzed pages`);
-
-      return {
-        baseUrl,
-        contentContext: {
-          dominantKeywords: analysisResult.dominantKeywords || [],
-          contentGaps: analysisResult.contentGaps || [],
-          audiencePersona: analysisResult.audiencePersona || "Unknown",
-          tone: analysisResult.tone || "Unknown",
-          overallWritingStyle: analysisResult.overallWritingStyle || {
-            dominantTone: "Professional",
-            averageFormality: "Semi-Formal",
-            commonPerspective: "Third Person",
-            brandVoiceSummary: "Technical and solution-focused"
-          },
-          contentPatterns: analysisResult.contentPatterns || {
-            preferredContentTypes: ["Blog Posts", "Service Pages"],
-            averagePostLength: "500-800 words",
-            commonStructures: ["Introduction", "Body", "Conclusion"],
-            ctaPatterns: ["Contact Us", "Learn More"]
-          }
-        },
-        aiSuggestions: (analysisResult.aiSuggestions || []).map((suggestion: any) => ({
-          ...suggestion,
-          contentOutline: suggestion.contentOutline || [],
-          suggestedTone: suggestion.suggestedTone || "Professional",
-          targetLength: suggestion.targetLength || 600,
-          keyMessagePoints: suggestion.keyMessagePoints || []
-        })),
-        pages: analyzedPages,
-        extractionData: {
-          baseUrl,
-          pagesProcessed: finalExtractedPages.length,
-          extractedPages: finalExtractedPages.map(page => ({
-            ...page,
-            type: page.type as "service" | "blog" | "product" | "other",
-            mainTopic: page.title,
-            summary: page.content.substring(0, 200),
-          })),
-          aggregatedContent: {
-            services: finalExtractedPages.filter(p => p.type === 'service').map(p => p.title || p.url),
-            blogs: finalExtractedPages.filter(p => p.type === 'blog').map(p => p.title || p.url),
-            products: finalExtractedPages.filter(p => p.type === 'product').map(p => p.title || p.url),
-          },
-          totalWordCount: finalExtractedPages.reduce((sum, page) => sum + (page.wordCount || 0), 0),
-        },
-      };
-
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Content analyzer fatal error:", error);
-      metadata.set("status", {
-        progress: 0,
-        label: `Fatal error: ${errorMsg}`,
-        error: errorMsg,
-      } as any);
-      throw error;
-    }
-  },
-});
 
 ```
 

@@ -8,6 +8,8 @@ import {
   ArrowRight,
   TrendingUp,
   Target,
+  FileEdit,
+  Calendar,
 } from "lucide-react";
 
 interface GapAnalysisCardProps {
@@ -121,16 +123,17 @@ export default function GapAnalysisCard({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onGenerateSolution(gap)}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-medium rounded-lg transition-all shadow-sm hover:shadow-md"
                   >
-                    <Zap className="w-4 h-4" />
-                    Generate Solution
+                    <FileEdit className="w-4 h-4" />
+                    Draft Article
                   </button>
                   <button
                     onClick={() => onPlanForLater(gap)}
                     className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                    title="Add to content calendar"
                   >
-                    Plan Later
+                    <Calendar className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -156,11 +159,10 @@ export default function GapAnalysisCard({
                 </p>
                 <button
                   onClick={() => onGenerateSolution(gap)}
-                  className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-all"
+                  className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all"
                 >
-                  <Zap className="w-3 h-3" />
-                  Generate
-                  <ArrowRight className="w-3 h-3" />
+                  <FileEdit className="w-3 h-3" />
+                  Draft Article
                 </button>
               </div>
             ))}

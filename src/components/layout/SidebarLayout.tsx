@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   BarChart3,
@@ -17,6 +17,12 @@ import {
   Home,
   Target,
   Settings,
+  Archive,
+  FileText,
+  Plus,
+  RefreshCw,
+  Download,
+  Share2,
 } from "lucide-react";
 
 interface NavItem {
@@ -30,22 +36,44 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: "home", label: "Home", icon: Home, href: "/" },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/content-strategy?view=dashboard" },
-  { id: "strategy", label: "Strategy", icon: BarChart3, href: "/content-strategy?view=analysis" },
+  { id: "strategy", label: "Strategy Hub", icon: BarChart3, href: "/content-strategy?view=analysis" },
   { id: "production", label: "Production", icon: Zap, href: "/content-strategy?view=production" },
   { id: "calendar", label: "Calendar", icon: Calendar, href: "/content-strategy?view=planner" },
-  { id: "history", label: "History", icon: History, href: "/history" },
+  { id: "drafts", label: "Drafts", icon: FileText, href: "/drafts" },
+  { id: "archives", label: "Archives", icon: Archive, href: "/history" },
 ];
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
   activeView?: string;
   onViewChange?: (view: string) => void;
+  onNewStrategy?: () => void;
+  currentDomain?: string;
+  healthScore?: number;
+  contentGapsCount?: number;
 }
 
-export default function SidebarLayout({ children, activeView, onViewChange }: SidebarLayoutProps) {
+export default function SidebarLayout({ 
+  children, 
+  activeView, 
+  onViewChange,
+  onNewStrategy,
+  currentDomain,
+  healthScore,
+  contentGapsCount 
+}: SidebarLayoutProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleNewStrategy = () => {
+    if (onNewStrategy) {
+      onNewStrategy();
+    } else {
+      router.push('/content-strategy?view=analysis');
+    }
+  };
 
   const handleNavClick = (item: NavItem) => {
     if (onViewChange && item.href.includes("view=")) {
@@ -118,6 +146,20 @@ export default function SidebarLayout({ children, activeView, onViewChange }: Si
           </button>
         </div>
 
+        {/* New Strategy CTA Button */}
+        <div className="p-3 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={handleNewStrategy}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg ${
+              isCollapsed ? "px-2" : ""
+            }`}
+            title={isCollapsed ? "New Strategy" : undefined}
+          >
+            <Plus className="w-5 h-5" />
+            {!isCollapsed && <span>New Strategy</span>}
+          </button>
+        </div>
+
         {/* Navigation */}
         <nav className="p-3 space-y-1">
           {navItems.map((item) => {
@@ -163,13 +205,20 @@ export default function SidebarLayout({ children, activeView, onViewChange }: Si
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <p className="text-slate-500 dark:text-slate-400">Health Score</p>
-                  <p className="font-bold text-blue-600">--</p>
+                  <p className="font-bold text-blue-600">{healthScore ?? '--'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 dark:text-slate-400">Content Gaps</p>
-                  <p className="font-bold text-amber-600">--</p>
+                  <p className="font-bold text-amber-600">{contentGapsCount ?? '--'}</p>
                 </div>
               </div>
+              {currentDomain && (
+                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <p className="text-slate-500 dark:text-slate-400 text-xs truncate" title={currentDomain}>
+                    {currentDomain}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

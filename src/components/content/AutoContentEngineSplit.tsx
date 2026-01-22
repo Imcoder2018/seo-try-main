@@ -20,6 +20,7 @@ import {
   Download,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import SearchResultPreview from "./SearchResultPreview";
 
 interface DiscoveryData {
   services: string[];
@@ -382,26 +383,33 @@ export default function AutoContentEngineSplit() {
             )}
           </div>
 
-          {/* Skeleton State */}
+          {/* Skeleton State with Search Result Preview */}
           {previewMode === "skeleton" && !isGenerating && (
-            <div className="space-y-4">
-              <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded-lg w-3/4 animate-pulse" />
-              <div className="space-y-2">
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-full animate-pulse" />
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-5/6 animate-pulse" />
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-4/6 animate-pulse" />
-              </div>
-              <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded-lg w-1/2 animate-pulse mt-6" />
-              <div className="space-y-2">
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-full animate-pulse" />
-                <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-5/6 animate-pulse" />
-              </div>
-              <div className="text-center py-8">
-                <Sparkles className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-500 dark:text-slate-400">
-                  Configure your content and click Generate to see the preview
-                </p>
-              </div>
+            <div className="space-y-6">
+              {/* Live Search Result Preview */}
+              <SearchResultPreview
+                title={customTopic}
+                url={discoveryData?.existingPages?.[0]?.url || "https://example.com"}
+                keywords={customKeywords.split(",").map((k) => k.trim()).filter(Boolean)}
+              />
+
+              {/* Placeholder skeleton */}
+              {!customTopic && (
+                <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded-lg w-3/4 animate-pulse" />
+                  <div className="space-y-2">
+                    <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-full animate-pulse" />
+                    <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-5/6 animate-pulse" />
+                    <div className="h-4 bg-slate-100 dark:bg-slate-700/50 rounded w-4/6 animate-pulse" />
+                  </div>
+                  <div className="text-center py-6">
+                    <Sparkles className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      Enter a topic to see your search preview
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

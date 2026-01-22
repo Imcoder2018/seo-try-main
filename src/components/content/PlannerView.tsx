@@ -41,8 +41,11 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useContentStrategy } from "@/contexts/ContentStrategyContext";
 
 const localizer = momentLocalizer(moment);
+
+const STORAGE_KEY_EVENTS = "seo_calendar_events";
 
 interface CalendarEvent {
   id: string;
@@ -91,8 +94,23 @@ export default function PlannerView({
   contentContext,
   analysisRunId,
 }: PlannerViewProps) {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const { events: contextEvents, setEvents: setContextEvents, analysisData, aiSuggestions: contextSuggestions } = useContentStrategy();
+  const [events, setEventsLocal] = useState<CalendarEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+
+  // Sync events with context and localStorage
+  const setEvents = (newEvents: CalendarEvent[] | ((prev: CalendarEvent[]) => CalendarEvent[])) => {
+    setEventsLocal(prev => {
+      const updated = typeof newEvents === 'function' ? newEvents(prev) : newEvents;
+      // Persist to localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(updated));
+      }
+      // Update context
+      setContextEvents(updated);
+      return updated;
+    });
+  };
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>(Views.MONTH);
@@ -171,18 +189,60 @@ export default function PlannerView({
     setDraggableItems([...gaps, ...suggestions]);
   }, [contentGaps, aiSuggestions]);
 
+  // Load events from localStorage on mount
   useEffect(() => {
-    if (events.length === 0 && process.env.NODE_ENV === 'development') {
-      const testEvent: CalendarEvent = {
-        id: 'test-event',
-        title: 'Test Event - Calendar is Working!',
-        start: new Date(),
-        end: new Date(new Date().getTime() + 2 * 60 * 60 * 1000),
-        status: 'PLANNED',
-      };
-      setEvents([testEvent]);
-    }
+    const loadStoredEvents = () => {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY_EVENTS);
+        if (stored) {
+          const parsedEvents = JSON.parse(stored).map((e: any) => ({
+            ...e,
+            start: new Date(e.start),
+            end: new Date(e.end),
+          }));
+          setEventsLocal(parsedEvents);
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to load stored events:', e);
+      }
+
+      // Fallback: load from context if available
+      if (contextEvents && contextEvents.length > 0) {
+        setEventsLocal(contextEvents.map(e => ({
+          ...e,
+          start: new Date(e.start),
+          end: new Date(e.end),
+        })));
+      }
+    };
+
+    loadStoredEvents();
   }, []);
+
+  // Fetch latest analysis data if props are empty but context has data
+  useEffect(() => {
+    if ((!contentGaps || contentGaps.length === 0) && analysisData?.contentGaps) {
+      const gaps: DraggableItem[] = analysisData.contentGaps.map((gap, i) => ({
+        id: `gap-ctx-${Date.now()}-${i}`,
+        type: "gap",
+        title: gap,
+      }));
+      setDraggableItems(prev => [...gaps, ...prev.filter(p => p.type === 'suggestion')]);
+    }
+
+    if ((!aiSuggestions || aiSuggestions.length === 0) && contextSuggestions && contextSuggestions.length > 0) {
+      const suggestions: DraggableItem[] = contextSuggestions.map((s, i) => ({
+        id: `suggestion-ctx-${Date.now()}-${i}`,
+        type: "suggestion",
+        title: s.title,
+        keywords: s.targetKeywords,
+        suggestionType: s.type,
+        reason: s.reason,
+      }));
+      setDraggableItems(prev => [...prev.filter(p => p.type === 'gap'), ...suggestions]);
+    }
+  }, [analysisData, contextSuggestions, contentGaps, aiSuggestions]);
 
   useEffect(() => {
     const handleResize = () => {

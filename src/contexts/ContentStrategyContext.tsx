@@ -70,6 +70,22 @@ interface ContentStrategyContextType {
   // Analysis Run ID
   analysisRunId: string | null;
   setAnalysisRunId: (id: string | null) => void;
+
+  // Current Domain
+  currentDomain: string | null;
+  setCurrentDomain: (domain: string | null) => void;
+
+  // Reset Strategy - clears all state
+  resetStrategy: () => void;
+
+  // Load from history
+  loadFromHistory: (data: {
+    analysisData: ContentContext;
+    aiSuggestions: AISuggestion[];
+    events: CalendarEvent[];
+    domain: string;
+    runId: string;
+  }) => void;
 }
 
 const ContentStrategyContext = createContext<ContentStrategyContextType | undefined>(undefined);
@@ -80,6 +96,49 @@ export function ContentStrategyProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [activeDraft, setActiveDraft] = useState<ActiveDraft | null>(null);
   const [analysisRunId, setAnalysisRunId] = useState<string | null>(null);
+  const [currentDomain, setCurrentDomain] = useState<string | null>(null);
+
+  const STORAGE_KEYS = {
+    ANALYSIS: 'seo_analysis_output',
+    DISCOVERY: 'seo_discovery_data',
+    EVENTS: 'seo_calendar_events',
+    DOMAIN: 'seo_current_domain',
+  };
+
+  const resetStrategy = () => {
+    // Clear all state
+    setAnalysisData(null);
+    setAiSuggestions([]);
+    setEvents([]);
+    setActiveDraft(null);
+    setAnalysisRunId(null);
+    setCurrentDomain(null);
+
+    // Clear localStorage
+    if (typeof window !== 'undefined') {
+      Object.values(STORAGE_KEYS).forEach(key => {
+        localStorage.removeItem(key);
+      });
+    }
+  };
+
+  const loadFromHistory = (data: {
+    analysisData: ContentContext;
+    aiSuggestions: AISuggestion[];
+    events: CalendarEvent[];
+    domain: string;
+    runId: string;
+  }) => {
+    setAnalysisData(data.analysisData);
+    setAiSuggestions(data.aiSuggestions);
+    setEvents(data.events.map(e => ({
+      ...e,
+      start: new Date(e.start),
+      end: new Date(e.end),
+    })));
+    setCurrentDomain(data.domain);
+    setAnalysisRunId(data.runId);
+  };
 
   const addEvent = (event: Omit<CalendarEvent, 'id'>) => {
     const newEvent: CalendarEvent = {
@@ -115,6 +174,10 @@ export function ContentStrategyProvider({ children }: { children: ReactNode }) {
         setActiveDraft,
         analysisRunId,
         setAnalysisRunId,
+        currentDomain,
+        setCurrentDomain,
+        resetStrategy,
+        loadFromHistory,
       }}
     >
       {children}

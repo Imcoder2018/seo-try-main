@@ -10,12 +10,19 @@ import {
   XCircle,
 } from "lucide-react";
 
+interface CriticalIssue {
+  label: string;
+  type: "error" | "warning" | "info";
+}
+
 interface SEOHealthScoreProps {
   score?: number;
   totalPages?: number;
   avgWordCount?: number;
   contentGapsCount?: number;
   keywordsCount?: number;
+  missingMetaCount?: number;
+  lowWordCountPages?: number;
 }
 
 export default function SEOHealthScore({
@@ -24,8 +31,32 @@ export default function SEOHealthScore({
   avgWordCount = 0,
   contentGapsCount = 0,
   keywordsCount = 0,
+  missingMetaCount = 0,
+  lowWordCountPages = 0,
 }: SEOHealthScoreProps) {
   const calculatedScore = score ?? calculateScore(avgWordCount, contentGapsCount, keywordsCount, totalPages);
+
+  const getCriticalIssues = (): CriticalIssue[] => {
+    const issues: CriticalIssue[] = [];
+    if (contentGapsCount > 3) {
+      issues.push({ label: `${contentGapsCount} Content Gaps`, type: "warning" });
+    }
+    if (avgWordCount < 500) {
+      issues.push({ label: "Low Word Count", type: "error" });
+    }
+    if (missingMetaCount > 0) {
+      issues.push({ label: `${missingMetaCount} Missing Meta`, type: "error" });
+    }
+    if (lowWordCountPages > 0) {
+      issues.push({ label: `${lowWordCountPages} Thin Pages`, type: "warning" });
+    }
+    if (keywordsCount < 5) {
+      issues.push({ label: "Few Keywords", type: "info" });
+    }
+    return issues;
+  };
+
+  const criticalIssues = getCriticalIssues();
 
   function calculateScore(
     avgWords: number,
@@ -144,6 +175,38 @@ export default function SEOHealthScore({
           </div>
         </div>
       </div>
+
+      {/* Critical Issues Badges */}
+      {criticalIssues.length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+            Critical Issues
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {criticalIssues.map((issue, index) => (
+              <span
+                key={index}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                  issue.type === "error"
+                    ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                    : issue.type === "warning"
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                }`}
+              >
+                {issue.type === "error" ? (
+                  <XCircle className="w-3 h-3" />
+                ) : issue.type === "warning" ? (
+                  <AlertTriangle className="w-3 h-3" />
+                ) : (
+                  <TrendingUp className="w-3 h-3" />
+                )}
+                {issue.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 gap-3">

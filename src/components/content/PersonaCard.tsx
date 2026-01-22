@@ -18,12 +18,16 @@ interface PersonaCardProps {
     commonPerspective?: string;
     brandVoiceSummary?: string;
   };
+  painPoints?: string[];
+  goals?: string[];
 }
 
 export default function PersonaCard({
   audiencePersona = "General Audience",
   tone = "Professional",
   writingStyle,
+  painPoints = [],
+  goals = [],
 }: PersonaCardProps) {
   const getAvatarGradient = (persona: string) => {
     const hash = persona.split("").reduce((a, b) => {
@@ -121,6 +125,57 @@ export default function PersonaCard({
             </div>
           )}
         </div>
+
+        {/* Pain Points & Goals Tags */}
+        {(painPoints.length > 0 || goals.length > 0) && (
+          <div className="mt-4 space-y-3">
+            {painPoints.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+                  Pain Points
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {painPoints.slice(0, 4).map((point, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-2.5 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs font-medium rounded-full"
+                    >
+                      {point}
+                    </span>
+                  ))}
+                  {painPoints.length > 4 && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 px-2 py-1">
+                      +{painPoints.length - 4} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {goals.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+                  Goals
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {goals.slice(0, 4).map((goal, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium rounded-full"
+                    >
+                      {goal}
+                    </span>
+                  ))}
+                  {goals.length > 4 && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 px-2 py-1">
+                      +{goals.length - 4} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Brand Voice Summary */}
         {writingStyle?.brandVoiceSummary && (

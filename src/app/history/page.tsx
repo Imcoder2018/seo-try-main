@@ -17,6 +17,9 @@ import {
   Activity
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useContentStrategy } from "@/contexts/ContentStrategyContext";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 
 interface Audit {
   id: string;
@@ -41,9 +44,12 @@ interface ContentAnalysis {
 
 export default function HistoryPage() {
   const { userId } = useAuth();
+  const router = useRouter();
+  const { loadFromHistory, resetStrategy } = useContentStrategy();
   const [audits, setAudits] = useState<Audit[]>([]);
   const [contentAnalyses, setContentAnalyses] = useState<ContentAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingAnalysisId, setLoadingAnalysisId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "audits" | "content">("all");
 
@@ -97,26 +103,55 @@ export default function HistoryPage() {
   const completedContent = contentAnalyses.filter(a => a.status === "COMPLETED").length;
   const runningContent = contentAnalyses.filter(a => a.status === "RUNNING").length;
 
+  const handleLoadAnalysis = async (analysisId: string) => {
+    setLoadingAnalysisId(analysisId);
+    try {
+      const response = await fetch(`/api/content/history/${analysisId}`);
+      if (response.ok) {
+        const data = await response.json();
+        loadFromHistory({
+          analysisData: data.contentContext || {
+            dominantKeywords: [],
+            contentGaps: [],
+            audiencePersona: '',
+            tone: '',
+          },
+          aiSuggestions: data.aiSuggestions || [],
+          events: data.events || [],
+          domain: data.domain,
+          runId: analysisId,
+        });
+        router.push('/content-strategy?view=dashboard');
+      }
+    } catch (error) {
+      console.error('Error loading analysis:', error);
+    } finally {
+      setLoadingAnalysisId(null);
+    }
+  };
+
+  const handleNewStrategy = () => {
+    resetStrategy();
+    router.push('/content-strategy?view=analysis');
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Header />
-        <main className="flex-1 flex items-center justify-center">
+      <SidebarLayout onNewStrategy={handleNewStrategy}>
+        <div className="min-h-screen flex items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-            <p className="mt-4 text-lg">Loading history...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-lg text-slate-600 dark:text-slate-400">Loading history...</p>
           </div>
-        </main>
-        <Footer />
-      </div>
+        </div>
+      </SidebarLayout>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1 bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-        <div className="container mx-auto px-4 py-8">
+    <SidebarLayout onNewStrategy={handleNewStrategy}>
+      <div className="min-h-screen">
+        <div className="max-w-7xl mx-auto px-4 py-8">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-slate-900 dark:text-slate-100 mb-2">
@@ -300,7 +335,7 @@ export default function HistoryPage() {
                       {filteredContent.map((analysis) => (
                         <div
                           key={analysis.id}
-                          className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-700"
+                          className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-shadow"
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
@@ -309,6 +344,11 @@ export default function HistoryPage() {
                                 <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                                   {analysis.domain}
                                 </h3>
+                                {analysis.status === "COMPLETED" && (
+                                  <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
+                                    Ready to Load
+                                  </span>
+                                )}
                               </div>
                               <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">{analysis.baseUrl}</p>
                               <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
@@ -334,6 +374,22 @@ export default function HistoryPage() {
                                 )}
                               </div>
                             </div>
+                            {analysis.status === "COMPLETED" && (
+                              <button
+                                onClick={() => handleLoadAnalysis(analysis.id)}
+                                disabled={loadingAnalysisId === analysis.id}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                              >
+                                {loadingAnalysisId === analysis.id ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                    Loading...
+                                  </>
+                                ) : (
+                                  'Load Strategy'
+                                )}
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -362,8 +418,7 @@ export default function HistoryPage() {
             )}
           </div>
         </div>
-      </main>
-      <Footer />
-    </div>
+      </div>
+    </SidebarLayout>
   );
 }
