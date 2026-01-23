@@ -448,6 +448,7 @@ export default function ReportPage({
               data={audit.localSeoResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
+              fixAction="fix_local_seo"
               sampleSizeExplanation={getSampleSizeExplanation('local-seo')}
             />
           )}
@@ -459,24 +460,31 @@ export default function ReportPage({
               data={audit.seoResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
+              fixAction="fix_onpage"
               sampleSizeExplanation={getSampleSizeExplanation('seo')}
             />
           )}
 
           {audit.linksResults && (
-            <CategorySection
+            <CategorySectionWithFix
               id="links"
               title="Links Analysis"
               data={audit.linksResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              domain={domain}
+              wpConnected={wpConnected}
+              fixAction="fix_links"
               sampleSizeExplanation={getSampleSizeExplanation('links')}
             />
           )}
 
           {audit.usabilityResults && (
-            <CategorySection
+            <CategorySectionWithFix
               id="usability"
               title="Usability Results"
               data={audit.usabilityResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              domain={domain}
+              wpConnected={wpConnected}
+              fixAction="fix_usability"
               sampleSizeExplanation={getSampleSizeExplanation('usability')}
             />
           )}
@@ -488,6 +496,7 @@ export default function ReportPage({
               data={audit.performanceResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
+              fixAction="fix_performance"
               sampleSizeExplanation={getSampleSizeExplanation('performance')}
             />
           )}
@@ -499,6 +508,7 @@ export default function ReportPage({
               data={audit.socialResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
+              fixAction="fix_social"
               sampleSizeExplanation={getSampleSizeExplanation('social')}
             />
           )}
@@ -510,24 +520,31 @@ export default function ReportPage({
               data={audit.technologyResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
+              fixAction="fix_technology"
               sampleSizeExplanation={getSampleSizeExplanation('technology')}
             />
           )}
 
           {audit.contentResults && (
-            <CategorySection
+            <CategorySectionWithFix
               id="content"
               title="Content Quality"
               data={audit.contentResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              domain={domain}
+              wpConnected={wpConnected}
+              fixAction="fix_content"
               sampleSizeExplanation={getSampleSizeExplanation('content')}
             />
           )}
 
           {audit.eeatResults && (
-            <CategorySection
+            <CategorySectionWithFix
               id="eeat"
               title="E-E-A-T Signals"
               data={audit.eeatResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              domain={domain}
+              wpConnected={wpConnected}
+              fixAction="fix_eeat"
               sampleSizeExplanation={getSampleSizeExplanation('eeat')}
             />
           )}
@@ -581,27 +598,43 @@ interface CategorySectionWithFixProps {
   domain: string;
   wpConnected: boolean;
   sampleSizeExplanation?: string;
+  fixAction?: string;
 }
 
-function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSizeExplanation }: CategorySectionWithFixProps) {
+function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSizeExplanation, fixAction }: CategorySectionWithFixProps) {
   const checks = data.checks as Array<{ id: string; name: string; status: string; message: string; value?: Record<string, unknown> }>;
   const sourcePages = (data as any).sourcePages || [];
   const [showSourcePages, setShowSourcePages] = React.useState(false);
   
+  // Count failed checks
+  const failedChecks = checks.filter(c => c.status !== "pass" && c.status !== "info").length;
+  
   return (
-    <div className="bg-card border rounded-xl p-8 mb-8" id={id}>
+    <div className="bg-card border rounded-xl p-8 mb-8 shadow-sm hover:shadow-md transition-shadow" id={id}>
       <div className="flex flex-col md:flex-row gap-6 mb-8">
         <div className="flex-shrink-0">
           <ScoreRing score={data.score} grade={data.grade} size="md" />
         </div>
         <div className="flex-1">
-          <h2 className="text-xl font-bold mb-2">{title}</h2>
-          {data.message && (
-            <p className="text-muted-foreground">{data.message}</p>
-          )}
-          {sampleSizeExplanation && (
-            <p className="text-xs text-gray-500 mt-1 italic">ℹ️ {sampleSizeExplanation}</p>
-          )}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold mb-2">{title}</h2>
+              {data.message && (
+                <p className="text-muted-foreground">{data.message}</p>
+              )}
+              {sampleSizeExplanation && (
+                <p className="text-xs text-gray-500 mt-1 italic">ℹ️ {sampleSizeExplanation}</p>
+              )}
+            </div>
+            {/* Section Fix All Button */}
+            {wpConnected && fixAction && failedChecks > 0 && (
+              <AutoFixButton
+                domain={domain}
+                fixType={fixAction}
+                label={`Fix ${failedChecks} Issue${failedChecks > 1 ? 's' : ''}`}
+              />
+            )}
+          </div>
           {sourcePages.length > 0 && (
             <div className="mt-3">
               <button

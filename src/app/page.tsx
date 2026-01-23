@@ -245,6 +245,72 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* WordPress Auto-Fix Section */}
+        <section className="py-20 px-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950">
+          <div className="container mx-auto max-w-6xl">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full mb-6">
+                  <Zap className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-semibold text-green-700 dark:text-green-400">WordPress Plugin</span>
+                </div>
+                <h2 className="text-4xl font-bold mb-6 text-slate-900 dark:text-slate-100">
+                  Auto-Fix SEO Issues with One Click
+                </h2>
+                <p className="text-xl text-slate-600 dark:text-slate-400 mb-8">
+                  Install our WordPress plugin to automatically fix SEO issues detected in your audit. No coding required.
+                </p>
+                <ul className="space-y-4 mb-8">
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="w-6 h-6 text-green-500 flex-shrink-0" />
+                    <span className="text-slate-700 dark:text-slate-300">Auto-fix meta descriptions, alt text, and schema</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="w-6 h-6 text-green-500 flex-shrink-0" />
+                    <span className="text-slate-700 dark:text-slate-300">Enable security headers and performance optimizations</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="w-6 h-6 text-green-500 flex-shrink-0" />
+                    <span className="text-slate-700 dark:text-slate-300">Auto-submit new posts to Google and Bing for indexing</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="w-6 h-6 text-green-500 flex-shrink-0" />
+                    <span className="text-slate-700 dark:text-slate-300">One-click connection with OAuth handshake</span>
+                  </li>
+                </ul>
+                <Link
+                  href="/downloads/seo-auto-fix.zip"
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-500/25"
+                >
+                  <Zap className="w-5 h-5" />
+                  Download Free Plugin
+                  <ArrowRight className="w-5 h-5" />
+                </Link>
+              </div>
+              <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 shadow-xl border border-slate-200 dark:border-slate-700">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                    <span className="text-red-700 dark:text-red-300">Missing Alt Text (6 images)</span>
+                    <button className="px-3 py-1 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600">Fix</button>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <span className="text-yellow-700 dark:text-yellow-300">No Schema Markup</span>
+                    <button className="px-3 py-1 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600">Fix</button>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <span className="text-yellow-700 dark:text-yellow-300">Security Headers Missing</span>
+                    <button className="px-3 py-1 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600">Fix</button>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <span className="text-green-700 dark:text-green-300">✓ All issues fixed!</span>
+                    <span className="text-green-600 text-sm font-medium">100%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* CTA Section */}
         <section className="py-20 px-4 bg-gradient-to-r from-primary to-blue-600">
           <div className="container mx-auto max-w-4xl text-center">

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Minus, BarChart3, Loader2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, BarChart3, Loader2, Clock, ExternalLink, ChevronRight } from "lucide-react";
+import Link from "next/link";
 
 interface HistoryEntry {
   id: string;
@@ -15,6 +16,7 @@ interface HistoryEntry {
   socialScore: number;
   contentScore?: number;
   eeatScore?: number;
+  auditId?: string;
 }
 
 interface HistoryData {
@@ -52,13 +54,19 @@ export function HistoryChart({ domain, currentAudit }: HistoryChartProps) {
   }, [domain]);
 
   useEffect(() => {
-    // Save current audit to history
+    // Save current audit to history - only once per unique audit
     if (currentAudit && currentAudit.overallScore !== undefined) {
-      fetch("/api/history", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, auditData: currentAudit }),
-      }).catch(console.error);
+      const auditId = (currentAudit as { id?: string }).id;
+      // Use sessionStorage to prevent duplicate saves on same page load
+      const saveKey = `saved_audit_${domain}_${auditId}`;
+      if (auditId && !sessionStorage.getItem(saveKey)) {
+        sessionStorage.setItem(saveKey, 'true');
+        fetch("/api/history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain, auditData: currentAudit, auditId }),
+        }).catch(console.error);
+      }
     }
   }, [domain, currentAudit]);
 
@@ -177,7 +185,13 @@ export function HistoryChart({ domain, currentAudit }: HistoryChartProps) {
       {/* Recent History Table */}
       {history.length > 1 && (
         <div className="mt-6 pt-6 border-t">
-          <h4 className="text-sm font-medium mb-3">Recent Audits</h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-medium flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              Recent Audits
+            </h4>
+            <span className="text-xs text-muted-foreground">Click to load past audit</span>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -187,16 +201,42 @@ export function HistoryChart({ domain, currentAudit }: HistoryChartProps) {
                   <th className="pb-2 text-center">SEO</th>
                   <th className="pb-2 text-center">Perf</th>
                   <th className="pb-2 text-center">Links</th>
+                  <th className="pb-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {history.slice(0, 5).map((entry) => (
-                  <tr key={entry.id} className="border-b border-muted/50">
-                    <td className="py-2">{new Date(entry.date).toLocaleDateString()}</td>
-                    <td className="py-2 text-center font-medium">{entry.overallScore}</td>
+                {history.slice(0, 5).map((entry, index) => (
+                  <tr 
+                    key={entry.id} 
+                    className={`border-b border-muted/50 hover:bg-muted/30 transition-colors ${index === 0 ? 'bg-primary/5' : ''}`}
+                  >
+                    <td className="py-2">
+                      <div className="flex items-center gap-2">
+                        {index === 0 && <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">Current</span>}
+                        {new Date(entry.date).toLocaleDateString()}
+                      </div>
+                    </td>
+                    <td className="py-2 text-center">
+                      <span className={`font-medium ${
+                        entry.overallScore >= 80 ? 'text-green-600' : 
+                        entry.overallScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {entry.overallScore}
+                      </span>
+                    </td>
                     <td className="py-2 text-center">{entry.seoScore}</td>
                     <td className="py-2 text-center">{entry.performanceScore}</td>
                     <td className="py-2 text-center">{entry.linksScore}</td>
+                    <td className="py-2 text-right">
+                      {entry.auditId && index !== 0 && (
+                        <Link
+                          href={`/${domain}?id=${entry.auditId}`}
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          View <ChevronRight className="h-3 w-3" />
+                        </Link>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

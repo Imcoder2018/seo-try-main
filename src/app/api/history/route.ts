@@ -16,6 +16,7 @@ interface HistoryEntry {
   socialScore: number;
   contentScore?: number;
   eeatScore?: number;
+  auditId?: string;
 }
 
 // Simple storage - in production use database
@@ -60,10 +61,24 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { domain, auditData } = body;
+    const { domain, auditData, auditId } = body;
 
     if (!domain || !auditData) {
       return NextResponse.json({ error: "Domain and audit data are required" }, { status: 400 });
+    }
+
+    const entryAuditId = auditId || auditData.id;
+    
+    // Get existing history for domain
+    const existing = historyStorage.get(domain) || [];
+    
+    // Check if this audit already exists (prevent duplicates)
+    if (entryAuditId && existing.some(e => e.auditId === entryAuditId)) {
+      return NextResponse.json({
+        success: true,
+        message: "Audit already in history",
+        duplicate: true,
+      });
     }
 
     const entry: HistoryEntry = {
@@ -78,10 +93,9 @@ export async function POST(request: NextRequest) {
       socialScore: auditData.socialScore,
       contentScore: auditData.contentScore,
       eeatScore: auditData.eeatScore,
+      auditId: entryAuditId,
     };
 
-    // Get existing history for domain
-    const existing = historyStorage.get(domain) || [];
     existing.push(entry);
     
     // Keep only last 100 entries per domain

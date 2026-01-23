@@ -15,6 +15,8 @@ interface AuditData {
   socialScore: number;
   contentScore?: number;
   eeatScore?: number;
+  technologyScore?: number;
+  localSeoScore?: number;
   recommendations: Array<{
     title: string;
     category: string;
@@ -22,6 +24,8 @@ interface AuditData {
     description?: string;
   }>;
   createdAt: string;
+  crawlType?: string;
+  pagesScanned?: number;
 }
 
 function getScoreColor(score: number): [number, number, number] {
@@ -53,20 +57,31 @@ export async function POST(request: NextRequest) {
     const pageWidth = doc.internal.pageSize.getWidth();
     let yPos = 20;
 
-    // Header
+    // Header with gradient effect
     doc.setFillColor(17, 24, 39);
-    doc.rect(0, 0, pageWidth, 50, "F");
+    doc.rect(0, 0, pageWidth, 55, "F");
+    
+    // Accent line
+    doc.setFillColor(59, 130, 246);
+    doc.rect(0, 55, pageWidth, 3, "F");
     
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(24);
+    doc.setFontSize(26);
     doc.setFont("helvetica", "bold");
-    doc.text("SEO Audit Report", pageWidth / 2, 25, { align: "center" });
+    doc.text("SEO Audit Report", pageWidth / 2, 22, { align: "center" });
     
-    doc.setFontSize(12);
+    doc.setFontSize(14);
     doc.setFont("helvetica", "normal");
-    doc.text(auditData.domain, pageWidth / 2, 38, { align: "center" });
+    doc.text(auditData.domain, pageWidth / 2, 36, { align: "center" });
+    
+    // Audit metadata
+    doc.setFontSize(9);
+    doc.setTextColor(156, 163, 175);
+    const crawlInfo = auditData.crawlType ? `${auditData.crawlType} Crawl` : "Quick Crawl";
+    const pagesInfo = auditData.pagesScanned ? ` | ${auditData.pagesScanned} pages analyzed` : "";
+    doc.text(`${crawlInfo}${pagesInfo}`, pageWidth / 2, 47, { align: "center" });
 
-    yPos = 65;
+    yPos = 72;
 
     // Overall Score Section
     doc.setTextColor(0, 0, 0);
@@ -96,13 +111,15 @@ export async function POST(request: NextRequest) {
     yPos += 10;
 
     const categories = [
-      { name: "On-Page SEO", score: auditData.seoScore },
-      { name: "Links", score: auditData.linksScore },
-      { name: "Usability", score: auditData.usabilityScore },
-      { name: "Performance", score: auditData.performanceScore },
-      { name: "Social", score: auditData.socialScore },
-      ...(auditData.contentScore !== undefined ? [{ name: "Content Quality", score: auditData.contentScore }] : []),
-      ...(auditData.eeatScore !== undefined ? [{ name: "E-E-A-T", score: auditData.eeatScore }] : []),
+      { name: "On-Page SEO", score: auditData.seoScore, icon: "🔍" },
+      { name: "Links", score: auditData.linksScore, icon: "🔗" },
+      { name: "Usability", score: auditData.usabilityScore, icon: "👤" },
+      { name: "Performance", score: auditData.performanceScore, icon: "⚡" },
+      { name: "Social", score: auditData.socialScore, icon: "📱" },
+      ...(auditData.contentScore !== undefined ? [{ name: "Content Quality", score: auditData.contentScore, icon: "📝" }] : []),
+      ...(auditData.eeatScore !== undefined ? [{ name: "E-E-A-T", score: auditData.eeatScore, icon: "🏆" }] : []),
+      ...(auditData.technologyScore !== undefined ? [{ name: "Technology", score: auditData.technologyScore, icon: "💻" }] : []),
+      ...(auditData.localSeoScore !== undefined ? [{ name: "Local SEO", score: auditData.localSeoScore, icon: "📍" }] : []),
     ];
 
     doc.setFont("helvetica", "normal");
@@ -204,22 +221,53 @@ export async function POST(request: NextRequest) {
       printRecommendations(lowPriority, "Low");
     }
 
+    // Summary section before footer
+    if (yPos < 240) {
+      yPos = Math.max(yPos + 15, 200);
+      doc.setFillColor(249, 250, 251);
+      doc.roundedRect(15, yPos, pageWidth - 30, 35, 3, 3, "F");
+      
+      doc.setTextColor(75, 85, 99);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Summary", 22, yPos + 10);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      const summaryText = auditData.overallScore >= 80 
+        ? "Great job! Your site has strong SEO foundations. Focus on the recommendations above to reach excellence."
+        : auditData.overallScore >= 60
+        ? "Your site has a solid base but needs improvements. Address the high priority items first for best results."
+        : "Your site needs significant SEO work. Start with high priority recommendations to see quick improvements.";
+      
+      const summaryLines = doc.splitTextToSize(summaryText, pageWidth - 50);
+      summaryLines.forEach((line: string, idx: number) => {
+        doc.text(line, 22, yPos + 18 + (idx * 5));
+      });
+    }
+
     // Footer
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
+      
+      // Footer background
+      doc.setFillColor(249, 250, 251);
+      doc.rect(0, doc.internal.pageSize.getHeight() - 20, pageWidth, 20, "F");
+      
       doc.setFontSize(8);
-      doc.setTextColor(156, 163, 175);
+      doc.setTextColor(107, 114, 128);
       doc.text(
         `Generated on ${new Date(auditData.createdAt).toLocaleDateString()} | Page ${i} of ${pageCount}`,
         pageWidth / 2,
-        doc.internal.pageSize.getHeight() - 10,
+        doc.internal.pageSize.getHeight() - 12,
         { align: "center" }
       );
+      doc.setTextColor(59, 130, 246);
       doc.text(
-        "SEO Audit Tool",
+        "SEO Audit Tool - Professional SEO Analysis",
         pageWidth / 2,
-        doc.internal.pageSize.getHeight() - 5,
+        doc.internal.pageSize.getHeight() - 6,
         { align: "center" }
       );
     }
