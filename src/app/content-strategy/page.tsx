@@ -7,6 +7,8 @@ import ContentStrategyDashboardV2 from "@/components/content/ContentStrategyDash
 import HistoryPanel from "@/components/content/HistoryPanel";
 import AutoContentEngineSplit from "@/components/content/AutoContentEngineSplit";
 import AutoContentEngine from "@/components/content/AutoContentEngine";
+import AutoPilotEngine from "@/components/content/AutoPilotEngine";
+import ScheduledPostsProgress from "@/components/content/ScheduledPostsProgress";
 import PlannerView from "@/components/content/PlannerView";
 import DraftsPanel from "@/components/content/DraftsPanel";
 import ContentCalendarPanel from "@/components/content/ContentCalendarPanel";
@@ -973,6 +975,42 @@ export default function ContentStrategyPage() {
     );
   };
 
+  const renderAutoPilotView = () => {
+    return (
+      <div className="py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Auto Pilot
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 mt-1">
+              Generate a full month of content automatically
+            </p>
+          </div>
+        </div>
+        <AutoPilotEngine />
+      </div>
+    );
+  };
+
+  const renderProgressView = () => {
+    return (
+      <div className="py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Scheduled Posts Progress
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 mt-1">
+              Track your scheduled and published content
+            </p>
+          </div>
+        </div>
+        <ScheduledPostsProgress />
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeView) {
       case "dashboard":
@@ -983,6 +1021,10 @@ export default function ContentStrategyPage() {
         return renderProductionView();
       case "auto-content":
         return renderAutoContentView();
+      case "auto-pilot":
+        return renderAutoPilotView();
+      case "progress":
+        return renderProgressView();
       case "planner":
         return renderPlannerView();
       case "drafts":
@@ -1038,12 +1080,14 @@ export default function ContentStrategyPage() {
             <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-slate-100 mb-4">
               {activeView === "analysis" && "Content Strategy Analysis"}
               {activeView === "dashboard" && "Strategy Dashboard"}
-              {activeView === "production" && "Content Production"}
+              {activeView === "production" && "Quick Writer"}
               {activeView === "planner" && "Content Planner"}
               {activeView === "drafts" && "Content Drafts"}
               {activeView === "calendar" && "Content Calendar"}
               {activeView === "history" && "Analysis History"}
-              {activeView === "auto-content" && "Auto Content Engine"}
+              {activeView === "auto-content" && "Content Wizard"}
+              {activeView === "auto-pilot" && "Auto Pilot"}
+              {activeView === "progress" && "Scheduled Posts Progress"}
             </h1>
             <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
               {analysisOutput 
