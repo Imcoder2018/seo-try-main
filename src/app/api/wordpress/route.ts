@@ -22,8 +22,9 @@ export async function GET(request: NextRequest) {
   if (action === "handshake_status" && siteUrl && connectToken) {
     try {
       const normalizedUrl = normalizeUrl(siteUrl);
+      // Pass both token and connect_token for compatibility with different plugin versions
       const response = await fetch(
-        `${normalizedUrl}/wp-json/seo-autofix/v1/handshake/status?token=${connectToken}`,
+        `${normalizedUrl}/wp-json/seo-autofix/v1/handshake/status?token=${connectToken}&connect_token=${connectToken}`,
         { cache: "no-store" }
       );
       const data = await response.json();
@@ -55,6 +56,49 @@ export async function GET(request: NextRequest) {
     } catch (error) {
       return NextResponse.json(
         { error: "Failed to detect issues", details: String(error) },
+        { status: 500 }
+      );
+    }
+  }
+
+  // Handle verify/rescan to check fix status
+  if (action === "verify" && siteUrl && apiKey) {
+    try {
+      const normalizedUrl = normalizeUrl(siteUrl);
+      const category = new URL(request.url).searchParams.get("category") || "";
+      const response = await fetch(
+        `${normalizedUrl}/wp-json/seo-autofix/v1/verify${category ? `?category=${category}` : ""}`,
+        {
+          headers: {
+            "X-SEO-AutoFix-Key": apiKey,
+            Authorization: `Bearer ${apiKey}`,
+          },
+          cache: "no-store",
+        }
+      );
+      const data = await response.json();
+      return NextResponse.json(data);
+    } catch (error) {
+      return NextResponse.json(
+        { error: "Failed to verify status", details: String(error) },
+        { status: 500 }
+      );
+    }
+  }
+
+  // Handle capabilities check (no auth needed)
+  if (action === "capabilities" && siteUrl) {
+    try {
+      const normalizedUrl = normalizeUrl(siteUrl);
+      const response = await fetch(
+        `${normalizedUrl}/wp-json/seo-autofix/v1/capabilities`,
+        { cache: "no-store" }
+      );
+      const data = await response.json();
+      return NextResponse.json(data);
+    } catch (error) {
+      return NextResponse.json(
+        { error: "Failed to get capabilities", details: String(error) },
         { status: 500 }
       );
     }

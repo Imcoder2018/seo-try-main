@@ -472,6 +472,20 @@ function seo_autofix_register_rest_routes() {
         'callback' => 'seo_autofix_api_fix_onpage',
         'permission_callback' => 'seo_autofix_api_permission',
     ));
+    
+    // Verify/Rescan endpoint - checks current SEO status after fixes
+    register_rest_route($namespace, '/verify', array(
+        'methods' => 'GET',
+        'callback' => 'seo_autofix_api_verify_status',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    // Get fix capabilities - what can and cannot be auto-fixed
+    register_rest_route($namespace, '/capabilities', array(
+        'methods' => 'GET',
+        'callback' => 'seo_autofix_api_get_capabilities',
+        'permission_callback' => '__return_true',
+    ));
 }
 
 function seo_autofix_api_permission($request) {
@@ -505,6 +519,10 @@ function seo_autofix_api_permission($request) {
 
     // Log for debugging (remove in production)
     error_log('SEO AutoFix: API key received - ' . (empty($api_key) ? 'empty' : 'present'));
+    error_log('SEO AutoFix: Stored API key exists - ' . (empty($stored_key) ? 'no' : 'yes'));
+    if ($api_key && $stored_key) {
+        error_log('SEO AutoFix: API keys match - ' . (hash_equals($stored_key, $api_key) ? 'yes' : 'no'));
+    }
 
     // Strict string comparison to prevent timing attacks
     if (!$api_key || !hash_equals($stored_key, $api_key)) {
@@ -719,11 +737,34 @@ function seo_autofix_api_fix_og_tags($request) {
     $settings['enable_og_tags'] = true;
     $settings['enable_twitter_cards'] = true;
     $settings['twitter_card_type'] = 'summary_large_image';
+    
+    // Set default OG image if not set - use site logo or first media image
+    $fixes_applied = array('og_tags_enabled', 'twitter_cards_enabled');
+    
+    if (empty($settings['default_og_image'])) {
+        // Try custom logo first
+        $custom_logo_id = get_theme_mod('custom_logo');
+        if ($custom_logo_id) {
+            $settings['default_og_image'] = wp_get_attachment_url($custom_logo_id);
+            $fixes_applied[] = 'default_og_image_set_from_logo';
+        } else {
+            // Try to find any uploaded image
+            global $wpdb;
+            $image = $wpdb->get_var("SELECT guid FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type LIKE 'image/%' ORDER BY post_date DESC LIMIT 1");
+            if ($image) {
+                $settings['default_og_image'] = $image;
+                $fixes_applied[] = 'default_og_image_set_from_media';
+            }
+        }
+    }
+    
     update_option('seo_autofix_settings', $settings);
     
     return new WP_REST_Response(array(
         'success' => true,
         'message' => 'Open Graph and Twitter Card tags enabled',
+        'default_og_image' => $settings['default_og_image'] ?? null,
+        'fixes_applied' => $fixes_applied,
     ), 200);
 }
 
@@ -2602,7 +2643,11 @@ function seo_autofix_api_handshake_init($request) {
 }
 
 function seo_autofix_api_handshake_complete($request) {
-    $token = sanitize_text_field($request->get_param('token'));
+    $token = sanitize_text_field($request->get_param('connect_token'));
+    
+    if (empty($token)) {
+        $token = sanitize_text_field($request->get_param('token'));
+    }
     
     if (empty($token)) {
         return new WP_REST_Response(array('success' => false, 'error' => 'token required'), 400);
@@ -2619,6 +2664,13 @@ function seo_autofix_api_handshake_complete($request) {
     }
     
     $api_key = get_option('seo_autofix_api_key');
+    
+    // Ensure API key exists - generate if missing
+    if (empty($api_key)) {
+        $api_key = wp_generate_password(32, false);
+        update_option('seo_autofix_api_key', $api_key);
+    }
+    
     delete_transient('seo_autofix_pending_connection_' . $token);
     
     return new WP_REST_Response(array(
@@ -2632,6 +2684,11 @@ function seo_autofix_api_handshake_complete($request) {
 
 function seo_autofix_api_handshake_status($request) {
     $token = sanitize_text_field($request->get_param('token'));
+    
+    // Also check connect_token for compatibility
+    if (empty($token)) {
+        $token = sanitize_text_field($request->get_param('connect_token'));
+    }
     
     if (empty($token)) {
         return new WP_REST_Response(array('success' => false, 'error' => 'token required'), 400);
@@ -2757,13 +2814,104 @@ function seo_autofix_api_fix_local_seo($request) {
     $settings['enable_local_schema'] = true;
     $settings['enable_click_to_call'] = true;
     if (empty($settings['business_name'])) $settings['business_name'] = get_bloginfo('name');
+    
+    $fixes_applied = array('local_schema_enabled', 'click_to_call_enabled');
+    $needs_manual = array();
+    
+    // Check if address data exists
+    $has_address = !empty($settings['business_address']) || 
+                   (!empty($settings['business_street']) && !empty($settings['business_city']));
+    
+    if (!$has_address) {
+        // Try to extract address from site content
+        $address_found = seo_autofix_extract_address_from_content();
+        if ($address_found) {
+            $settings['business_street'] = $address_found['street'] ?? '';
+            $settings['business_city'] = $address_found['city'] ?? '';
+            $settings['business_state'] = $address_found['state'] ?? '';
+            $settings['business_zip'] = $address_found['zip'] ?? '';
+            $settings['business_country'] = $address_found['country'] ?? '';
+            $fixes_applied[] = 'address_extracted_from_content';
+        } else {
+            $needs_manual[] = array(
+                'issue' => 'business_address',
+                'message' => 'Business address not found. Go to WordPress Admin → SEO AutoFix → Local SEO to add your address.',
+                'admin_url' => admin_url('admin.php?page=seo-auto-fix-local')
+            );
+        }
+    }
+    
+    // Check if phone exists
+    if (empty($settings['business_phone'])) {
+        $phone_found = seo_autofix_extract_phone_from_content();
+        if ($phone_found) {
+            $settings['business_phone'] = $phone_found;
+            $fixes_applied[] = 'phone_extracted_from_content';
+        }
+    }
+    
+    // Enable Google Maps embed if coordinates exist
+    if (!empty($settings['business_lat']) && !empty($settings['business_lng'])) {
+        $settings['enable_google_map'] = true;
+        $fixes_applied[] = 'google_map_enabled';
+    } else {
+        $needs_manual[] = array(
+            'issue' => 'google_map',
+            'message' => 'Add your business coordinates in Local SEO settings to enable Google Maps embed.',
+            'admin_url' => admin_url('admin.php?page=seo-auto-fix-local')
+        );
+    }
+    
     update_option('seo_autofix_settings', $settings);
     
     return new WP_REST_Response(array(
         'success' => true,
         'message' => 'Local SEO fixes applied',
-        'fixes' => array('local_schema', 'click_to_call')
+        'fixes_applied' => $fixes_applied,
+        'needs_manual_action' => $needs_manual,
+        'settings_url' => admin_url('admin.php?page=seo-auto-fix-local')
     ), 200);
+}
+
+// Helper function to extract address from site content
+function seo_autofix_extract_address_from_content() {
+    global $wpdb;
+    
+    // Search in contact page or footer widget content
+    $contact_page = $wpdb->get_var("SELECT post_content FROM {$wpdb->posts} WHERE post_type = 'page' AND post_status = 'publish' AND (post_title LIKE '%contact%' OR post_name LIKE '%contact%') LIMIT 1");
+    
+    if ($contact_page) {
+        // Try to find address pattern (simplified)
+        preg_match('/(\d+\s+[A-Za-z\s]+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln)[^,]*),?\s*([A-Za-z\s]+),?\s*([A-Z]{2})?\s*(\d{5}(?:-\d{4})?)?/i', $contact_page, $matches);
+        
+        if (!empty($matches)) {
+            return array(
+                'street' => trim($matches[1] ?? ''),
+                'city' => trim($matches[2] ?? ''),
+                'state' => trim($matches[3] ?? ''),
+                'zip' => trim($matches[4] ?? ''),
+            );
+        }
+    }
+    
+    return null;
+}
+
+// Helper function to extract phone from site content
+function seo_autofix_extract_phone_from_content() {
+    global $wpdb;
+    
+    $content = $wpdb->get_var("SELECT post_content FROM {$wpdb->posts} WHERE post_type = 'page' AND post_status = 'publish' AND (post_title LIKE '%contact%' OR post_name LIKE '%contact%') LIMIT 1");
+    
+    if ($content) {
+        // Match phone patterns
+        preg_match('/(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/', $content, $matches);
+        if (!empty($matches[0])) {
+            return preg_replace('/[^0-9+]/', '', $matches[0]);
+        }
+    }
+    
+    return null;
 }
 
 function seo_autofix_api_fix_eeat($request) {
@@ -2855,11 +3003,375 @@ function seo_autofix_api_fix_onpage($request) {
     $alt_result = seo_autofix_api_fix_alt_text(new WP_REST_Request('POST'));
     $meta_result = seo_autofix_api_fix_meta(new WP_REST_Request('POST'));
     
+    // Also fix content images (images embedded in post content)
+    $content_images_result = seo_autofix_fix_content_images();
+    
+    // Fix title tag length issues
+    $title_result = seo_autofix_optimize_titles();
+    
+    $needs_manual = array();
+    
+    // Check if there are still images without alt text
+    $alt_data = $alt_result->get_data();
+    if (isset($alt_data['remaining']) && $alt_data['remaining'] > 0) {
+        $needs_manual[] = array(
+            'issue' => 'images_without_alt',
+            'message' => $alt_data['remaining'] . ' images still need alt text. Run fix again or add manually in Media Library.',
+            'admin_url' => admin_url('upload.php')
+        );
+    }
+    
     return new WP_REST_Response(array(
         'success' => true,
         'message' => 'On-page SEO fixes applied',
         'schema_result' => $schema_result->get_data(),
         'alt_result' => $alt_result->get_data(),
-        'meta_result' => $meta_result->get_data()
+        'meta_result' => $meta_result->get_data(),
+        'content_images_fixed' => $content_images_result,
+        'title_optimization' => $title_result,
+        'needs_manual_action' => $needs_manual
+    ), 200);
+}
+
+// Fix images embedded in post content that lack alt attributes
+function seo_autofix_fix_content_images() {
+    global $wpdb;
+    
+    $fixed = 0;
+    $posts = $wpdb->get_results("
+        SELECT ID, post_content FROM {$wpdb->posts} 
+        WHERE post_type IN ('post', 'page') 
+        AND post_status = 'publish'
+        AND post_content LIKE '%<img%'
+        LIMIT 50
+    ");
+    
+    foreach ($posts as $post) {
+        $content = $post->post_content;
+        $updated = false;
+        
+        // Find images without alt or with empty alt
+        preg_match_all('/<img[^>]*>/i', $content, $matches);
+        
+        foreach ($matches[0] as $img_tag) {
+            // Check if alt is missing or empty
+            if (!preg_match('/alt\s*=\s*["\'][^"\']+["\']/i', $img_tag)) {
+                // Extract src to generate alt from filename
+                preg_match('/src\s*=\s*["\']([^"\']+)["\']/i', $img_tag, $src_match);
+                if (!empty($src_match[1])) {
+                    $filename = pathinfo(parse_url($src_match[1], PHP_URL_PATH), PATHINFO_FILENAME);
+                    $alt_text = ucfirst(preg_replace('/[-_]+/', ' ', $filename));
+                    $alt_text = sanitize_text_field($alt_text);
+                    
+                    // Add or replace alt attribute
+                    if (preg_match('/alt\s*=\s*["\']["\']/', $img_tag)) {
+                        // Has empty alt, replace it
+                        $new_img = preg_replace('/alt\s*=\s*["\']["\']/', 'alt="' . esc_attr($alt_text) . '"', $img_tag);
+                    } else {
+                        // No alt at all, add it
+                        $new_img = str_replace('<img', '<img alt="' . esc_attr($alt_text) . '"', $img_tag);
+                    }
+                    
+                    $content = str_replace($img_tag, $new_img, $content);
+                    $updated = true;
+                    $fixed++;
+                }
+            }
+        }
+        
+        if ($updated) {
+            $wpdb->update($wpdb->posts, array('post_content' => $content), array('ID' => $post->ID));
+        }
+    }
+    
+    return array(
+        'fixed' => $fixed,
+        'message' => "Added alt text to $fixed content images"
+    );
+}
+
+// Optimize title tags that are too short or too long
+function seo_autofix_optimize_titles() {
+    global $wpdb;
+    $settings = get_option('seo_autofix_settings', array());
+    
+    // Get posts with short titles
+    $short_titles = $wpdb->get_results("
+        SELECT ID, post_title FROM {$wpdb->posts}
+        WHERE post_type IN ('post', 'page')
+        AND post_status = 'publish'
+        AND CHAR_LENGTH(post_title) < 20
+        LIMIT 20
+    ");
+    
+    $optimized = 0;
+    $site_name = get_bloginfo('name');
+    
+    foreach ($short_titles as $post) {
+        $current_custom = get_post_meta($post->ID, '_seo_autofix_title', true);
+        if (empty($current_custom)) {
+            // Create optimized title by appending site name
+            $new_title = $post->post_title . ' | ' . $site_name;
+            if (strlen($new_title) >= 30 && strlen($new_title) <= 60) {
+                update_post_meta($post->ID, '_seo_autofix_title', $new_title);
+                $optimized++;
+            }
+        }
+    }
+    
+    return array(
+        'optimized' => $optimized,
+        'message' => "Optimized $optimized title tags"
+    );
+}
+
+// ==================== VERIFY/RESCAN ENDPOINT ====================
+function seo_autofix_api_verify_status($request) {
+    global $wpdb;
+    $settings = get_option('seo_autofix_settings', array());
+    $category = $request->get_param('category'); // local_seo, onpage, social, etc.
+    
+    $status = array();
+    
+    // Local SEO Status
+    if (!$category || $category === 'local_seo') {
+        $has_address = !empty($settings['business_address']) || 
+                       (!empty($settings['business_street']) && !empty($settings['business_city']));
+        $has_phone = !empty($settings['business_phone']);
+        $has_map = !empty($settings['business_lat']) && !empty($settings['business_lng']);
+        
+        $status['local_seo'] = array(
+            'local_schema_enabled' => !empty($settings['enable_local_schema']),
+            'has_address' => $has_address,
+            'has_phone' => $has_phone,
+            'has_google_map' => $has_map,
+            'business_name' => $settings['business_name'] ?? get_bloginfo('name'),
+            'issues' => array()
+        );
+        
+        if (!$has_address) {
+            $status['local_seo']['issues'][] = array(
+                'type' => 'address_missing',
+                'fixable' => false,
+                'message' => 'Business address not configured',
+                'action' => 'Go to WordPress Admin → SEO AutoFix → Local SEO to add your address'
+            );
+        }
+        if (!$has_map) {
+            $status['local_seo']['issues'][] = array(
+                'type' => 'map_missing',
+                'fixable' => false,
+                'message' => 'Google Map coordinates not set',
+                'action' => 'Add latitude/longitude in Local SEO settings'
+            );
+        }
+    }
+    
+    // On-Page SEO Status
+    if (!$category || $category === 'onpage') {
+        // Count images without alt text
+        $images_without_alt = intval($wpdb->get_var("
+            SELECT COUNT(p.ID) FROM {$wpdb->posts} p 
+            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_wp_attachment_image_alt'
+            WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%'
+            AND (pm.meta_value IS NULL OR pm.meta_value = '')
+        "));
+        
+        $total_images = intval($wpdb->get_var("
+            SELECT COUNT(*) FROM {$wpdb->posts} 
+            WHERE post_type = 'attachment' AND post_mime_type LIKE 'image/%'
+        "));
+        
+        // Count short titles
+        $short_titles = intval($wpdb->get_var("
+            SELECT COUNT(*) FROM {$wpdb->posts}
+            WHERE post_type IN ('post', 'page') AND post_status = 'publish'
+            AND CHAR_LENGTH(post_title) < 20
+        "));
+        
+        // Count posts without meta descriptions
+        $posts_without_meta = intval($wpdb->get_var("
+            SELECT COUNT(p.ID) FROM {$wpdb->posts} p
+            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_seo_autofix_description'
+            WHERE p.post_type IN ('post', 'page') AND p.post_status = 'publish'
+            AND (pm.meta_value IS NULL OR pm.meta_value = '')
+        "));
+        
+        $status['onpage'] = array(
+            'schema_enabled' => !empty($settings['enable_schema']),
+            'images_with_alt' => $total_images - $images_without_alt,
+            'images_without_alt' => $images_without_alt,
+            'total_images' => $total_images,
+            'alt_percentage' => $total_images > 0 ? round((($total_images - $images_without_alt) / $total_images) * 100) : 100,
+            'short_titles' => $short_titles,
+            'posts_without_meta' => $posts_without_meta,
+            'issues' => array()
+        );
+        
+        if ($images_without_alt > 0) {
+            $status['onpage']['issues'][] = array(
+                'type' => 'images_without_alt',
+                'fixable' => true,
+                'count' => $images_without_alt,
+                'message' => "$images_without_alt images missing alt text",
+                'action' => 'Click "Fix" to auto-generate alt text from filenames'
+            );
+        }
+        if ($short_titles > 0) {
+            $status['onpage']['issues'][] = array(
+                'type' => 'short_titles',
+                'fixable' => true,
+                'count' => $short_titles,
+                'message' => "$short_titles pages have short title tags",
+                'action' => 'Click "Fix" to optimize titles'
+            );
+        }
+    }
+    
+    // Social Status
+    if (!$category || $category === 'social') {
+        $status['social'] = array(
+            'og_tags_enabled' => !empty($settings['enable_og_tags']),
+            'twitter_cards_enabled' => !empty($settings['enable_twitter_cards']),
+            'default_og_image' => $settings['default_og_image'] ?? null,
+            'has_og_image' => !empty($settings['default_og_image']),
+            'social_links' => $settings['social_links'] ?? array(),
+            'issues' => array()
+        );
+        
+        if (empty($settings['default_og_image'])) {
+            $status['social']['issues'][] = array(
+                'type' => 'og_image_missing',
+                'fixable' => true,
+                'message' => 'Default Open Graph image not set',
+                'action' => 'Click "Fix" to auto-set from site logo'
+            );
+        }
+        if (empty($settings['social_links']) || count($settings['social_links']) < 2) {
+            $status['social']['issues'][] = array(
+                'type' => 'social_links_missing',
+                'fixable' => false,
+                'message' => 'Social media profile links not configured',
+                'action' => 'Go to WordPress Admin → SEO AutoFix → Social Tags to add your social profiles'
+            );
+        }
+    }
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'status' => $status,
+        'timestamp' => current_time('mysql')
+    ), 200);
+}
+
+// ==================== CAPABILITIES ENDPOINT ====================
+function seo_autofix_api_get_capabilities() {
+    return new WP_REST_Response(array(
+        'success' => true,
+        'capabilities' => array(
+            'auto_fixable' => array(
+                array(
+                    'id' => 'alt_text',
+                    'name' => 'Image Alt Text',
+                    'description' => 'Auto-generate alt text from image filenames',
+                    'category' => 'onpage'
+                ),
+                array(
+                    'id' => 'meta_descriptions',
+                    'name' => 'Meta Descriptions',
+                    'description' => 'Generate meta descriptions from post excerpts/content',
+                    'category' => 'onpage'
+                ),
+                array(
+                    'id' => 'title_optimization',
+                    'name' => 'Title Tag Optimization',
+                    'description' => 'Optimize short titles by appending site name',
+                    'category' => 'onpage'
+                ),
+                array(
+                    'id' => 'schema_markup',
+                    'name' => 'Schema Markup',
+                    'description' => 'Enable structured data for better search appearance',
+                    'category' => 'onpage'
+                ),
+                array(
+                    'id' => 'og_tags',
+                    'name' => 'Open Graph Tags',
+                    'description' => 'Enable social sharing meta tags',
+                    'category' => 'social'
+                ),
+                array(
+                    'id' => 'twitter_cards',
+                    'name' => 'Twitter Cards',
+                    'description' => 'Enable Twitter card meta tags',
+                    'category' => 'social'
+                ),
+                array(
+                    'id' => 'default_og_image',
+                    'name' => 'Default OG Image',
+                    'description' => 'Set default social sharing image from site logo',
+                    'category' => 'social'
+                ),
+                array(
+                    'id' => 'local_schema',
+                    'name' => 'Local Business Schema',
+                    'description' => 'Enable LocalBusiness structured data',
+                    'category' => 'local_seo'
+                ),
+                array(
+                    'id' => 'sitemap',
+                    'name' => 'XML Sitemap',
+                    'description' => 'Generate and submit XML sitemap',
+                    'category' => 'technical'
+                ),
+                array(
+                    'id' => 'robots_txt',
+                    'name' => 'Robots.txt',
+                    'description' => 'Optimize robots.txt for search engines',
+                    'category' => 'technical'
+                )
+            ),
+            'requires_manual' => array(
+                array(
+                    'id' => 'business_address',
+                    'name' => 'Business Address',
+                    'description' => 'Physical address for LocalBusiness schema',
+                    'category' => 'local_seo',
+                    'admin_page' => 'seo-auto-fix-local',
+                    'reason' => 'Requires your actual business address information'
+                ),
+                array(
+                    'id' => 'google_map',
+                    'name' => 'Google Maps Embed',
+                    'description' => 'Embed Google Maps on contact page',
+                    'category' => 'local_seo',
+                    'admin_page' => 'seo-auto-fix-local',
+                    'reason' => 'Requires latitude/longitude coordinates'
+                ),
+                array(
+                    'id' => 'social_links',
+                    'name' => 'Social Media Links',
+                    'description' => 'Links to social media profiles',
+                    'category' => 'social',
+                    'admin_page' => 'seo-auto-fix-social',
+                    'reason' => 'Requires your actual social media profile URLs'
+                ),
+                array(
+                    'id' => 'ai_alt_text',
+                    'name' => 'AI-Generated Alt Text',
+                    'description' => 'Use AI to generate descriptive alt text',
+                    'category' => 'onpage',
+                    'admin_page' => 'seo-auto-fix-ai',
+                    'reason' => 'Requires OpenAI API key configuration'
+                ),
+                array(
+                    'id' => 'custom_content',
+                    'name' => 'Content Quality',
+                    'description' => 'Improve content readability and keyword usage',
+                    'category' => 'content',
+                    'reason' => 'Content improvements require human expertise'
+                )
+            )
+        )
     ), 200);
 }

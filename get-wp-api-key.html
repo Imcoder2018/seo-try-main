@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WordPress API Key Helper</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .step { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .code { background: #e8e8e8; padding: 10px; border-radius: 3px; font-family: monospace; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        button { padding: 10px 20px; background: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #005a87; }
+    </style>
+</head>
+<body>
+    <h1>🔑 WordPress API Key Helper</h1>
+    
+    <div class="step">
+        <h2>Step 1: Get API Key from WordPress</h2>
+        <ol>
+            <li>Open WordPress Admin: <a href="https://arialflow.com/wp-admin" target="_blank">https://arialflow.com/wp-admin</a></li>
+            <li>Log in with your WordPress credentials</li>
+            <li>Navigate to <strong>SEO AutoFix → API / Connect</strong></li>
+            <li>Ensure <strong>Remote API</strong> is enabled</li>
+            <li>Copy the <strong>API Key</strong> shown on the page</li>
+        </ol>
+    </div>
+    
+    <div class="step">
+        <h2>Step 2: Update Connection in SEO Audit Tool</h2>
+        <p>Go back to the SEO Audit Tool and:</p>
+        <ol>
+            <li>Click the <strong>"Fix Connection"</strong> button</li>
+            <li>Select the <strong>"🔑 Fix API Key"</strong> tab</li>
+            <li>Enter your site URL: <code>https://arialflow.com</code></li>
+            <li>Paste the API key from WordPress</li>
+            <li>Click <strong>"Update API Key"</strong></li>
+        </ol>
+    </div>
+    
+    <div class="step">
+        <h2>Step 3: Test the Connection</h2>
+        <p>After updating the API key, try clicking an auto-fix button. It should work now!</p>
+        <button onclick="testConnection()">Test Connection Now</button>
+        <div id="test-result"></div>
+    </div>
+    
+    <div class="step">
+        <h2>Alternative: Manual Fix with JavaScript</h2>
+        <p>If the UI doesn't work, you can manually fix it in the browser console:</p>
+        <div class="code">
+            <strong>1. Open browser console (F12)</strong><br>
+            <strong>2. Run this command:</strong><br>
+            <pre id="command">fixWordPressConnection("YOUR_API_KEY_HERE");</pre>
+            <button onclick="copyCommand()">Copy Command</button>
+        </div>
+    </div>
+    
+    <script>
+        function testConnection() {
+            const result = document.getElementById('test-result');
+            result.innerHTML = 'Testing...';
+            
+            // Check if we have a connection
+            const connection = localStorage.getItem('wp_connection_global');
+            if (!connection) {
+                result.innerHTML = '<div class="error">No WordPress connection found. Please connect first.</div>';
+                return;
+            }
+            
+            const conn = JSON.parse(connection);
+            
+            // Test the connection
+            fetch('/api/wordpress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    site_url: conn.siteUrl,
+                    api_key: conn.apiKey,
+                    action: 'verify',
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    result.innerHTML = '<div class="success">✅ Connection is working! Auto-fix buttons should work now.</div>';
+                } else {
+                    result.innerHTML = `<div class="error">❌ Connection failed: ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                result.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            });
+        }
+        
+        function copyCommand() {
+            const command = document.getElementById('command').textContent;
+            navigator.clipboard.writeText(command).then(() => {
+                alert('Command copied to clipboard!');
+            });
+        }
+        
+        // Add helper function to window
+        window.fixWordPressConnection = function(apiKey) {
+            const conn = {
+                siteUrl: 'https://arialflow.com',
+                apiKey: apiKey,
+                connected: true,
+                siteName: 'Arialflow'
+            };
+            
+            localStorage.setItem('wp_connection_global', JSON.stringify(conn));
+            console.log('✅ Connection updated with new API key');
+            alert('Connection updated! Refresh the page and try auto-fix buttons.');
+        };
+    </script>
+</body>
+</html>

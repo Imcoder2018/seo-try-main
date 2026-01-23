@@ -30,7 +30,7 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
   const [apiKey, setApiKey] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
-  const [connectMode, setConnectMode] = useState<"manual" | "auto">("manual");
+  const [connectMode, setConnectMode] = useState<"manual" | "auto" | "fix">("manual");
   const [handshakeStatus, setHandshakeStatus] = useState<"idle" | "pending" | "approved" | "error">("idle");
   const [connectToken, setConnectToken] = useState("");
   const [authUrl, setAuthUrl] = useState("");
@@ -68,52 +68,53 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
 
         if (data.status === "approved") {
           setHandshakeStatus("approved");
-          // Complete the handshake to get API key
-          const completeResponse = await fetch("/api/wordpress", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              site_url: siteUrl,
-              action: "handshake_complete",
-              options: { connect_token: connectToken },
-            }),
-          });
-          const completeData = await completeResponse.json();
-          console.log("[WP Connect] Handshake complete response:", completeData);
-
-          // Handle various response formats from the plugin
-          const apiKey = completeData.api_key || completeData.apiKey || completeData.key;
-          const siteName = completeData.site_name || completeData.siteName || completeData.name;
-          const returnedSiteUrl = completeData.site_url || completeData.siteUrl || siteUrl;
           
-          if (completeData.success || apiKey) {
+          // First try to get API key from status response (plugin v5+ includes it)
+          let apiKey = data.api_key || data.apiKey;
+          let siteName = data.site_name || data.siteName;
+          let returnedSiteUrl = data.site_url || data.siteUrl || siteUrl;
+          
+          // If not in status, complete the handshake to get API key
+          if (!apiKey) {
+            const completeResponse = await fetch("/api/wordpress", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                site_url: siteUrl,
+                action: "handshake_complete",
+                options: { connect_token: connectToken },
+              }),
+            });
+            const completeData = await completeResponse.json();
+            console.log("[WP Connect] Handshake complete response:", completeData);
+
+            // Handle various response formats from the plugin
+            apiKey = completeData.api_key || completeData.apiKey || completeData.key;
+            siteName = completeData.site_name || completeData.siteName || completeData.name || siteName;
+            returnedSiteUrl = completeData.site_url || completeData.siteUrl || returnedSiteUrl;
+          }
+          
+          console.log("[WP Connect] Extracted API key:", apiKey ? 'present (length: ' + apiKey.length + ')' : 'missing');
+          
+          if (apiKey && apiKey.length >= 20) {
             const conn: WordPressConnection = {
               siteUrl: returnedSiteUrl,
-              apiKey: apiKey || connectToken, // Use token as fallback
+              apiKey: apiKey, // Use the actual API key from plugin
               connected: true,
               siteName: siteName || returnedSiteUrl,
             };
             // Save to global key so it works across all audited domains
             localStorage.setItem('wp_connection_global', JSON.stringify(conn));
-            console.log("[WP Connect] Connection saved:", conn);
+            console.log("[WP Connect] Connection saved with real API key");
             setConnection(conn);
             onConnectionChange?.(true);
             setShowModal(false);
             setHandshakeStatus("idle");
           } else {
-            console.log("[WP Connect] Missing API key in response, saving with token");
-            // Even without API key, save the connection if handshake was approved
-            const conn: WordPressConnection = {
-              siteUrl: siteUrl,
-              apiKey: connectToken,
-              connected: true,
-              siteName: siteName || siteUrl,
-            };
-            localStorage.setItem('wp_connection_global', JSON.stringify(conn));
-            setConnection(conn);
-            onConnectionChange?.(true);
-            setShowModal(false);
-            setHandshakeStatus("idle");
+            // DO NOT use connectToken as fallback - it won't work for authentication
+            console.error("[WP Connect] Failed to get valid API key from plugin");
+            setHandshakeStatus("error");
+            setError("Connection approved but failed to retrieve API key. Please use Manual Setup with the API key from WordPress admin → SEO AutoFix → API / Connect.");
           }
         }
       } catch {
@@ -201,6 +202,41 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
     }
   };
 
+  const handleFixApiKey = async () => {
+    setConnecting(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/wordpress?site_url=${encodeURIComponent(siteUrl)}&api_key=${encodeURIComponent(apiKey)}`
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.error || "Failed to verify API key");
+        return;
+      }
+
+      const conn: WordPressConnection = {
+        siteUrl,
+        apiKey,
+        connected: true,
+        siteName: data.name,
+      };
+
+      // Save to global key so it works across all audited domains
+      localStorage.setItem('wp_connection_global', JSON.stringify(conn));
+      setConnection(conn);
+      onConnectionChange?.(true);
+      setShowModal(false);
+      console.log("[WP Connect] API key updated successfully");
+    } catch {
+      setError("API key verification failed. Check the key and try again.");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const handleDisconnect = () => {
     // Remove both global and domain-specific keys
     localStorage.removeItem('wp_connection_global');
@@ -232,6 +268,13 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
                 <Zap className="h-4 w-4" />
                 Auto-Fix Ready
               </span>
+              <button
+                onClick={() => setShowModal(true)}
+                className="px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:text-white hover:bg-blue-500 border border-blue-300 dark:border-blue-700 rounded-lg transition-all flex items-center gap-1"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Fix Connection
+              </button>
               <button
                 onClick={handleDisconnect}
                 className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:text-white hover:bg-red-500 border border-red-300 dark:border-red-700 rounded-lg transition-all flex items-center gap-1"
@@ -296,6 +339,18 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
               >
                 🔧 Manual Setup
               </button>
+              {connection?.connected && (
+                <button
+                  onClick={() => setConnectMode("fix")}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    connectMode === "fix"
+                      ? "bg-orange-500 text-white"
+                      : "bg-orange-100 hover:bg-orange-200 text-orange-700"
+                  }`}
+                >
+                  🔑 Fix API Key
+                </button>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -445,6 +500,68 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
                   </button>
                 </>
               )}
+              
+              {connectMode === "fix" ? (
+                <>
+                  <div className="bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+                    <h3 className="font-medium text-orange-800 dark:text-orange-200 mb-2">
+                      Fix API Key Authentication
+                    </h3>
+                    <p className="text-sm text-orange-700 dark:text-orange-300 mb-3">
+                      If auto-fix buttons are failing, you need to update the API key with the correct one from WordPress admin.
+                    </p>
+                    <ol className="text-sm text-orange-700 dark:text-orange-300 space-y-1 list-decimal list-inside">
+                      <li>Go to WordPress admin: <code className="bg-orange-100 px-1 rounded">https://arialflow.com/wp-admin</code></li>
+                      <li>Navigate to <strong>SEO AutoFix → API / Connect</strong></li>
+                      <li>Ensure <strong>Remote API</strong> is enabled</li>
+                      <li>Copy the <strong>API Key</strong> shown on the page</li>
+                      <li>Paste it below and click Update</li>
+                    </ol>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      WordPress Site URL
+                    </label>
+                    <input
+                      type="url"
+                      value={siteUrl}
+                      onChange={(e) => setSiteUrl(e.target.value)}
+                      placeholder="https://arialflow.com"
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Correct API Key</label>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="Paste the API key from WordPress admin"
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleFixApiKey}
+                    disabled={connecting || !siteUrl || !apiKey}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
+                  >
+                    {connecting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4" />
+                        Update API Key
+                      </>
+                    )}
+                  </button>
+                </>
+              ) : null}
 
               {error && (
                 <div className="flex items-center gap-2 text-red-600 text-sm">
@@ -477,9 +594,16 @@ export function AutoFixButton({ domain, fixType, label, onFixed }: AutoFixButton
   const handleFix = async () => {
     // Use global key for WordPress connection
     const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
-    if (!saved) return;
+    if (!saved) {
+      setResult({ success: false, message: "No WordPress connection found" });
+      return;
+    }
 
     const { siteUrl, apiKey } = JSON.parse(saved);
+    console.log(`[AutoFix] Starting fix: ${fixType}`);
+    console.log(`[AutoFix] Site URL: ${siteUrl}`);
+    console.log(`[AutoFix] API Key: ${apiKey ? apiKey.substring(0, 8) + '...' : 'missing'}`);
+    
     setFixing(true);
     setResult(null);
 
@@ -494,15 +618,48 @@ export function AutoFixButton({ domain, fixType, label, onFixed }: AutoFixButton
         }),
       });
 
+      console.log(`[AutoFix] Response status: ${response.status}`);
       const data = await response.json();
+      console.log(`[AutoFix] Response data:`, data);
+      
+      // Handle 401 authentication errors specifically
+      if (response.status === 401 || data.error === "Invalid API key") {
+        console.error(`[AutoFix] Authentication failed - API key invalid`);
+        setResult({ 
+          success: false, 
+          message: "Authentication failed. Click 'Fix Connection' button above to update your API key from WordPress admin → SEO AutoFix → API / Connect." 
+        });
+        return;
+      }
+      
       setResult(data);
       onFixed?.(data);
-    } catch {
+    } catch (error) {
+      console.error(`[AutoFix] Error:`, error);
       setResult({ success: false, message: "Fix failed - check plugin connection" });
     } finally {
       setFixing(false);
     }
   };
+
+  // Extract fix details from result
+  const getFixSummary = () => {
+    if (!result) return null;
+    const items: string[] = [];
+    
+    // Check various result properties for fix counts
+    if (result.fixed) items.push(`${result.fixed} items fixed`);
+    if (result.alt_result?.fixed) items.push(`${result.alt_result.fixed} alt texts`);
+    if (result.meta_result?.fixed) items.push(`${result.meta_result.fixed} meta descriptions`);
+    if (result.content_images_fixed?.fixed) items.push(`${result.content_images_fixed.fixed} content images`);
+    if (result.title_optimization?.optimized) items.push(`${result.title_optimization.optimized} titles`);
+    if (result.fixes_applied?.length) items.push(`${result.fixes_applied.length} settings enabled`);
+    
+    return items.length > 0 ? items.join(', ') : result.message;
+  };
+
+  // Check if there are manual actions needed
+  const needsManualAction = result?.needs_manual_action?.length > 0;
 
   if (result) {
     if (result.success) {
@@ -510,21 +667,46 @@ export function AutoFixButton({ domain, fixType, label, onFixed }: AutoFixButton
         <div className="relative">
           <button
             onClick={() => setShowDetails(!showDetails)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg border border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+              needsManualAction 
+                ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800 hover:bg-yellow-200'
+                : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800 hover:bg-green-200'
+            }`}
           >
             <Check className="h-4 w-4" />
-            <span className="font-medium">Fixed!</span>
-            {(result.fixed || result.message) && (
-              <span className="text-xs opacity-75">({result.fixed ? `${result.fixed} items` : 'details'})</span>
-            )}
+            <span className="font-medium">{needsManualAction ? 'Partial Fix' : 'Fixed!'}</span>
+            <span className="text-xs opacity-75">(details)</span>
           </button>
-          {showDetails && result.message && (
-            <div className="absolute top-full right-0 mt-1 z-10 p-3 bg-white dark:bg-slate-800 border border-green-200 dark:border-green-700 rounded-lg shadow-lg text-xs max-w-xs">
-              <p className="text-green-700 dark:text-green-300 font-medium mb-1">Plugin Response:</p>
-              <p className="text-slate-600 dark:text-slate-400">{result.message}</p>
-              {result.details && (
-                <p className="text-slate-500 dark:text-slate-500 mt-1 text-[10px]">{JSON.stringify(result.details)}</p>
+          {showDetails && (
+            <div className="absolute top-full right-0 mt-1 z-10 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg text-xs max-w-sm min-w-[280px]">
+              <p className="text-green-700 dark:text-green-300 font-medium mb-2">✓ Applied:</p>
+              <p className="text-slate-600 dark:text-slate-400 mb-2">{getFixSummary()}</p>
+              
+              {needsManualAction && (
+                <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                  <p className="text-yellow-700 dark:text-yellow-300 font-medium mb-2">⚠ Manual Action Needed:</p>
+                  {result.needs_manual_action.map((action: { issue: string; message: string; admin_url?: string }, i: number) => (
+                    <div key={i} className="mb-2 text-slate-600 dark:text-slate-400">
+                      <p className="text-xs">{action.message}</p>
+                      {action.admin_url && (
+                        <a href={action.admin_url} target="_blank" rel="noopener noreferrer" 
+                           className="text-blue-600 hover:underline text-[10px]">
+                          Open in WordPress →
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
+              
+              <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-700 flex gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setResult(null); handleFix(); }}
+                  className="text-blue-600 hover:underline text-[10px]"
+                >
+                  Run Again
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -577,6 +759,135 @@ export function AutoFixButton({ domain, fixType, label, onFixed }: AutoFixButton
   );
 }
 
+// Verify/Rescan Button Component - checks if fixes were actually applied
+interface VerifyButtonProps {
+  domain: string;
+  category?: 'local_seo' | 'onpage' | 'social';
+  onVerified?: (status: VerifyStatus) => void;
+}
+
+interface VerifyStatus {
+  success: boolean;
+  status: Record<string, {
+    issues: Array<{
+      type: string;
+      fixable: boolean;
+      message: string;
+      action: string;
+      count?: number;
+    }>;
+    [key: string]: unknown;
+  }>;
+  timestamp: string;
+}
+
+export function VerifyButton({ domain, category, onVerified }: VerifyButtonProps) {
+  const [verifying, setVerifying] = useState(false);
+  const [status, setStatus] = useState<VerifyStatus | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const handleVerify = async () => {
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
+    if (!saved) return;
+
+    const { siteUrl, apiKey } = JSON.parse(saved);
+    setVerifying(true);
+
+    try {
+      const url = `/api/wordpress?action=verify&site_url=${encodeURIComponent(siteUrl)}&api_key=${encodeURIComponent(apiKey)}${category ? `&category=${category}` : ''}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      setStatus(data);
+      onVerified?.(data);
+    } catch (error) {
+      console.error('[Verify] Error:', error);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const getTotalIssues = () => {
+    if (!status?.status) return 0;
+    return Object.values(status.status).reduce((total, cat) => 
+      total + (cat.issues?.length || 0), 0);
+  };
+
+  const getFixableCount = () => {
+    if (!status?.status) return 0;
+    return Object.values(status.status).reduce((total, cat) => 
+      total + (cat.issues?.filter((i: { fixable: boolean }) => i.fixable).length || 0), 0);
+  };
+
+  if (status) {
+    const totalIssues = getTotalIssues();
+    const fixable = getFixableCount();
+    const allFixed = totalIssues === 0;
+
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+            allFixed 
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200'
+              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200'
+          }`}
+        >
+          {allFixed ? <Check className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+          <span className="font-medium">{allFixed ? 'All Fixed!' : `${totalIssues} issues`}</span>
+          {fixable > 0 && <span className="text-xs opacity-75">({fixable} fixable)</span>}
+        </button>
+        {showDetails && (
+          <div className="absolute top-full right-0 mt-1 z-10 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg text-xs max-w-sm min-w-[280px]">
+            <p className="font-medium mb-2">Current Status:</p>
+            {Object.entries(status.status).map(([cat, data]) => (
+              <div key={cat} className="mb-2">
+                <p className="font-medium text-slate-700 dark:text-slate-300 capitalize">{cat.replace('_', ' ')}</p>
+                {data.issues?.length === 0 ? (
+                  <p className="text-green-600 text-[10px]">✓ No issues</p>
+                ) : (
+                  data.issues?.map((issue: { type: string; fixable: boolean; message: string; action: string }, i: number) => (
+                    <div key={i} className={`text-[10px] ${issue.fixable ? 'text-blue-600' : 'text-yellow-600'}`}>
+                      {issue.fixable ? '🔧' : '⚠'} {issue.message}
+                    </div>
+                  ))
+                )}
+              </div>
+            ))}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleVerify(); }}
+              className="mt-2 text-blue-600 hover:underline text-[10px] flex items-center gap-1"
+            >
+              <RefreshCw className="h-3 w-3" /> Rescan
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={handleVerify}
+      disabled={verifying}
+      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 hover:bg-blue-200 transition-colors"
+    >
+      {verifying ? (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Checking...
+        </>
+      ) : (
+        <>
+          <RefreshCw className="h-3.5 w-3.5" />
+          Verify Fixes
+        </>
+      )}
+    </button>
+  );
+}
+
 // Bulk Fix All Button
 interface BulkFixButtonProps {
   domain: string;
@@ -610,7 +921,15 @@ export function BulkFixButton({ domain, fixes, onComplete }: BulkFixButtonProps)
         }),
       });
 
-      await response.json();
+      const data = await response.json();
+      
+      // Handle 401 authentication errors
+      if (response.status === 401 || data.error === "Invalid API key") {
+        console.error("[BulkFix] Authentication failed");
+        alert("Authentication failed. Click 'Fix Connection' to update your API key from WordPress admin.");
+        return;
+      }
+      
       setDone(true);
       onComplete?.();
     } catch {
@@ -697,6 +1016,16 @@ export function CategoryFixButton({ domain, category, label, icon, onFixed }: Ca
       });
 
       const data = await response.json();
+      
+      // Handle 401 authentication errors
+      if (response.status === 401 || data.error === "Invalid API key") {
+        setResult({ 
+          success: false, 
+          message: "Auth failed - use 'Fix Connection' to update API key" 
+        });
+        return;
+      }
+      
       setResult(data);
       onFixed?.(data);
     } catch {
@@ -775,6 +1104,16 @@ export function AutoFixAllButton({ domain, onComplete }: AutoFixAllButtonProps) 
       });
 
       const data = await response.json();
+      
+      // Handle 401 authentication errors
+      if (response.status === 401 || data.error === "Invalid API key") {
+        setResult({ 
+          success: false, 
+          message: "Authentication failed. Click 'Fix Connection' to update your API key from WordPress admin." 
+        });
+        return;
+      }
+      
       setResult(data);
       onComplete?.();
     } catch {
