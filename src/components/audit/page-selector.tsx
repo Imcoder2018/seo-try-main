@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { CheckCircle2, Circle, ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
 
 interface PageData {
@@ -46,18 +46,29 @@ interface PageSelectorProps {
 export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRunningAudit, auditProgress = 0, auditStatus = "" }: PageSelectorProps) {
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["core", "blog", "product", "category", "top-linked"]));
-
-  // Auto-select pages based on priority strategy
+  const initializedRef = useRef(false);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  
+  // Keep the ref updated
   useEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange;
+  }, [onSelectionChange]);
+
+  // Auto-select pages based on priority strategy - only run once on mount
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    
     const autoSelected = new Set<string>();
 
     // Priority 1: Must-audit core pages
     crawlResult.urlGroups.core.forEach(url => autoSelected.add(url));
 
-    // Priority 2: Template representatives (3-5 from each group)
+    // Priority 2: Template representatives (3-5 from each group) - use stable selection
     const selectRepresentatives = (urls: string[], count: number) => {
-      const shuffled = [...urls].sort(() => Math.random() - 0.5);
-      shuffled.slice(0, count).forEach(url => autoSelected.add(url));
+      // Sort alphabetically for stable selection instead of random
+      const sorted = [...urls].sort();
+      sorted.slice(0, count).forEach(url => autoSelected.add(url));
     };
 
     selectRepresentatives(crawlResult.urlGroups.blog, 3);
@@ -72,8 +83,8 @@ export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRun
     crawlResult.pages.filter(p => p.isNavigation).slice(0, 5).forEach(page => autoSelected.add(page.url));
 
     setSelectedUrls(autoSelected);
-    onSelectionChange(Array.from(autoSelected));
-  }, [crawlResult, onSelectionChange]);
+    onSelectionChangeRef.current(Array.from(autoSelected));
+  }, [crawlResult]);
 
   const toggleGroup = (groupName: string) => {
     setExpandedGroups(prev => {

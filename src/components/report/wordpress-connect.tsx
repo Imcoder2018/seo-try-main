@@ -577,6 +577,242 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
   );
 }
 
+// AI-Powered Fix Button - generates content on website and sends to WordPress
+interface AIFixButtonProps {
+  domain: string;
+  fixType: 'alt_text' | 'meta_description' | 'social';
+  label: string;
+  onFixed?: (result: FixResult) => void;
+}
+
+export function AIFixButton({ domain, fixType, label, onFixed }: AIFixButtonProps) {
+  const [fixing, setFixing] = useState(false);
+  const [progress, setProgress] = useState<string>('');
+  const [result, setResult] = useState<FixResult | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const handleAIFix = async () => {
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
+    if (!saved) {
+      setResult({ success: false, message: "No WordPress connection found" });
+      return;
+    }
+
+    const { siteUrl, apiKey } = JSON.parse(saved);
+    setFixing(true);
+    setResult(null);
+
+    try {
+      // Step 1: Fetch pending items from WordPress
+      setProgress('Fetching items from WordPress...');
+      const pendingRes = await fetch("/api/wordpress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          site_url: siteUrl,
+          api_key: apiKey,
+          action: fixType === 'social' ? 'social_settings' : 'ai_pending',
+          options: { type: fixType === 'alt_text' ? 'images' : 'posts' }
+        }),
+      });
+      
+      if (!pendingRes.ok) {
+        throw new Error('Failed to fetch pending items');
+      }
+      
+      const pendingData = await pendingRes.json();
+      console.log('[AIFix] Pending items:', pendingData);
+
+      // Handle social fixes differently
+      if (fixType === 'social') {
+        setProgress('Configuring social settings...');
+        const availableImage = pendingData.available_images?.logo || pendingData.available_images?.featured;
+        
+        const applyRes = await fetch("/api/wordpress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            site_url: siteUrl,
+            api_key: apiKey,
+            action: 'social_apply',
+            options: {
+              enable_og_tags: true,
+              enable_twitter_cards: true,
+              default_og_image: availableImage || ''
+            }
+          }),
+        });
+        
+        const applyData = await applyRes.json();
+        setResult({
+          success: true,
+          message: 'Social settings applied',
+          fixes_applied: applyData.fixes_applied,
+          og_image_set: !!availableImage,
+          needs_manual_action: !availableImage ? [{
+            issue: 'og_image',
+            message: 'No logo or featured image found. Upload a default social image in WordPress Media Library.',
+            admin_url: `${siteUrl}/wp-admin/upload.php`
+          }] : []
+        });
+        onFixed?.(applyData);
+        return;
+      }
+
+      // Step 2: Generate AI content for each item
+      const items = fixType === 'alt_text' ? pendingData.images : pendingData.posts;
+      if (!items || items.length === 0) {
+        setResult({ success: true, message: 'No items need fixing', fixed: 0 });
+        return;
+      }
+
+      setProgress(`Generating AI content for ${items.length} items...`);
+      const generatedItems: Array<{ id: number; alt_text?: string; meta_description?: string }> = [];
+      
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        setProgress(`Generating ${i + 1}/${items.length}...`);
+        
+        try {
+          if (fixType === 'alt_text') {
+            const aiRes = await fetch("/api/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: 'generate_alt_text',
+                data: {
+                  imageName: item.filename,
+                  pageContext: item.page_context || item.title,
+                  imageUrl: item.url
+                }
+              }),
+            });
+            const aiData = await aiRes.json();
+            if (aiData.altText) {
+              generatedItems.push({ id: item.id, alt_text: aiData.altText });
+            }
+          } else if (fixType === 'meta_description') {
+            const aiRes = await fetch("/api/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: 'generate_meta_description',
+                data: {
+                  title: item.title,
+                  content: item.excerpt
+                }
+              }),
+            });
+            const aiData = await aiRes.json();
+            if (aiData.metaDescription) {
+              generatedItems.push({ id: item.id, meta_description: aiData.metaDescription });
+            }
+          }
+        } catch (err) {
+          console.error(`[AIFix] Failed to generate for item ${item.id}:`, err);
+        }
+      }
+
+      // Step 3: Send generated content to WordPress
+      setProgress(`Applying ${generatedItems.length} fixes to WordPress...`);
+      const applyRes = await fetch("/api/wordpress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          site_url: siteUrl,
+          api_key: apiKey,
+          action: 'ai_apply',
+          options: {
+            type: fixType,
+            items: generatedItems
+          }
+        }),
+      });
+
+      const applyData = await applyRes.json();
+      console.log('[AIFix] Apply result:', applyData);
+
+      const remaining = items.length - generatedItems.length;
+      setResult({
+        success: true,
+        message: `Applied ${applyData.applied} AI-generated ${fixType === 'alt_text' ? 'alt texts' : 'meta descriptions'}`,
+        fixed: applyData.applied,
+        needs_manual_action: remaining > 0 ? [{
+          issue: fixType,
+          message: `${remaining} items could not be processed. Try running again or fix manually.`,
+          admin_url: `${siteUrl}/wp-admin/${fixType === 'alt_text' ? 'upload.php' : 'edit.php'}`
+        }] : []
+      });
+      onFixed?.(applyData);
+      
+    } catch (error) {
+      console.error('[AIFix] Error:', error);
+      setResult({ success: false, message: String(error) });
+    } finally {
+      setFixing(false);
+      setProgress('');
+    }
+  };
+
+  if (result) {
+    const needsManual = result.needs_manual_action?.length > 0;
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+            needsManual
+              ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200'
+              : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200'
+          }`}
+        >
+          <Check className="h-4 w-4" />
+          <span className="font-medium">{needsManual ? 'Partial' : 'Fixed!'}</span>
+          <span className="text-xs opacity-75">({result.fixed || 0} items)</span>
+        </button>
+        {showDetails && (
+          <div className="absolute top-full right-0 mt-1 z-10 p-3 bg-white dark:bg-slate-800 border rounded-lg shadow-lg text-xs max-w-sm">
+            <p className="text-green-600 font-medium mb-2">✓ {result.message}</p>
+            {needsManual && result.needs_manual_action?.map((action: { issue: string; message: string; admin_url?: string }, i: number) => (
+              <div key={i} className="mt-2 text-yellow-600">
+                <p>⚠ {action.message}</p>
+                {action.admin_url && (
+                  <a href={action.admin_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-[10px]">
+                    Open in WordPress →
+                  </a>
+                )}
+              </div>
+            ))}
+            <button onClick={() => { setResult(null); handleAIFix(); }} className="mt-2 text-blue-600 hover:underline text-[10px]">
+              Run Again
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={handleAIFix}
+      disabled={fixing}
+      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 shadow-sm font-medium"
+    >
+      {fixing ? (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {progress || 'Processing...'}
+        </>
+      ) : (
+        <>
+          <Zap className="h-3.5 w-3.5" />
+          {label}
+        </>
+      )}
+    </button>
+  );
+}
+
 // Auto-Fix Button Component
 interface AutoFixButtonProps {
   domain: string;

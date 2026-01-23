@@ -324,6 +324,13 @@ function seo_autofix_register_rest_routes() {
         'callback' => 'seo_autofix_api_fix_title_tag',
         'permission_callback' => 'seo_autofix_api_permission',
     ));
+    
+    // Fix: Title optimization (separate endpoint)
+    register_rest_route($namespace, '/fix/title-optimize', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_fix_title_optimize',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
 
     // Fix: WebP conversion
     register_rest_route($namespace, '/fix/webp-conversion', array(
@@ -486,6 +493,33 @@ function seo_autofix_register_rest_routes() {
         'callback' => 'seo_autofix_api_get_capabilities',
         'permission_callback' => '__return_true',
     ));
+    
+    // Get items that need AI-generated fixes (images, posts)
+    register_rest_route($namespace, '/ai/pending', array(
+        'methods' => 'GET',
+        'callback' => 'seo_autofix_api_get_ai_pending',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    // Apply AI-generated content from website
+    register_rest_route($namespace, '/ai/apply', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_apply_ai_content',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    // Get social/OG settings and apply fixes
+    register_rest_route($namespace, '/social/settings', array(
+        'methods' => 'GET',
+        'callback' => 'seo_autofix_api_get_social_settings',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    register_rest_route($namespace, '/social/apply', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_apply_social_fixes',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
 }
 
 function seo_autofix_api_permission($request) {
@@ -585,10 +619,11 @@ function seo_autofix_api_fix_alt_text($request) {
     global $wpdb;
     $settings = get_option('seo_autofix_settings', array());
     $use_ai = $request->get_param('use_ai') && !empty($settings['openai_api_key']);
-    $limit = min(20, intval($request->get_param('limit') ?: 10));
+    $limit = min(100, intval($request->get_param('limit') ?: 50)); // Increased default limit
     
+    // Get images without alt text from media library
     $images = $wpdb->get_results($wpdb->prepare("
-        SELECT p.ID, p.post_title, p.guid FROM {$wpdb->posts} p 
+        SELECT p.ID, p.post_title, p.post_name, p.guid FROM {$wpdb->posts} p 
         LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_wp_attachment_image_alt'
         WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%%'
         AND (pm.meta_value IS NULL OR pm.meta_value = '')
@@ -599,29 +634,61 @@ function seo_autofix_api_fix_alt_text($request) {
     $results = array();
     
     foreach ($images as $img) {
+        $alt = '';
+        
         if ($use_ai) {
             $image_url = wp_get_attachment_url($img->ID);
             $alt = seo_autofix_generate_ai_alt($image_url, $settings['openai_api_key']);
             if (is_wp_error($alt)) {
-                $alt = ucfirst(preg_replace('/[-_]+/', ' ', pathinfo($img->post_title, PATHINFO_FILENAME)));
+                $alt = '';
             }
-        } else {
-            $alt = ucfirst(preg_replace('/[-_]+/', ' ', pathinfo($img->post_title, PATHINFO_FILENAME)));
         }
         
-        $alt = trim(preg_replace('/\s+/', ' ', $alt));
-        if ($alt) {
+        // Fallback: Generate from filename/title
+        if (empty($alt)) {
+            // Try post_title first
+            $source = !empty($img->post_title) ? $img->post_title : $img->post_name;
+            // Clean up the name
+            $alt = preg_replace('/[-_]+/', ' ', $source);
+            $alt = preg_replace('/\d{3,}x\d{3,}/', '', $alt); // Remove dimensions like 800x600
+            $alt = preg_replace('/\s+/', ' ', $alt);
+            $alt = ucfirst(trim($alt));
+            
+            // If still empty, try from guid/url
+            if (empty($alt) || strlen($alt) < 3) {
+                $filename = pathinfo(parse_url($img->guid, PHP_URL_PATH), PATHINFO_FILENAME);
+                $alt = preg_replace('/[-_]+/', ' ', $filename);
+                $alt = preg_replace('/\d{3,}x\d{3,}/', '', $alt);
+                $alt = ucfirst(trim($alt));
+            }
+        }
+        
+        if ($alt && strlen($alt) >= 2) {
             update_post_meta($img->ID, '_wp_attachment_image_alt', sanitize_text_field($alt));
             $fixed++;
-            $results[] = array('id' => $img->ID, 'alt' => $alt);
+            $results[] = array('id' => $img->ID, 'alt' => $alt, 'url' => wp_get_attachment_url($img->ID));
         }
     }
+    
+    // Also fix content images (images in post content)
+    $content_result = seo_autofix_fix_content_images();
+    $content_fixed = is_array($content_result) ? ($content_result['fixed'] ?? 0) : 0;
+    
+    // Count remaining
+    $remaining = intval($wpdb->get_var("
+        SELECT COUNT(p.ID) FROM {$wpdb->posts} p 
+        LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_wp_attachment_image_alt' 
+        WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%' 
+        AND (pm.meta_value IS NULL OR pm.meta_value = '')
+    "));
     
     return new WP_REST_Response(array(
         'success' => true,
         'fixed' => $fixed,
-        'remaining' => max(0, intval($wpdb->get_var("SELECT COUNT(p.ID) FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_wp_attachment_image_alt' WHERE p.post_type = 'attachment' AND p.post_mime_type LIKE 'image/%' AND (pm.meta_value IS NULL OR pm.meta_value = '')")) - $fixed),
-        'results' => $results,
+        'content_images_fixed' => $content_fixed,
+        'remaining' => $remaining,
+        'results' => array_slice($results, 0, 10), // Limit results in response
+        'message' => "Fixed alt text for $fixed media images" . ($content_fixed > 0 ? " and $content_fixed content images" : ""),
     ), 200);
 }
 
@@ -738,33 +805,95 @@ function seo_autofix_api_fix_og_tags($request) {
     $settings['enable_twitter_cards'] = true;
     $settings['twitter_card_type'] = 'summary_large_image';
     
-    // Set default OG image if not set - use site logo or first media image
     $fixes_applied = array('og_tags_enabled', 'twitter_cards_enabled');
+    $needs_manual = array();
+    $og_image_found = false;
     
+    // Try to set default OG image from various sources
     if (empty($settings['default_og_image'])) {
-        // Try custom logo first
+        // 1. Try site logo
         $custom_logo_id = get_theme_mod('custom_logo');
         if ($custom_logo_id) {
-            $settings['default_og_image'] = wp_get_attachment_url($custom_logo_id);
-            $fixes_applied[] = 'default_og_image_set_from_logo';
-        } else {
-            // Try to find any uploaded image
-            global $wpdb;
-            $image = $wpdb->get_var("SELECT guid FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type LIKE 'image/%' ORDER BY post_date DESC LIMIT 1");
-            if ($image) {
-                $settings['default_og_image'] = $image;
-                $fixes_applied[] = 'default_og_image_set_from_media';
+            $logo_url = wp_get_attachment_url($custom_logo_id);
+            if ($logo_url) {
+                $settings['default_og_image'] = $logo_url;
+                $fixes_applied[] = 'og_image_from_site_logo';
+                $og_image_found = true;
             }
         }
+        
+        // 2. Try site icon (favicon)
+        if (!$og_image_found) {
+            $site_icon_id = get_option('site_icon');
+            if ($site_icon_id) {
+                $icon_url = wp_get_attachment_url($site_icon_id);
+                if ($icon_url) {
+                    $settings['default_og_image'] = $icon_url;
+                    $fixes_applied[] = 'og_image_from_site_icon';
+                    $og_image_found = true;
+                }
+            }
+        }
+        
+        // 3. Try homepage featured image
+        if (!$og_image_found) {
+            $front_page_id = get_option('page_on_front');
+            if ($front_page_id) {
+                $featured_id = get_post_thumbnail_id($front_page_id);
+                if ($featured_id) {
+                    $featured_url = wp_get_attachment_url($featured_id);
+                    if ($featured_url) {
+                        $settings['default_og_image'] = $featured_url;
+                        $fixes_applied[] = 'og_image_from_homepage_featured';
+                        $og_image_found = true;
+                    }
+                }
+            }
+        }
+        
+        // 4. Try any large image from media library
+        if (!$og_image_found) {
+            global $wpdb;
+            $image = $wpdb->get_row("
+                SELECT ID, guid FROM {$wpdb->posts} 
+                WHERE post_type = 'attachment' 
+                AND post_mime_type LIKE 'image/%'
+                AND post_mime_type NOT LIKE '%svg%'
+                ORDER BY post_date DESC LIMIT 1
+            ");
+            if ($image) {
+                // Get the large size if available
+                $large_url = wp_get_attachment_image_url($image->ID, 'large');
+                $settings['default_og_image'] = $large_url ?: $image->guid;
+                $fixes_applied[] = 'og_image_from_media_library';
+                $og_image_found = true;
+            }
+        }
+    } else {
+        $og_image_found = true;
+        $fixes_applied[] = 'og_image_already_set';
+    }
+    
+    // If no image found, add to manual actions
+    if (!$og_image_found) {
+        $needs_manual[] = array(
+            'issue' => 'og_image_missing',
+            'message' => 'No suitable image found for Open Graph. Upload a logo or featured image (recommended: 1200x630px).',
+            'admin_url' => admin_url('upload.php?mode=grid')
+        );
     }
     
     update_option('seo_autofix_settings', $settings);
     
     return new WP_REST_Response(array(
         'success' => true,
-        'message' => 'Open Graph and Twitter Card tags enabled',
+        'message' => $og_image_found 
+            ? 'Open Graph tags enabled with default image' 
+            : 'Open Graph tags enabled (no default image found)',
         'default_og_image' => $settings['default_og_image'] ?? null,
+        'og_image_found' => $og_image_found,
         'fixes_applied' => $fixes_applied,
+        'needs_manual_action' => $needs_manual,
     ), 200);
 }
 
@@ -796,29 +925,83 @@ function seo_autofix_api_fix_robots($request) {
 
 function seo_autofix_api_fix_meta($request) {
     global $wpdb;
-
-    $posts = $wpdb->get_results("
-        SELECT p.ID, p.post_title, p.post_excerpt, p.post_content FROM {$wpdb->posts} p
-        LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_seo_autofix_description'
-        WHERE p.post_type IN ('post', 'page') AND p.post_status = 'publish'
-        AND (pm.meta_value IS NULL OR pm.meta_value = '')
-        LIMIT 20
-    ");
+    
+    $force = $request->get_param('force') ? true : false;
+    $limit = min(50, intval($request->get_param('limit') ?: 20));
+    
+    // Get posts - if force is true, get all posts regardless of existing meta
+    if ($force) {
+        $posts = $wpdb->get_results($wpdb->prepare("
+            SELECT p.ID, p.post_title, p.post_excerpt, p.post_content 
+            FROM {$wpdb->posts} p
+            WHERE p.post_type IN ('post', 'page') AND p.post_status = 'publish'
+            LIMIT %d
+        ", $limit));
+    } else {
+        // Get posts without meta description OR with short/empty descriptions
+        $posts = $wpdb->get_results($wpdb->prepare("
+            SELECT p.ID, p.post_title, p.post_excerpt, p.post_content 
+            FROM {$wpdb->posts} p
+            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_seo_autofix_description'
+            WHERE p.post_type IN ('post', 'page') AND p.post_status = 'publish'
+            AND (pm.meta_value IS NULL OR pm.meta_value = '' OR LENGTH(pm.meta_value) < 50)
+            LIMIT %d
+        ", $limit));
+    }
 
     $fixed = 0;
+    $results = array();
+    
     foreach ($posts as $post) {
-        $desc = $post->post_excerpt ?: wp_trim_words(strip_tags($post->post_content), 25, '...');
-        if ($desc) {
+        // Generate description from excerpt or content
+        $desc = '';
+        if (!empty($post->post_excerpt)) {
+            $desc = wp_trim_words(strip_tags($post->post_excerpt), 30, '...');
+        }
+        if (empty($desc) || strlen($desc) < 50) {
+            // Strip shortcodes and HTML, get clean content
+            $clean_content = strip_shortcodes($post->post_content);
+            $clean_content = wp_strip_all_tags($clean_content);
+            $clean_content = preg_replace('/\s+/', ' ', $clean_content);
+            $desc = wp_trim_words($clean_content, 30, '...');
+        }
+        
+        if ($desc && strlen($desc) >= 20) {
+            // Store in our custom meta
             update_post_meta($post->ID, '_seo_autofix_description', sanitize_textarea_field($desc));
             update_post_meta($post->ID, '_seo_autofix_title', sanitize_text_field($post->post_title));
+            
+            // Also try to set Yoast/RankMath meta if those plugins exist
+            if (defined('WPSEO_VERSION')) {
+                update_post_meta($post->ID, '_yoast_wpseo_metadesc', sanitize_textarea_field($desc));
+            }
+            if (defined('RANK_MATH_VERSION')) {
+                update_post_meta($post->ID, 'rank_math_description', sanitize_textarea_field($desc));
+            }
+            
             $fixed++;
+            $results[] = array(
+                'id' => $post->ID,
+                'title' => $post->post_title,
+                'description' => substr($desc, 0, 100) . '...'
+            );
         }
     }
+    
+    // Count remaining posts without meta
+    $remaining = intval($wpdb->get_var("
+        SELECT COUNT(*) FROM {$wpdb->posts} p
+        LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_seo_autofix_description'
+        WHERE p.post_type IN ('post', 'page') AND p.post_status = 'publish'
+        AND (pm.meta_value IS NULL OR pm.meta_value = '' OR LENGTH(pm.meta_value) < 50)
+    "));
 
     return new WP_REST_Response(array(
         'success' => true,
         'fixed' => $fixed,
-        'message' => "Generated meta descriptions for $fixed posts",
+        'remaining' => $remaining,
+        'results' => $results,
+        'message' => $fixed > 0 ? "Generated meta descriptions for $fixed posts" : "All posts already have meta descriptions",
     ), 200);
 }
 
@@ -1347,6 +1530,12 @@ function seo_autofix_api_fix_bulk($request) {
             case 'meta_descriptions':
                 $r = seo_autofix_api_fix_meta($fix_request);
                 $results['meta'] = $r->get_data();
+                break;
+            case 'title':
+            case 'title_tag':
+            case 'title_optimize':
+                $r = seo_autofix_api_fix_title_optimize($fix_request);
+                $results['title'] = $r->get_data();
                 break;
             case 'database':
             case 'database_cleanup':
@@ -3038,55 +3227,80 @@ function seo_autofix_fix_content_images() {
     global $wpdb;
     
     $fixed = 0;
+    $posts_updated = 0;
+    
+    // Get all published posts/pages with images in content
     $posts = $wpdb->get_results("
-        SELECT ID, post_content FROM {$wpdb->posts} 
+        SELECT ID, post_content, post_title FROM {$wpdb->posts} 
         WHERE post_type IN ('post', 'page') 
         AND post_status = 'publish'
         AND post_content LIKE '%<img%'
-        LIMIT 50
+        LIMIT 100
     ");
     
     foreach ($posts as $post) {
         $content = $post->post_content;
         $updated = false;
         
-        // Find images without alt or with empty alt
+        // Find all images in content
         preg_match_all('/<img[^>]*>/i', $content, $matches);
         
         foreach ($matches[0] as $img_tag) {
             // Check if alt is missing or empty
-            if (!preg_match('/alt\s*=\s*["\'][^"\']+["\']/i', $img_tag)) {
+            $has_good_alt = preg_match('/alt\s*=\s*["\']([^"\']+)["\']/i', $img_tag, $alt_match) && !empty(trim($alt_match[1]));
+            
+            if (!$has_good_alt) {
                 // Extract src to generate alt from filename
                 preg_match('/src\s*=\s*["\']([^"\']+)["\']/i', $img_tag, $src_match);
                 if (!empty($src_match[1])) {
-                    $filename = pathinfo(parse_url($src_match[1], PHP_URL_PATH), PATHINFO_FILENAME);
-                    $alt_text = ucfirst(preg_replace('/[-_]+/', ' ', $filename));
-                    $alt_text = sanitize_text_field($alt_text);
+                    $url = $src_match[1];
+                    $filename = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_FILENAME);
                     
-                    // Add or replace alt attribute
-                    if (preg_match('/alt\s*=\s*["\']["\']/', $img_tag)) {
-                        // Has empty alt, replace it
-                        $new_img = preg_replace('/alt\s*=\s*["\']["\']/', 'alt="' . esc_attr($alt_text) . '"', $img_tag);
-                    } else {
-                        // No alt at all, add it
-                        $new_img = str_replace('<img', '<img alt="' . esc_attr($alt_text) . '"', $img_tag);
+                    // Clean up filename to create alt text
+                    $alt_text = preg_replace('/[-_]+/', ' ', $filename);
+                    $alt_text = preg_replace('/\d{3,}x\d{3,}/', '', $alt_text); // Remove dimensions
+                    $alt_text = preg_replace('/\s+/', ' ', $alt_text);
+                    $alt_text = ucfirst(trim($alt_text));
+                    
+                    // If alt is too short, use post title as context
+                    if (strlen($alt_text) < 5) {
+                        $alt_text = sanitize_text_field($post->post_title) . ' image';
                     }
                     
-                    $content = str_replace($img_tag, $new_img, $content);
-                    $updated = true;
-                    $fixed++;
+                    $alt_text = sanitize_text_field($alt_text);
+                    
+                    if (strlen($alt_text) >= 3) {
+                        // Check if image has empty alt="" or no alt at all
+                        if (preg_match('/alt\s*=\s*["\']\s*["\']/i', $img_tag)) {
+                            // Has empty alt, replace it
+                            $new_img = preg_replace('/alt\s*=\s*["\']\s*["\']/i', 'alt="' . esc_attr($alt_text) . '"', $img_tag);
+                        } else if (!preg_match('/alt\s*=/i', $img_tag)) {
+                            // No alt attribute at all, add it after <img
+                            $new_img = preg_replace('/<img/i', '<img alt="' . esc_attr($alt_text) . '"', $img_tag);
+                        } else {
+                            continue; // Skip if it has some alt attribute we can't handle
+                        }
+                        
+                        $content = str_replace($img_tag, $new_img, $content);
+                        $updated = true;
+                        $fixed++;
+                    }
                 }
             }
         }
         
         if ($updated) {
             $wpdb->update($wpdb->posts, array('post_content' => $content), array('ID' => $post->ID));
+            // Clear post cache
+            clean_post_cache($post->ID);
+            $posts_updated++;
         }
     }
     
     return array(
         'fixed' => $fixed,
-        'message' => "Added alt text to $fixed content images"
+        'posts_updated' => $posts_updated,
+        'message' => "Added alt text to $fixed content images in $posts_updated posts"
     );
 }
 
@@ -3095,34 +3309,58 @@ function seo_autofix_optimize_titles() {
     global $wpdb;
     $settings = get_option('seo_autofix_settings', array());
     
-    // Get posts with short titles
+    // Get posts with short titles (less than 30 chars)
     $short_titles = $wpdb->get_results("
         SELECT ID, post_title FROM {$wpdb->posts}
         WHERE post_type IN ('post', 'page')
         AND post_status = 'publish'
-        AND CHAR_LENGTH(post_title) < 20
-        LIMIT 20
+        AND CHAR_LENGTH(post_title) < 30
+        LIMIT 50
     ");
     
     $optimized = 0;
+    $results = array();
     $site_name = get_bloginfo('name');
     
     foreach ($short_titles as $post) {
         $current_custom = get_post_meta($post->ID, '_seo_autofix_title', true);
-        if (empty($current_custom)) {
-            // Create optimized title by appending site name
-            $new_title = $post->post_title . ' | ' . $site_name;
-            if (strlen($new_title) >= 30 && strlen($new_title) <= 60) {
-                update_post_meta($post->ID, '_seo_autofix_title', $new_title);
-                $optimized++;
-            }
+        $current_len = strlen($post->post_title);
+        
+        // Create optimized title by appending site name if needed
+        $new_title = $post->post_title . ' | ' . $site_name;
+        $new_len = strlen($new_title);
+        
+        // Only optimize if current title is short and new title is within range
+        if ($current_len < 30 && $new_len >= 30 && $new_len <= 70) {
+            update_post_meta($post->ID, '_seo_autofix_title', $new_title);
+            $optimized++;
+            $results[] = array(
+                'id' => $post->ID,
+                'original' => $post->post_title,
+                'optimized' => $new_title,
+                'original_length' => $current_len,
+                'new_length' => $new_len
+            );
         }
     }
     
     return array(
         'optimized' => $optimized,
-        'message' => "Optimized $optimized title tags"
+        'results' => $results,
+        'message' => $optimized > 0 ? "Optimized $optimized title tags to ideal length (30-60 chars)" : "All titles are already optimized"
     );
+}
+
+// Dedicated API endpoint for title optimization
+function seo_autofix_api_fix_title_optimize($request) {
+    $result = seo_autofix_optimize_titles();
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'fixed' => $result['optimized'],
+        'results' => $result['results'] ?? array(),
+        'message' => $result['message']
+    ), 200);
 }
 
 // ==================== VERIFY/RESCAN ENDPOINT ====================
@@ -3372,6 +3610,264 @@ function seo_autofix_api_get_capabilities() {
                     'reason' => 'Content improvements require human expertise'
                 )
             )
+        )
+    ), 200);
+}
+
+// Get items that need AI-generated content (images without alt, posts without meta)
+function seo_autofix_api_get_ai_pending($request) {
+    $type = sanitize_text_field($request->get_param('type') ?: 'all');
+    $limit = intval($request->get_param('limit') ?: 20);
+    
+    $result = array(
+        'images' => array(),
+        'posts' => array(),
+        'site_info' => array(
+            'name' => get_bloginfo('name'),
+            'description' => get_bloginfo('description'),
+            'url' => home_url()
+        )
+    );
+    
+    // Get images without alt text
+    if ($type === 'all' || $type === 'images') {
+        $images = get_posts(array(
+            'post_type' => 'attachment',
+            'post_mime_type' => 'image',
+            'posts_per_page' => $limit,
+            'meta_query' => array(
+                'relation' => 'OR',
+                array(
+                    'key' => '_wp_attachment_image_alt',
+                    'compare' => 'NOT EXISTS'
+                ),
+                array(
+                    'key' => '_wp_attachment_image_alt',
+                    'value' => '',
+                    'compare' => '='
+                )
+            )
+        ));
+        
+        foreach ($images as $image) {
+            $file = get_attached_file($image->ID);
+            $filename = $file ? basename($file) : '';
+            $parent_post = $image->post_parent ? get_post($image->post_parent) : null;
+            
+            $result['images'][] = array(
+                'id' => $image->ID,
+                'url' => wp_get_attachment_url($image->ID),
+                'filename' => $filename,
+                'title' => $image->post_title,
+                'page_context' => $parent_post ? $parent_post->post_title : '',
+                'page_content' => $parent_post ? wp_trim_words(strip_tags($parent_post->post_content), 50) : ''
+            );
+        }
+    }
+    
+    // Get posts without meta descriptions
+    if ($type === 'all' || $type === 'posts') {
+        $posts = get_posts(array(
+            'post_type' => array('post', 'page'),
+            'posts_per_page' => $limit,
+            'post_status' => 'publish',
+            'meta_query' => array(
+                'relation' => 'OR',
+                array(
+                    'key' => '_seo_autofix_meta_description',
+                    'compare' => 'NOT EXISTS'
+                ),
+                array(
+                    'key' => '_seo_autofix_meta_description',
+                    'value' => '',
+                    'compare' => '='
+                ),
+                array(
+                    'key' => '_yoast_wpseo_metadesc',
+                    'compare' => 'NOT EXISTS'
+                )
+            )
+        ));
+        
+        foreach ($posts as $post) {
+            // Skip if already has Yoast meta
+            $yoast_meta = get_post_meta($post->ID, '_yoast_wpseo_metadesc', true);
+            $our_meta = get_post_meta($post->ID, '_seo_autofix_meta_description', true);
+            
+            if (!empty($yoast_meta) || !empty($our_meta)) {
+                continue;
+            }
+            
+            $result['posts'][] = array(
+                'id' => $post->ID,
+                'title' => $post->post_title,
+                'url' => get_permalink($post->ID),
+                'excerpt' => wp_trim_words(strip_tags($post->post_content), 100),
+                'type' => $post->post_type
+            );
+        }
+    }
+    
+    $result['counts'] = array(
+        'images_pending' => count($result['images']),
+        'posts_pending' => count($result['posts'])
+    );
+    
+    return new WP_REST_Response($result, 200);
+}
+
+// Apply AI-generated content from the website
+function seo_autofix_api_apply_ai_content($request) {
+    $body = $request->get_json_params();
+    $type = sanitize_text_field($body['type'] ?? '');
+    $items = $body['items'] ?? array();
+    
+    $results = array(
+        'success' => true,
+        'applied' => 0,
+        'failed' => 0,
+        'details' => array()
+    );
+    
+    if ($type === 'alt_text' && !empty($items)) {
+        foreach ($items as $item) {
+            $image_id = intval($item['id'] ?? 0);
+            $alt_text = sanitize_text_field($item['alt_text'] ?? '');
+            
+            if ($image_id && $alt_text) {
+                $updated = update_post_meta($image_id, '_wp_attachment_image_alt', $alt_text);
+                if ($updated !== false) {
+                    $results['applied']++;
+                    $results['details'][] = array(
+                        'id' => $image_id,
+                        'status' => 'success',
+                        'alt_text' => $alt_text
+                    );
+                } else {
+                    $results['failed']++;
+                    $results['details'][] = array(
+                        'id' => $image_id,
+                        'status' => 'failed',
+                        'error' => 'Could not update alt text'
+                    );
+                }
+            }
+        }
+    }
+    
+    if ($type === 'meta_description' && !empty($items)) {
+        foreach ($items as $item) {
+            $post_id = intval($item['id'] ?? 0);
+            $meta_desc = sanitize_text_field($item['meta_description'] ?? '');
+            
+            if ($post_id && $meta_desc) {
+                update_post_meta($post_id, '_seo_autofix_meta_description', $meta_desc);
+                $results['applied']++;
+                $results['details'][] = array(
+                    'id' => $post_id,
+                    'status' => 'success',
+                    'meta_description' => $meta_desc
+                );
+            }
+        }
+    }
+    
+    $results['message'] = sprintf('Applied %d AI-generated items', $results['applied']);
+    
+    return new WP_REST_Response($results, 200);
+}
+
+// Get current social/OG settings
+function seo_autofix_api_get_social_settings($request) {
+    $settings = get_option('seo_autofix_settings', array());
+    
+    // Get potential default images
+    $logo_id = get_theme_mod('custom_logo');
+    $logo_url = $logo_id ? wp_get_attachment_url($logo_id) : '';
+    
+    // Get first featured image from recent posts as fallback
+    $featured_image = '';
+    $recent_posts = get_posts(array('numberposts' => 5, 'post_status' => 'publish'));
+    foreach ($recent_posts as $post) {
+        $thumb = get_the_post_thumbnail_url($post->ID, 'large');
+        if ($thumb) {
+            $featured_image = $thumb;
+            break;
+        }
+    }
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'settings' => array(
+            'enable_og_tags' => !empty($settings['enable_og_tags']),
+            'enable_twitter_cards' => !empty($settings['enable_twitter_cards']),
+            'default_og_image' => $settings['default_og_image'] ?? '',
+            'twitter_username' => $settings['twitter_username'] ?? '',
+            'facebook_url' => $settings['facebook_url'] ?? '',
+            'instagram_url' => $settings['instagram_url'] ?? ''
+        ),
+        'available_images' => array(
+            'logo' => $logo_url,
+            'featured' => $featured_image
+        ),
+        'site_info' => array(
+            'name' => get_bloginfo('name'),
+            'description' => get_bloginfo('description'),
+            'url' => home_url()
+        )
+    ), 200);
+}
+
+// Apply social/OG fixes
+function seo_autofix_api_apply_social_fixes($request) {
+    $body = $request->get_json_params();
+    $settings = get_option('seo_autofix_settings', array());
+    $fixes_applied = array();
+    
+    // Enable OG tags
+    if (isset($body['enable_og_tags'])) {
+        $settings['enable_og_tags'] = (bool) $body['enable_og_tags'];
+        $fixes_applied[] = 'og_tags_' . ($body['enable_og_tags'] ? 'enabled' : 'disabled');
+    }
+    
+    // Enable Twitter cards
+    if (isset($body['enable_twitter_cards'])) {
+        $settings['enable_twitter_cards'] = (bool) $body['enable_twitter_cards'];
+        $fixes_applied[] = 'twitter_cards_' . ($body['enable_twitter_cards'] ? 'enabled' : 'disabled');
+    }
+    
+    // Set default OG image
+    if (!empty($body['default_og_image'])) {
+        $settings['default_og_image'] = esc_url_raw($body['default_og_image']);
+        $fixes_applied[] = 'default_og_image_set';
+    }
+    
+    // Set social URLs
+    if (isset($body['twitter_username'])) {
+        $settings['twitter_username'] = sanitize_text_field($body['twitter_username']);
+        if ($body['twitter_username']) $fixes_applied[] = 'twitter_username_set';
+    }
+    
+    if (isset($body['facebook_url'])) {
+        $settings['facebook_url'] = esc_url_raw($body['facebook_url']);
+        if ($body['facebook_url']) $fixes_applied[] = 'facebook_url_set';
+    }
+    
+    if (isset($body['instagram_url'])) {
+        $settings['instagram_url'] = esc_url_raw($body['instagram_url']);
+        if ($body['instagram_url']) $fixes_applied[] = 'instagram_url_set';
+    }
+    
+    update_option('seo_autofix_settings', $settings);
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'message' => 'Social settings updated',
+        'fixes_applied' => $fixes_applied,
+        'current_settings' => array(
+            'enable_og_tags' => !empty($settings['enable_og_tags']),
+            'enable_twitter_cards' => !empty($settings['enable_twitter_cards']),
+            'default_og_image' => $settings['default_og_image'] ?? '',
         )
     ), 200);
 }

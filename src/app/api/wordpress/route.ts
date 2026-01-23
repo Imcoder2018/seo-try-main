@@ -249,6 +249,11 @@ export async function POST(request: NextRequest) {
       // Comprehensive auto-fix
       auto_fix_all: "/wp-json/seo-autofix/v1/audit/auto-fix",
       detect_issues: "/wp-json/seo-autofix/v1/audit/issues",
+      // AI-powered fix endpoints (content generated on website)
+      ai_pending: "/wp-json/seo-autofix/v1/ai/pending",
+      ai_apply: "/wp-json/seo-autofix/v1/ai/apply",
+      social_settings: "/wp-json/seo-autofix/v1/social/settings",
+      social_apply: "/wp-json/seo-autofix/v1/social/apply",
     };
 
     const endpoint = actionEndpoints[action];
@@ -259,7 +264,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const method = action === "verify" || action === "status" || action === "detect_issues" ? "GET" : "POST";
+    const method = ["verify", "status", "detect_issues", "ai_pending", "social_settings"].includes(action) ? "GET" : "POST";
     
     const fetchOptions: RequestInit = {
       method,

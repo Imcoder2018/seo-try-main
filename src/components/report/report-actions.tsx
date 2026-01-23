@@ -14,13 +14,50 @@ export function ReportActions({ auditData }: ReportActionsProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
 
+  // Compute check counts from audit data
+  const computeCheckCounts = () => {
+    const data = auditData as Record<string, unknown>;
+    let passed = 0, warnings = 0, failed = 0;
+    
+    // Count from category results if available
+    const categories = ['localSeo', 'seo', 'links', 'usability', 'performance', 'social', 'content', 'eeat', 'technology'];
+    categories.forEach(cat => {
+      const catData = data[cat] as { checks?: Array<{ status?: string }> } | undefined;
+      if (catData?.checks) {
+        catData.checks.forEach((check: { status?: string }) => {
+          if (check.status === 'passed' || check.status === 'good') passed++;
+          else if (check.status === 'warning' || check.status === 'moderate') warnings++;
+          else if (check.status === 'failed' || check.status === 'poor' || check.status === 'error') failed++;
+        });
+      }
+    });
+    
+    // Fallback: estimate from scores if no check data
+    if (passed === 0 && warnings === 0 && failed === 0) {
+      const score = (data.overallScore as number) || 50;
+      passed = Math.round(score / 10);
+      warnings = Math.round((100 - score) / 20);
+      failed = Math.round((100 - score) / 15);
+    }
+    
+    return { passed, warnings, failed };
+  };
+
   const handleDownloadPdf = async () => {
     setPdfLoading(true);
     try {
+      const counts = computeCheckCounts();
+      const enrichedData = {
+        ...auditData,
+        passedChecks: counts.passed,
+        warningChecks: counts.warnings,
+        failedChecks: counts.failed,
+      };
+      
       const response = await fetch("/api/report/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auditData }),
+        body: JSON.stringify({ auditData: enrichedData }),
       });
 
       if (!response.ok) {
