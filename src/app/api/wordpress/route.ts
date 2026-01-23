@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+// Helper function to normalize URL
+function normalizeUrl(url: string): string {
+  let normalized = url.trim();
+  if (!normalized.startsWith('http')) {
+    normalized = 'https://' + normalized;
+  }
+  return normalized.replace(/\/$/, ''); // Remove trailing slash
+}
+
 // Verify WordPress connection or check handshake status
 export async function GET(request: NextRequest) {
   const siteUrl = request.nextUrl.searchParams.get("site_url");
@@ -12,8 +21,9 @@ export async function GET(request: NextRequest) {
   // Handle handshake status check
   if (action === "handshake_status" && siteUrl && connectToken) {
     try {
+      const normalizedUrl = normalizeUrl(siteUrl);
       const response = await fetch(
-        `${siteUrl}/wp-json/seo-autofix/v1/handshake/status?connect_token=${connectToken}`,
+        `${normalizedUrl}/wp-json/seo-autofix/v1/handshake/status?token=${connectToken}`,
         { cache: "no-store" }
       );
       const data = await response.json();
@@ -29,8 +39,9 @@ export async function GET(request: NextRequest) {
   // Handle issue detection
   if (action === "detect_issues" && siteUrl && apiKey) {
     try {
+      const normalizedUrl = normalizeUrl(siteUrl);
       const response = await fetch(
-        `${siteUrl}/wp-json/seo-autofix/v1/audit/issues`,
+        `${normalizedUrl}/wp-json/seo-autofix/v1/audit/issues`,
         {
           headers: {
             "X-SEO-AutoFix-Key": apiKey,
@@ -57,7 +68,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const response = await fetch(`${siteUrl}/wp-json/seo-autofix/v1/verify`, {
+    const normalizedUrl = normalizeUrl(siteUrl);
+    const response = await fetch(`${normalizedUrl}/wp-json/seo-autofix/v1/verify`, {
       headers: {
         "X-SEO-AutoFix-Key": apiKey,
         Authorization: `Bearer ${apiKey}`,
@@ -143,8 +155,9 @@ export async function POST(request: NextRequest) {
 
     // Handle handshake completion
     if (action === "handshake_complete" && site_url && options?.connect_token) {
+      const normalizedUrl = normalizeUrl(site_url);
       const response = await fetch(
-        `${site_url}/wp-json/seo-autofix/v1/handshake/complete`,
+        `${normalizedUrl}/wp-json/seo-autofix/v1/handshake/complete`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -218,7 +231,8 @@ export async function POST(request: NextRequest) {
       fetchOptions.body = JSON.stringify(options);
     }
 
-    const response = await fetch(`${site_url}${endpoint}`, fetchOptions);
+    const normalizedSiteUrl = normalizeUrl(site_url);
+    const response = await fetch(`${normalizedSiteUrl}${endpoint}`, fetchOptions);
 
     if (!response.ok) {
       const errorText = await response.text();

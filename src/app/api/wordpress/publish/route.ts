@@ -194,8 +194,8 @@ export async function POST(request: NextRequest) {
     // Store successful publish in database
     let dbStored = false;
     try {
-      if (prisma && prisma.wordpressPublish) {
-        await prisma.wordpressPublish.create({
+      if (prisma && (prisma as any).wordPressPublish) {
+        await (prisma as any).wordPressPublish.create({
           data: {
             title: title,
             content: content,
@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
     try {
       const body = await request.clone().json().catch(() => ({}));
       const currentUser = await requireAuth();
-      await prisma.wordpressPublish.create({
+      await (prisma as any).wordPressPublish.create({
         data: {
           title: body.title || "Unknown",
           content: body.content || "",

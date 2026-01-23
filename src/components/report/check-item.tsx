@@ -199,46 +199,75 @@ export function CheckItem({ id, name, status, message, value, forceShow, sourceP
     }
   };
 
+  const statusStyles = {
+    pass: "border-l-green-400 bg-gradient-to-r from-green-50/50 to-transparent dark:from-green-900/10",
+    warning: "border-l-amber-400 bg-gradient-to-r from-amber-50/50 to-transparent dark:from-amber-900/10",
+    fail: "border-l-red-400 bg-gradient-to-r from-red-50/50 to-transparent dark:from-red-900/10",
+    info: "border-l-blue-400 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-900/10",
+  };
+
   return (
     <div
       id={id}
-      className="border-b last:border-b-0"
+      className="border-b border-slate-100 dark:border-slate-800 last:border-b-0"
     >
       <div 
         className={cn(
-          "flex items-start gap-4 p-4 hover:bg-muted/30 transition-colors",
-          hasExpandableContent && "cursor-pointer bg-blue-50/50 dark:bg-blue-900/20 border-l-4 border-l-blue-400"
+          "flex items-start gap-4 p-4 hover:bg-muted/30 transition-all duration-200 border-l-4 rounded-r-lg",
+          statusStyles[status],
+          hasExpandableContent && "cursor-pointer hover:shadow-md"
         )}
         onClick={() => hasExpandableContent && setExpanded(!expanded)}
       >
         <div
           className={cn(
-            "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
-            config.bg
+            "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center shadow-sm",
+            config.bg,
+            "ring-2 ring-white dark:ring-slate-800"
           )}
         >
-          <Icon className={cn("w-4 h-4", config.color)} />
+          <Icon className={cn("w-5 h-5", config.color)} />
         </div>
-        <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm mb-1">{name}</h4>
-          <p className="text-sm text-muted-foreground">{message}</p>
+        <div className="flex-1 min-w-0 pr-12">
+          <div className="flex items-center gap-2 mb-1">
+            <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100">{name}</h4>
+            {hasIssue && (
+              <span className={cn(
+                "px-2 py-0.5 text-xs font-medium rounded-full",
+                status === "fail" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+              )}>
+                {status === "fail" ? "Issue" : "Warning"}
+              </span>
+            )}
+            {status === "pass" && (
+              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Passed
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{message}</p>
           {sourcePages && sourcePages.length > 0 && hasIssue && (
-            <p className="text-xs text-gray-500 mt-1">
-              Found on: {sourcePages.slice(0, 3).map(url => {
+            <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+              <span className="font-medium">Found on:</span>
+              {sourcePages.slice(0, 3).map(url => {
                 try { return new URL(url).pathname || '/'; } catch { return url; }
               }).join(', ')}{sourcePages.length > 3 ? ` +${sourcePages.length - 3} more` : ''}
             </p>
           )}
         </div>
         {hasExpandableContent && (
-          <div className="flex-shrink-0 text-muted-foreground">
-            {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          <div className={cn(
+            "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+            expanded ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+          )}>
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </div>
         )}
       </div>
       
       {expanded && hasExpandableContent && (
-        <div className="px-4 pb-4 pt-0 ml-12">
+        <div className="px-4 pb-4 pt-2 ml-14 bg-slate-50/50 dark:bg-slate-800/30 rounded-b-lg border-l-4 border-l-blue-200 dark:border-l-blue-800">
           {renderExpandedContent()}
         </div>
       )}

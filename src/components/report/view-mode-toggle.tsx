@@ -43,7 +43,7 @@ export function ViewModeToggle() {
         }`}
       >
         <Eye className="w-4 h-4" />
-        Simple
+        Standard
       </button>
       <button
         onClick={() => setViewMode("advanced")}

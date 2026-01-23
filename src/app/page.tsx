@@ -26,35 +26,47 @@ export default function HomePage() {
       <Header />
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="relative py-24 px-4 bg-gradient-to-br from-blue-600/5 via-indigo-600/5 to-purple-600/5 overflow-hidden">
-          <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
-            <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-blue-500/5 to-purple-500/5 rounded-full blur-3xl"></div>
+        <section className="relative py-20 lg:py-32 px-4 bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-blue-950/20 dark:to-indigo-950/30 overflow-hidden">
+          {/* Animated background elements */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-gradient-to-br from-blue-400/20 to-indigo-400/20 rounded-full blur-3xl animate-pulse"></div>
+            <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] bg-gradient-radial from-blue-500/5 via-transparent to-transparent rounded-full"></div>
+            {/* Grid pattern overlay */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(59,130,246,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.03)_1px,transparent_1px)] bg-[size:44px_44px]"></div>
           </div>
           
           <div className="container mx-auto max-w-6xl relative">
-            <div className="text-center mb-12">
-              <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-full mb-8 backdrop-blur-sm">
+            <div className="text-center mb-14">
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-blue-200/50 dark:border-blue-800/50 rounded-full mb-8 shadow-lg shadow-blue-500/10">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 <Sparkles className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">AI-Powered SEO Platform</span>
               </div>
-              <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-                <span className="bg-gradient-to-r from-slate-900 via-slate-700 to-slate-900 dark:from-white dark:via-slate-200 dark:to-white bg-clip-text text-transparent">
-                  Transform Your
+              
+              {/* Main heading */}
+              <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold mb-6 leading-[1.1] tracking-tight">
+                <span className="bg-gradient-to-r from-slate-900 via-slate-700 to-slate-800 dark:from-white dark:via-slate-200 dark:to-slate-300 bg-clip-text text-transparent">
+                  Supercharge Your
                 </span>
                 <br />
-                <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  Content Strategy
+                <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent animate-gradient">
+                  SEO Performance
                 </span>
               </h1>
-              <p className="text-xl text-slate-600 dark:text-slate-400 mb-10 max-w-3xl mx-auto leading-relaxed">
-                Comprehensive SEO audits, AI-powered content generation, and intelligent strategy planning — all in one platform. Boost your rankings with data-driven insights.
+              
+              {/* Subheading */}
+              <p className="text-lg md:text-xl text-slate-600 dark:text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+                Get instant SEO audits, AI-powered content suggestions, and one-click WordPress fixes. 
+                <span className="font-semibold text-slate-900 dark:text-slate-200"> Everything you need to rank higher.</span>
               </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              
+              {/* CTA buttons */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
                 <Link
                   href="/content-strategy"
-                  className="group inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all font-semibold shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30"
+                  className="group inline-flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl hover:from-blue-700 hover:to-indigo-700 transition-all font-semibold shadow-xl shadow-blue-500/25 hover:shadow-2xl hover:shadow-blue-500/30 hover:-translate-y-0.5"
                 >
                   <Layers className="w-5 h-5" />
                   Open Content Hub
@@ -62,71 +74,117 @@ export default function HomePage() {
                 </Link>
                 <Link
                   href="/content-strategy?view=history"
-                  className="inline-flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-slate-900 dark:text-slate-100 shadow-lg"
+                  className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-slate-900 dark:text-slate-100 shadow-lg hover:-translate-y-0.5"
                 >
                   View History
                   <ArrowRight className="w-5 h-5" />
                 </Link>
               </div>
+              
+              {/* Trust indicators */}
+              <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500 dark:text-slate-400">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  <span>Free Forever</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  <span>No Credit Card</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  <span>Instant Results</span>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 border border-slate-200/50 dark:border-slate-700/50">
-              <AuditForm />
+            {/* Audit Form Card */}
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-3xl blur-xl opacity-20 -z-10"></div>
+              <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl rounded-3xl shadow-2xl p-8 lg:p-10 border border-slate-200/50 dark:border-slate-700/50">
+                <AuditForm />
+              </div>
             </div>
           </div>
         </section>
 
         {/* Quick Access Cards */}
-        <section className="py-16 px-4 bg-white dark:bg-slate-900">
+        <section className="py-20 px-4 bg-white dark:bg-slate-900 relative overflow-hidden">
+          {/* Background decoration */}
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
+          
           <div className="container mx-auto max-w-6xl">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+            <div className="text-center mb-14">
+              <span className="inline-block px-4 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-semibold rounded-full mb-4">
+                All-in-One Platform
+              </span>
+              <h2 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-slate-100 mb-4">
                 Your Content Command Center
               </h2>
-              <p className="text-lg text-slate-600 dark:text-slate-400">
-                Everything you need to create, optimize, and publish winning content
+              <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+                Everything you need to create, optimize, and publish winning content that ranks
               </p>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Link href="/content-strategy?view=analysis" className="group">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-900/20 dark:to-blue-800/10 rounded-2xl p-6 border border-blue-200/50 dark:border-blue-800/50 hover:shadow-xl hover:shadow-blue-500/10 transition-all h-full">
-                  <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <BarChart3 className="w-6 h-6 text-white" />
+                <div className="relative bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:shadow-2xl hover:shadow-blue-500/10 transition-all h-full hover:-translate-y-1 overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-blue-500/10 to-transparent rounded-bl-full"></div>
+                  <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/30">
+                    <BarChart3 className="w-7 h-7 text-white" />
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Strategy Hub</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Analyze your site and discover content opportunities</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Strategy Hub</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">Analyze your site and discover content opportunities</p>
+                  <div className="mt-4 flex items-center text-blue-600 dark:text-blue-400 text-sm font-medium group-hover:gap-2 transition-all">
+                    <span>Explore</span>
+                    <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
               </Link>
 
               <Link href="/content-strategy?view=auto-content" className="group relative">
-                <div className="absolute -top-2 -right-2 px-2 py-1 bg-gradient-to-r from-pink-500 to-purple-500 text-white text-xs font-bold rounded-full z-10">NEW</div>
-                <div className="bg-gradient-to-br from-purple-50 to-pink-100/50 dark:from-purple-900/20 dark:to-pink-800/10 rounded-2xl p-6 border border-purple-200/50 dark:border-purple-800/50 hover:shadow-xl hover:shadow-purple-500/10 transition-all h-full">
-                  <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <Lightbulb className="w-6 h-6 text-white" />
+                <div className="absolute -top-3 -right-3 px-3 py-1.5 bg-gradient-to-r from-pink-500 to-purple-500 text-white text-xs font-bold rounded-full z-10 shadow-lg animate-pulse">NEW</div>
+                <div className="relative bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:shadow-2xl hover:shadow-purple-500/10 transition-all h-full hover:-translate-y-1 overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-purple-500/10 to-transparent rounded-bl-full"></div>
+                  <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform shadow-lg shadow-purple-500/30">
+                    <Lightbulb className="w-7 h-7 text-white" />
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Content Wizard</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">6-step guided content generation wizard</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Content Wizard</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">6-step guided AI content generation</p>
+                  <div className="mt-4 flex items-center text-purple-600 dark:text-purple-400 text-sm font-medium group-hover:gap-2 transition-all">
+                    <span>Get Started</span>
+                    <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
               </Link>
 
               <Link href="/content-strategy?view=drafts" className="group">
-                <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/20 dark:to-amber-800/10 rounded-2xl p-6 border border-amber-200/50 dark:border-amber-800/50 hover:shadow-xl hover:shadow-amber-500/10 transition-all h-full">
-                  <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <FileText className="w-6 h-6 text-white" />
+                <div className="relative bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:shadow-2xl hover:shadow-amber-500/10 transition-all h-full hover:-translate-y-1 overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full"></div>
+                  <div className="w-14 h-14 bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform shadow-lg shadow-amber-500/30">
+                    <FileText className="w-7 h-7 text-white" />
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Drafts</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Manage and edit your content drafts</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Drafts</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">Manage and edit your content drafts</p>
+                  <div className="mt-4 flex items-center text-amber-600 dark:text-amber-400 text-sm font-medium group-hover:gap-2 transition-all">
+                    <span>View Drafts</span>
+                    <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
               </Link>
 
               <Link href="/content-strategy?view=calendar" className="group">
-                <div className="bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-900/20 dark:to-green-800/10 rounded-2xl p-6 border border-green-200/50 dark:border-green-800/50 hover:shadow-xl hover:shadow-green-500/10 transition-all h-full">
-                  <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <Calendar className="w-6 h-6 text-white" />
+                <div className="relative bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:shadow-2xl hover:shadow-green-500/10 transition-all h-full hover:-translate-y-1 overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-green-500/10 to-transparent rounded-bl-full"></div>
+                  <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform shadow-lg shadow-green-500/30">
+                    <Calendar className="w-7 h-7 text-white" />
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Calendar</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Schedule and track content publishing</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Calendar</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">Schedule and track content publishing</p>
+                  <div className="mt-4 flex items-center text-green-600 dark:text-green-400 text-sm font-medium group-hover:gap-2 transition-all">
+                    <span>Open Calendar</span>
+                    <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
               </Link>
             </div>
@@ -134,24 +192,39 @@ export default function HomePage() {
         </section>
 
         {/* Stats Section */}
-        <section className="py-16 px-4 bg-white dark:bg-slate-800 border-y border-slate-200 dark:border-slate-700">
-          <div className="container mx-auto max-w-6xl">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-              <div className="text-center">
-                <div className="text-4xl font-bold text-primary mb-2">100%</div>
-                <div className="text-slate-600 dark:text-slate-400">Free Forever</div>
+        <section className="py-16 px-4 bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden">
+          {/* Background pattern */}
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px]"></div>
+          
+          <div className="container mx-auto max-w-6xl relative">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+              <div className="text-center group">
+                <div className="w-16 h-16 mx-auto mb-4 bg-white/10 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-3xl">💯</span>
+                </div>
+                <div className="text-4xl font-extrabold text-white mb-2">100%</div>
+                <div className="text-blue-200">Free Forever</div>
               </div>
-              <div className="text-center">
-                <div className="text-4xl font-bold text-primary mb-2">50+</div>
-                <div className="text-slate-600 dark:text-slate-400">SEO Checks</div>
+              <div className="text-center group">
+                <div className="w-16 h-16 mx-auto mb-4 bg-white/10 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-3xl">🔍</span>
+                </div>
+                <div className="text-4xl font-extrabold text-white mb-2">50+</div>
+                <div className="text-blue-200">SEO Checks</div>
               </div>
-              <div className="text-center">
-                <div className="text-4xl font-bold text-primary mb-2">10+</div>
-                <div className="text-slate-600 dark:text-slate-400">Categories</div>
+              <div className="text-center group">
+                <div className="w-16 h-16 mx-auto mb-4 bg-white/10 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-3xl">📊</span>
+                </div>
+                <div className="text-4xl font-extrabold text-white mb-2">10+</div>
+                <div className="text-blue-200">Categories</div>
               </div>
-              <div className="text-center">
-                <div className="text-4xl font-bold text-primary mb-2">AI</div>
-                <div className="text-slate-600 dark:text-slate-400">Powered Analysis</div>
+              <div className="text-center group">
+                <div className="w-16 h-16 mx-auto mb-4 bg-white/10 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-3xl">🤖</span>
+                </div>
+                <div className="text-4xl font-extrabold text-white mb-2">AI</div>
+                <div className="text-blue-200">Powered Analysis</div>
               </div>
             </div>
           </div>

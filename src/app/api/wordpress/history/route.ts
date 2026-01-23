@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const offset = parseInt(searchParams.get("offset") || "0");
 
-    // Fetch from database
-    const publishes = await prisma.wordpressPublish.findMany({
+    // Fetch from database - use correct Prisma model name
+    const publishes = await (prisma as any).wordPressPublish.findMany({
       where: {
         userId: user.id,
       },
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       skip: offset,
     });
 
-    const total = await prisma.wordpressPublish.count({
+    const total = await (prisma as any).wordPressPublish.count({
       where: {
         userId: user.id,
       },
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      publishes: publishes.map(publish => ({
+      publishes: publishes.map((publish: any) => ({
         id: publish.id,
         title: publish.title,
         wordpressPostId: publish.wordpressPostId,

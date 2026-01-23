@@ -14,7 +14,7 @@ import { ScoreRing } from "@/components/report/score-ring";
 import { ViewModeProvider, ViewModeToggle } from "@/components/report/view-mode-toggle";
 import { ReportActions } from "@/components/report/report-actions";
 import { HistoryChart } from "@/components/report/history-chart";
-import { Loader2, Zap, Plug, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Zap, Plug, ExternalLink, ChevronDown, ChevronRight, Check } from "lucide-react";
 import React from "react";
 
 interface Audit {
@@ -239,7 +239,11 @@ export default function ReportPage({
   }, [auditId]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const globalSaved = localStorage.getItem('wp_connection_global');
+    const domainSaved = localStorage.getItem(`wp_connection_${domain}`);
+    const saved = globalSaved || domainSaved;
+    
     if (saved) {
       const conn = JSON.parse(saved);
       setWpConnected(conn.connected);
@@ -315,13 +319,20 @@ export default function ReportPage({
             score={audit.overallScore || 0}
             grade={audit.overallGrade || "F"}
             createdAt={audit.createdAt}
+            pagesScanned={audit.pagesAnalyzed}
+            crawlType={audit.pageClassifications ? "Deep" : "Quick"}
           />
 
           {/* View Mode Toggle */}
-          <div className="flex items-center justify-between mb-6">
-            <p className="text-sm text-muted-foreground">
-              Toggle view mode to show more or fewer technical details
-            </p>
+          <div className="flex items-center justify-between mb-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Switch between <span className="font-medium text-slate-900 dark:text-slate-200">Standard</span> and <span className="font-medium text-slate-900 dark:text-slate-200">Advanced</span> view
+              </p>
+            </div>
             <ViewModeToggle />
           </div>
 
@@ -335,15 +346,34 @@ export default function ReportPage({
           />
 
           {/* WordPress Auto-Fix Section */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950 border border-blue-200 dark:border-blue-800 rounded-xl p-6 mb-8">
+          <div className={`rounded-2xl p-6 mb-8 border-2 transition-all ${
+            wpConnected 
+              ? 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-300 dark:border-green-700' 
+              : 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950 border-blue-200 dark:border-blue-800'
+          }`}>
+            {/* Connection Status Banner */}
+            {wpConnected && (
+              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-green-200 dark:border-green-800">
+                <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg">
+                  <Check className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-green-800 dark:text-green-200 text-lg">🎉 WordPress Connected Successfully!</p>
+                  <p className="text-sm text-green-600 dark:text-green-400">Auto-fix buttons are now visible on all sections below</p>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                   <Zap className="h-5 w-5 text-yellow-500" />
-                  Auto-Fix with WordPress Plugin
+                  {wpConnected ? 'WordPress Auto-Fix' : 'Auto-Fix with WordPress Plugin'}
                 </h3>
                 <p className="text-muted-foreground text-sm mt-1">
-                  Connect your WordPress site to automatically fix SEO issues with one click.
+                  {wpConnected 
+                    ? 'Use the fix buttons on each category section to automatically fix issues.' 
+                    : 'Connect your WordPress site to automatically fix SEO issues with one click.'}
                 </p>
               </div>
               <WordPressConnect 
@@ -353,12 +383,14 @@ export default function ReportPage({
             </div>
 
             {wpConnected && fixableIssues.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+              <div className="mt-4 pt-4 border-t border-green-200 dark:border-green-800">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <p className="text-sm">
-                    <span className="font-medium text-green-600">{fixableIssues.length} issues</span>{" "}
-                    can be automatically fixed
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-sm font-bold rounded-full">
+                      {fixableIssues.length} fixable issues
+                    </span>
+                    <span className="text-sm text-green-600 dark:text-green-400">ready for auto-fix</span>
+                  </div>
                   <BulkFixButton 
                     domain={domain} 
                     fixes={fixableIssues}
@@ -399,44 +431,65 @@ export default function ReportPage({
 
           {/* Recommendations */}
           {audit.recommendations && audit.recommendations.length > 0 && (
-            <div className="bg-card rounded-xl border shadow-sm p-6 mb-8">
-              <h2 className="text-xl font-semibold mb-4">Recommendations</h2>
-              <div className="space-y-3">
-                {audit.recommendations.map((rec) => {
-                  const fix = checkToFixAction[rec.checkId];
-                  return (
-                    <div 
-                      key={rec.id}
-                      className="flex items-start justify-between gap-4 p-4 bg-muted/50 rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 text-xs font-medium rounded ${
-                            rec.priority === "high" 
-                              ? "bg-red-100 text-red-700" 
-                              : rec.priority === "medium"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-blue-100 text-blue-700"
-                          }`}>
-                            {rec.priority}
-                          </span>
-                          <span className="text-xs text-muted-foreground">{rec.category}</span>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden mb-8">
+              <div className="bg-gradient-to-r from-amber-500 to-orange-500 h-1.5"></div>
+              <div className="p-6 lg:p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center">
+                      <Zap className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Recommendations</h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{audit.recommendations.length} improvements suggested</p>
+                    </div>
+                  </div>
+                  {wpConnected && (
+                    <span className="px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium rounded-full flex items-center gap-1">
+                      <Zap className="h-3 w-3" />
+                      Auto-Fix Available
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {audit.recommendations.map((rec) => {
+                    const fix = checkToFixAction[rec.checkId];
+                    return (
+                      <div 
+                        key={rec.id}
+                        className="flex items-start justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600 transition-colors group"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2.5 py-1 text-xs font-bold rounded-lg uppercase tracking-wide ${
+                              rec.priority === "high" 
+                                ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" 
+                                : rec.priority === "medium"
+                                ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+                                : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                            }`}>
+                              {rec.priority}
+                            </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">{rec.category}</span>
+                          </div>
+                          <h4 className="font-semibold mt-2 text-slate-900 dark:text-slate-100">{rec.title}</h4>
+                          {rec.description && (
+                            <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{rec.description}</p>
+                          )}
                         </div>
-                        <h4 className="font-medium mt-1">{rec.title}</h4>
-                        {rec.description && (
-                          <p className="text-sm text-muted-foreground mt-1">{rec.description}</p>
+                        {wpConnected && fix && (
+                          <div className="opacity-80 group-hover:opacity-100 transition-opacity">
+                            <AutoFixButton
+                              domain={domain}
+                              fixType={fix.action}
+                              label={fix.label}
+                            />
+                          </div>
                         )}
                       </div>
-                      {wpConnected && fix && (
-                        <AutoFixButton
-                          domain={domain}
-                          fixType={fix.action}
-                          label={fix.label}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -608,90 +661,118 @@ function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSi
   
   // Count failed checks
   const failedChecks = checks.filter(c => c.status !== "pass" && c.status !== "info").length;
+  const passedChecks = checks.filter(c => c.status === "pass").length;
+  
+  // Get grade color
+  const getGradeColor = (grade: string) => {
+    if (grade.startsWith('A')) return 'from-green-500 to-emerald-500';
+    if (grade.startsWith('B')) return 'from-blue-500 to-indigo-500';
+    if (grade.startsWith('C')) return 'from-amber-500 to-orange-500';
+    return 'from-red-500 to-rose-500';
+  };
   
   return (
-    <div className="bg-card border rounded-xl p-8 mb-8 shadow-sm hover:shadow-md transition-shadow" id={id}>
-      <div className="flex flex-col md:flex-row gap-6 mb-8">
-        <div className="flex-shrink-0">
-          <ScoreRing score={data.score} grade={data.grade} size="md" />
-        </div>
-        <div className="flex-1">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold mb-2">{title}</h2>
-              {data.message && (
-                <p className="text-muted-foreground">{data.message}</p>
-              )}
-              {sampleSizeExplanation && (
-                <p className="text-xs text-gray-500 mt-1 italic">ℹ️ {sampleSizeExplanation}</p>
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden mb-8 shadow-lg hover:shadow-xl transition-all" id={id}>
+      {/* Header with gradient accent */}
+      <div className={`h-1.5 bg-gradient-to-r ${getGradeColor(data.grade)}`}></div>
+      
+      <div className="p-6 lg:p-8">
+        <div className="flex flex-col md:flex-row gap-6 mb-6">
+          <div className="flex-shrink-0">
+            <ScoreRing score={data.score} grade={data.grade} size="md" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="text-xl font-bold mb-2 text-slate-900 dark:text-slate-100">{title}</h2>
+                {data.message && (
+                  <p className="text-slate-600 dark:text-slate-400">{data.message}</p>
+                )}
+                {sampleSizeExplanation && (
+                  <p className="text-xs text-slate-500 dark:text-slate-500 mt-2 flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg inline-block">
+                    <span className="text-blue-500">ℹ️</span> {sampleSizeExplanation}
+                  </p>
+                )}
+                {/* Quick stats */}
+                <div className="flex items-center gap-4 mt-3">
+                  <span className="text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full font-medium">
+                    ✓ {passedChecks} passed
+                  </span>
+                  {failedChecks > 0 && (
+                    <span className="text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full font-medium">
+                      ✗ {failedChecks} issues
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Section Fix All Button */}
+              {wpConnected && fixAction && failedChecks > 0 && (
+                <AutoFixButton
+                  domain={domain}
+                  fixType={fixAction}
+                  label={`Fix All ${failedChecks} Issue${failedChecks > 1 ? 's' : ''}`}
+                />
               )}
             </div>
-            {/* Section Fix All Button */}
-            {wpConnected && fixAction && failedChecks > 0 && (
-              <AutoFixButton
-                domain={domain}
-                fixType={fixAction}
-                label={`Fix ${failedChecks} Issue${failedChecks > 1 ? 's' : ''}`}
-              />
+            {sourcePages.length > 0 && (
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowSourcePages(!showSourcePages)}
+                  className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg"
+                >
+                  {showSourcePages ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <span>Analyzed from {sourcePages.length} page{sourcePages.length > 1 ? 's' : ''}</span>
+                </button>
+                {showSourcePages && (
+                  <div className="mt-2 ml-3 pl-3 border-l-2 border-slate-200 dark:border-slate-700 space-y-1">
+                    {sourcePages.map((url: string, idx: number) => (
+                      <a
+                        key={idx}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 truncate py-0.5"
+                      >
+                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{new URL(url).pathname || '/'}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          {sourcePages.length > 0 && (
-            <div className="mt-3">
-              <button
-                onClick={() => setShowSourcePages(!showSourcePages)}
-                className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                {showSourcePages ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                <span>Analyzed from {sourcePages.length} page{sourcePages.length > 1 ? 's' : ''}</span>
-              </button>
-              {showSourcePages && (
-                <div className="mt-2 pl-5 space-y-1">
-                  {sourcePages.map((url: string, idx: number) => (
-                    <a
-                      key={idx}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 truncate"
-                    >
-                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">{new URL(url).pathname || '/'}</span>
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
-      </div>
 
-      <div className="space-y-1">
-        {checks.map((check) => {
-          const fix = checkToFixAction[check.id];
-          const isPassed = check.status === "pass" || check.status === "info";
-          
-          return (
-            <div key={check.id} className="relative">
-              <CheckItem
-                id={check.id}
-                name={check.name}
-                status={check.status as "pass" | "warning" | "fail" | "info"}
-                message={check.message}
-                value={check.value}
-              />
-              {!isPassed && wpConnected && fix && (
-                <div className="absolute right-4 top-4">
-                  <AutoFixButton
-                    domain={domain}
-                    fixType={fix.action}
-                    label={fix.label}
-                    checkId={check.id}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {/* Checks list with better styling */}
+        <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-6">
+          {checks.map((check) => {
+            const fix = checkToFixAction[check.id];
+            const isPassed = check.status === "pass" || check.status === "info";
+            
+            return (
+              <div key={check.id} className="relative group">
+                <CheckItem
+                  id={check.id}
+                  name={check.name}
+                  status={check.status as "pass" | "warning" | "fail" | "info"}
+                  message={check.message}
+                  value={check.value}
+                />
+                {!isPassed && wpConnected && fix && (
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-80 group-hover:opacity-100 transition-opacity">
+                    <AutoFixButton
+                      domain={domain}
+                      fixType={fix.action}
+                      label={fix.label}
+                      checkId={check.id}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

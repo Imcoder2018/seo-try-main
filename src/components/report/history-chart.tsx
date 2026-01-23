@@ -57,16 +57,31 @@ export function HistoryChart({ domain, currentAudit }: HistoryChartProps) {
     // Save current audit to history - only once per unique audit
     if (currentAudit && currentAudit.overallScore !== undefined) {
       const auditId = (currentAudit as { id?: string }).id;
-      // Use sessionStorage to prevent duplicate saves on same page load
+      if (!auditId) return;
+      
+      // Use multiple checks to prevent duplicate saves
       const saveKey = `saved_audit_${domain}_${auditId}`;
-      if (auditId && !sessionStorage.getItem(saveKey)) {
-        sessionStorage.setItem(saveKey, 'true');
-        fetch("/api/history", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ domain, auditData: currentAudit, auditId }),
-        }).catch(console.error);
+      const globalSaveKey = `saved_audit_global_${auditId}`;
+      
+      // Check both session and local storage for duplicates
+      if (sessionStorage.getItem(saveKey) || localStorage.getItem(globalSaveKey)) {
+        return;
       }
+      
+      // Mark as saved immediately before API call
+      sessionStorage.setItem(saveKey, 'true');
+      localStorage.setItem(globalSaveKey, Date.now().toString());
+      
+      fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain, auditData: currentAudit, auditId }),
+      }).catch((err) => {
+        console.error("Failed to save history:", err);
+        // On error, remove the markers so it can retry
+        sessionStorage.removeItem(saveKey);
+        localStorage.removeItem(globalSaveKey);
+      });
     }
   }, [domain, currentAudit]);
 
@@ -138,100 +153,107 @@ export function HistoryChart({ domain, currentAudit }: HistoryChartProps) {
   const overallScores = history.map(h => h.overallScore);
 
   return (
-    <div className="bg-card border rounded-xl p-6 mb-8">
+    <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 mb-8 shadow-lg">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-blue-500" />
+        <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-md">
+            <BarChart3 className="h-5 w-5 text-white" />
+          </div>
           Historical Tracking
         </h3>
-        <span className="text-sm text-muted-foreground">
+        <span className="px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-full">
           {data.totalAudits} audit{data.totalAudits !== 1 ? "s" : ""} recorded
         </span>
       </div>
 
       {/* Score Trend Chart */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">Overall Score Trend</span>
+      <div className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Overall Score Trend</span>
           {trends.overall && (
             <TrendBadge change={trends.overall.change} trend={trends.overall.trend} />
           )}
         </div>
-        <Sparkline scores={overallScores} color="bg-blue-500" />
+        <Sparkline scores={overallScores} color="bg-gradient-to-r from-blue-500 to-indigo-500" />
       </div>
 
       {/* Category Trends */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
-          { key: "seo", label: "SEO", scores: history.map(h => h.seoScore) },
-          { key: "links", label: "Links", scores: history.map(h => h.linksScore) },
-          { key: "usability", label: "Usability", scores: history.map(h => h.usabilityScore) },
-          { key: "performance", label: "Performance", scores: history.map(h => h.performanceScore) },
-          { key: "social", label: "Social", scores: history.map(h => h.socialScore) },
-          ...(history[0]?.contentScore !== undefined ? [{ key: "content", label: "Content", scores: history.map(h => h.contentScore || 0) }] : []),
-        ].map(({ key, label, scores }) => (
-          <div key={key} className="p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-muted-foreground">{label}</span>
+          { key: "seo", label: "SEO", scores: history.map(h => h.seoScore), gradient: "from-blue-400 to-cyan-400" },
+          { key: "links", label: "Links", scores: history.map(h => h.linksScore), gradient: "from-green-400 to-emerald-400" },
+          { key: "usability", label: "Usability", scores: history.map(h => h.usabilityScore), gradient: "from-amber-400 to-orange-400" },
+          { key: "performance", label: "Performance", scores: history.map(h => h.performanceScore), gradient: "from-yellow-400 to-amber-400" },
+          { key: "social", label: "Social", scores: history.map(h => h.socialScore), gradient: "from-pink-400 to-rose-400" },
+          ...(history[0]?.contentScore !== undefined ? [{ key: "content", label: "Content", scores: history.map(h => h.contentScore || 0), gradient: "from-indigo-400 to-purple-400" }] : []),
+        ].map(({ key, label, scores, gradient }) => (
+          <div key={key} className="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">{label}</span>
               {trends[key] && (
                 <TrendBadge change={trends[key].change} trend={trends[key].trend} />
               )}
             </div>
-            <Sparkline scores={scores} color="bg-gray-400" />
+            <Sparkline scores={scores} color={`bg-gradient-to-r ${gradient}`} />
           </div>
         ))}
       </div>
 
       {/* Recent History Table */}
       {history.length > 1 && (
-        <div className="mt-6 pt-6 border-t">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-medium flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
+        <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-sm font-semibold flex items-center gap-2 text-slate-700 dark:text-slate-300">
+              <Clock className="h-4 w-4 text-slate-500" />
               Recent Audits
             </h4>
-            <span className="text-xs text-muted-foreground">Click to load past audit</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Click to load past audit</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-muted-foreground border-b">
-                  <th className="pb-2">Date</th>
-                  <th className="pb-2 text-center">Overall</th>
-                  <th className="pb-2 text-center">SEO</th>
-                  <th className="pb-2 text-center">Perf</th>
-                  <th className="pb-2 text-center">Links</th>
-                  <th className="pb-2"></th>
+                <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                  <th className="px-4 py-3 font-semibold">Date</th>
+                  <th className="px-4 py-3 text-center font-semibold">Overall</th>
+                  <th className="px-4 py-3 text-center font-semibold">SEO</th>
+                  <th className="px-4 py-3 text-center font-semibold">Perf</th>
+                  <th className="px-4 py-3 text-center font-semibold">Links</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {history.slice(0, 5).map((entry, index) => (
                   <tr 
                     key={entry.id} 
-                    className={`border-b border-muted/50 hover:bg-muted/30 transition-colors ${index === 0 ? 'bg-primary/5' : ''}`}
+                    className={`border-b border-slate-50 dark:border-slate-700/50 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors ${index === 0 ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
                   >
-                    <td className="py-2">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {index === 0 && <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">Current</span>}
-                        {new Date(entry.date).toLocaleDateString()}
+                        {index === 0 && (
+                          <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-medium">
+                            Current
+                          </span>
+                        )}
+                        <span className="text-slate-700 dark:text-slate-300">{new Date(entry.date).toLocaleDateString()}</span>
                       </div>
                     </td>
-                    <td className="py-2 text-center">
-                      <span className={`font-medium ${
-                        entry.overallScore >= 80 ? 'text-green-600' : 
-                        entry.overallScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center justify-center w-10 h-6 rounded-full font-bold text-xs ${
+                        entry.overallScore >= 80 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
+                        entry.overallScore >= 60 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 
+                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                       }`}>
                         {entry.overallScore}
                       </span>
                     </td>
-                    <td className="py-2 text-center">{entry.seoScore}</td>
-                    <td className="py-2 text-center">{entry.performanceScore}</td>
-                    <td className="py-2 text-center">{entry.linksScore}</td>
-                    <td className="py-2 text-right">
+                    <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{entry.seoScore}</td>
+                    <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{entry.performanceScore}</td>
+                    <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{entry.linksScore}</td>
+                    <td className="px-4 py-3 text-right">
                       {entry.auditId && index !== 0 && (
                         <Link
                           href={`/${domain}?id=${entry.auditId}`}
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
                         >
                           View <ChevronRight className="h-3 w-3" />
                         </Link>

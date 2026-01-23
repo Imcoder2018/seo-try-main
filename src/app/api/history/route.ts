@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// In-memory storage for historical data (for serverless deployment)
-// In production, this would use a database
 interface HistoryEntry {
   id: string;
   domain: string;
@@ -19,7 +18,7 @@ interface HistoryEntry {
   auditId?: string;
 }
 
-// Simple storage - in production use database
+// Fallback in-memory storage for when database is unavailable
 const historyStorage = new Map<string, HistoryEntry[]>();
 
 export async function GET(request: NextRequest) {
@@ -32,11 +31,63 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Domain is required" }, { status: 400 });
     }
 
-    // Get history from storage
-    const history = historyStorage.get(domain) || [];
+    let history: HistoryEntry[] = [];
+
+    // Try to get from database first
+    try {
+      const audits = await prisma.audit.findMany({
+        where: { 
+          domain: domain,
+          status: "COMPLETED",
+          overallScore: { not: null }
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: {
+          id: true,
+          domain: true,
+          createdAt: true,
+          overallScore: true,
+          seoScore: true,
+          linksScore: true,
+          usabilityScore: true,
+          performanceScore: true,
+          socialScore: true,
+          contentScore: true,
+          eeatScore: true,
+        }
+      });
+
+      history = audits.map(audit => ({
+        id: `hist_${audit.id}`,
+        domain: audit.domain,
+        date: audit.createdAt.toISOString(),
+        overallScore: audit.overallScore || 0,
+        seoScore: audit.seoScore || 0,
+        linksScore: audit.linksScore || 0,
+        usabilityScore: audit.usabilityScore || 0,
+        performanceScore: audit.performanceScore || 0,
+        socialScore: audit.socialScore || 0,
+        contentScore: audit.contentScore || undefined,
+        eeatScore: audit.eeatScore || undefined,
+        auditId: audit.id,
+      }));
+    } catch (dbError) {
+      console.log("Database unavailable, using in-memory storage:", dbError);
+      // Fallback to in-memory storage
+      history = historyStorage.get(domain) || [];
+    }
     
-    // Sort by date descending and limit
-    const sortedHistory = history
+    // Sort by date descending and limit - deduplicate by auditId
+    const seenAuditIds = new Set<string>();
+    const deduplicatedHistory = history.filter(entry => {
+      if (!entry.auditId) return true;
+      if (seenAuditIds.has(entry.auditId)) return false;
+      seenAuditIds.add(entry.auditId);
+      return true;
+    });
+
+    const sortedHistory = deduplicatedHistory
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, limit);
 
@@ -47,7 +98,7 @@ export async function GET(request: NextRequest) {
       domain,
       history: sortedHistory,
       trends,
-      totalAudits: history.length,
+      totalAudits: sortedHistory.length,
     });
   } catch (error) {
     console.error("History API error:", error);
@@ -69,10 +120,30 @@ export async function POST(request: NextRequest) {
 
     const entryAuditId = auditId || auditData.id;
     
-    // Get existing history for domain
+    // Check if this audit already exists in database (prevent duplicates)
+    if (entryAuditId) {
+      try {
+        const existingAudit = await prisma.audit.findUnique({
+          where: { id: entryAuditId },
+          select: { id: true }
+        });
+        
+        if (existingAudit) {
+          // Audit already exists in database, no need to save separately
+          return NextResponse.json({
+            success: true,
+            message: "Audit already tracked in database",
+            duplicate: true,
+          });
+        }
+      } catch (dbError) {
+        console.log("Database check failed, using in-memory:", dbError);
+      }
+    }
+    
+    // Fallback: Check in-memory storage
     const existing = historyStorage.get(domain) || [];
     
-    // Check if this audit already exists (prevent duplicates)
     if (entryAuditId && existing.some(e => e.auditId === entryAuditId)) {
       return NextResponse.json({
         success: true,

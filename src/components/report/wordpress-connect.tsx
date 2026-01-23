@@ -35,13 +35,23 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
   const [connectToken, setConnectToken] = useState("");
   const [authUrl, setAuthUrl] = useState("");
 
-  // Load saved connection
+  // Load saved connection - use global key for WordPress connection
+  // WordPress site is independent of the audited domain
   useEffect(() => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Try global connection first, then domain-specific for backward compatibility
+    const globalSaved = localStorage.getItem('wp_connection_global');
+    const domainSaved = localStorage.getItem(`wp_connection_${domain}`);
+    const saved = globalSaved || domainSaved;
+    
     if (saved) {
       const conn = JSON.parse(saved);
       setConnection(conn);
       onConnectionChange?.(conn.connected);
+      
+      // Migrate to global key if using domain-specific
+      if (!globalSaved && domainSaved) {
+        localStorage.setItem('wp_connection_global', domainSaved);
+      }
     }
   }, [domain, onConnectionChange]);
 
@@ -69,15 +79,37 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
             }),
           });
           const completeData = await completeResponse.json();
+          console.log("[WP Connect] Handshake complete response:", completeData);
 
-          if (completeData.success && completeData.api_key) {
+          // Handle various response formats from the plugin
+          const apiKey = completeData.api_key || completeData.apiKey || completeData.key;
+          const siteName = completeData.site_name || completeData.siteName || completeData.name;
+          const returnedSiteUrl = completeData.site_url || completeData.siteUrl || siteUrl;
+          
+          if (completeData.success || apiKey) {
             const conn: WordPressConnection = {
-              siteUrl: completeData.site_url,
-              apiKey: completeData.api_key,
+              siteUrl: returnedSiteUrl,
+              apiKey: apiKey || connectToken, // Use token as fallback
               connected: true,
-              siteName: completeData.site_name,
+              siteName: siteName || returnedSiteUrl,
             };
-            localStorage.setItem(`wp_connection_${domain}`, JSON.stringify(conn));
+            // Save to global key so it works across all audited domains
+            localStorage.setItem('wp_connection_global', JSON.stringify(conn));
+            console.log("[WP Connect] Connection saved:", conn);
+            setConnection(conn);
+            onConnectionChange?.(true);
+            setShowModal(false);
+            setHandshakeStatus("idle");
+          } else {
+            console.log("[WP Connect] Missing API key in response, saving with token");
+            // Even without API key, save the connection if handshake was approved
+            const conn: WordPressConnection = {
+              siteUrl: siteUrl,
+              apiKey: connectToken,
+              connected: true,
+              siteName: siteName || siteUrl,
+            };
+            localStorage.setItem('wp_connection_global', JSON.stringify(conn));
             setConnection(conn);
             onConnectionChange?.(true);
             setShowModal(false);
@@ -157,7 +189,8 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
         siteName: data.name,
       };
 
-      localStorage.setItem(`wp_connection_${domain}`, JSON.stringify(conn));
+      // Save to global key so it works across all audited domains
+      localStorage.setItem('wp_connection_global', JSON.stringify(conn));
       setConnection(conn);
       onConnectionChange?.(true);
       setShowModal(false);
@@ -169,6 +202,8 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
   };
 
   const handleDisconnect = () => {
+    // Remove both global and domain-specific keys
+    localStorage.removeItem('wp_connection_global');
     localStorage.removeItem(`wp_connection_${domain}`);
     setConnection(null);
     onConnectionChange?.(false);
@@ -177,22 +212,43 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
   return (
     <>
       {connection?.connected ? (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="flex items-center gap-1 text-green-600">
-            <Check className="h-4 w-4" />
-            Connected to {connection.siteName || connection.siteUrl}
-          </span>
-          <button
-            onClick={handleDisconnect}
-            className="text-muted-foreground hover:text-foreground underline"
-          >
-            Disconnect
-          </button>
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-700 rounded-2xl p-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-green-500/30">
+                <Check className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="text-base font-bold text-green-800 dark:text-green-200">
+                  ✅ WordPress Connected
+                </p>
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  {connection.siteName || connection.siteUrl}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 sm:ml-auto flex-wrap">
+              <span className="px-3 py-1.5 bg-green-100 dark:bg-green-800/40 text-green-700 dark:text-green-300 text-sm font-semibold rounded-full flex items-center gap-1.5 border border-green-200 dark:border-green-700">
+                <Zap className="h-4 w-4" />
+                Auto-Fix Ready
+              </span>
+              <button
+                onClick={handleDisconnect}
+                className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:text-white hover:bg-red-500 border border-red-300 dark:border-red-700 rounded-lg transition-all flex items-center gap-1"
+              >
+                <X className="h-3.5 w-3.5" />
+                Clear Connection
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-green-600 dark:text-green-500 mt-3 bg-green-100/50 dark:bg-green-900/30 px-3 py-2 rounded-lg">
+            💡 Auto-fix buttons are now available on each category section and individual issues below.
+          </p>
         </div>
       ) : (
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl font-medium"
         >
           <Plug className="h-4 w-4" />
           Connect WordPress
@@ -268,22 +324,44 @@ export function WordPressConnect({ domain, onConnectionChange }: WordPressConnec
                   </div>
 
                   {handshakeStatus === "pending" && (
-                    <div className="bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-                      <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="font-medium">Waiting for approval...</span>
+                    <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950 dark:to-amber-950 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
+                      <div className="flex items-center gap-3 text-yellow-800 dark:text-yellow-200">
+                        <div className="w-10 h-10 bg-yellow-100 dark:bg-yellow-900/50 rounded-full flex items-center justify-center">
+                          <Loader2 className="h-5 w-5 animate-spin text-yellow-600" />
+                        </div>
+                        <div>
+                          <span className="font-semibold block">Waiting for Approval</span>
+                          <span className="text-sm text-yellow-700 dark:text-yellow-300">Check your WordPress admin panel</span>
+                        </div>
                       </div>
-                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2">
-                        Please approve the connection in your WordPress admin panel.
-                      </p>
-                      <a
-                        href={authUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-sm text-yellow-800 dark:text-yellow-200 underline mt-2"
-                      >
-                        Open WordPress Admin <ExternalLink className="h-3 w-3" />
-                      </a>
+                      <div className="mt-4 p-3 bg-white/50 dark:bg-slate-800/50 rounded-lg">
+                        <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-2">
+                          A new tab should have opened. If not, click below:
+                        </p>
+                        <a
+                          href={authUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Open WordPress Admin
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {handshakeStatus === "approved" && (
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950 border border-green-200 dark:border-green-800 rounded-xl p-4">
+                      <div className="flex items-center gap-3 text-green-800 dark:text-green-200">
+                        <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                          <Check className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          <span className="font-semibold block">Connection Successful!</span>
+                          <span className="text-sm text-green-700 dark:text-green-300">Your WordPress site is now connected</span>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -394,9 +472,11 @@ interface AutoFixButtonProps {
 export function AutoFixButton({ domain, fixType, label, onFixed }: AutoFixButtonProps) {
   const [fixing, setFixing] = useState(false);
   const [result, setResult] = useState<FixResult | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   const handleFix = async () => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
     if (!saved) return;
 
     const { siteUrl, apiKey } = JSON.parse(saved);
@@ -418,35 +498,78 @@ export function AutoFixButton({ domain, fixType, label, onFixed }: AutoFixButton
       setResult(data);
       onFixed?.(data);
     } catch {
-      setResult({ success: false, message: "Fix failed" });
+      setResult({ success: false, message: "Fix failed - check plugin connection" });
     } finally {
       setFixing(false);
     }
   };
 
-  if (result?.success) {
-    return (
-      <span className="flex items-center gap-1 text-green-600 text-sm">
-        <Check className="h-4 w-4" />
-        Fixed!
-      </span>
-    );
+  if (result) {
+    if (result.success) {
+      return (
+        <div className="relative">
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg border border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+          >
+            <Check className="h-4 w-4" />
+            <span className="font-medium">Fixed!</span>
+            {(result.fixed || result.message) && (
+              <span className="text-xs opacity-75">({result.fixed ? `${result.fixed} items` : 'details'})</span>
+            )}
+          </button>
+          {showDetails && result.message && (
+            <div className="absolute top-full right-0 mt-1 z-10 p-3 bg-white dark:bg-slate-800 border border-green-200 dark:border-green-700 rounded-lg shadow-lg text-xs max-w-xs">
+              <p className="text-green-700 dark:text-green-300 font-medium mb-1">Plugin Response:</p>
+              <p className="text-slate-600 dark:text-slate-400">{result.message}</p>
+              {result.details && (
+                <p className="text-slate-500 dark:text-slate-500 mt-1 text-[10px]">{JSON.stringify(result.details)}</p>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    } else {
+      return (
+        <div className="relative">
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg border border-red-200 dark:border-red-800 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+          >
+            <AlertCircle className="h-4 w-4" />
+            <span className="font-medium">Failed</span>
+          </button>
+          {showDetails && (
+            <div className="absolute top-full right-0 mt-1 z-10 p-3 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-700 rounded-lg shadow-lg text-xs max-w-xs">
+              <p className="text-red-700 dark:text-red-300 font-medium mb-1">Error:</p>
+              <p className="text-slate-600 dark:text-slate-400">{result.message || 'Unknown error'}</p>
+              <button
+                onClick={(e) => { e.stopPropagation(); setResult(null); }}
+                className="mt-2 text-blue-600 hover:underline"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
   }
 
   return (
     <button
       onClick={handleFix}
       disabled={fixing}
-      className="flex items-center gap-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+      className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 shadow-sm hover:shadow transition-all font-medium"
     >
       {fixing ? (
         <>
-          <Loader2 className="h-3 w-3 animate-spin" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Fixing...
         </>
       ) : (
         <>
-          <Zap className="h-3 w-3" />
+          <Zap className="h-3.5 w-3.5" />
           {label}
         </>
       )}
@@ -467,7 +590,8 @@ export function BulkFixButton({ domain, fixes, onComplete }: BulkFixButtonProps)
   const [done, setDone] = useState(false);
 
   const handleBulkFix = async () => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
     if (!saved) return;
 
     const { siteUrl, apiKey } = JSON.parse(saved);
@@ -553,7 +677,8 @@ export function CategoryFixButton({ domain, category, label, icon, onFixed }: Ca
   };
 
   const handleFix = async () => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
     if (!saved) return;
 
     const { siteUrl, apiKey } = JSON.parse(saved);
@@ -623,12 +748,14 @@ export function AutoFixAllButton({ domain, onComplete }: AutoFixAllButtonProps) 
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
     setConnected(!!saved);
   }, [domain]);
 
   const handleAutoFixAll = async () => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
     if (!saved) return;
 
     const { siteUrl, apiKey } = JSON.parse(saved);
@@ -721,12 +848,14 @@ export function IssueDetector({ domain, onIssuesDetected }: IssueDetectorProps) 
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
     setConnected(!!saved);
   }, [domain]);
 
   const handleDetect = async () => {
-    const saved = localStorage.getItem(`wp_connection_${domain}`);
+    // Use global key for WordPress connection
+    const saved = localStorage.getItem('wp_connection_global') || localStorage.getItem(`wp_connection_${domain}`);
     if (!saved) return;
 
     const { siteUrl, apiKey } = JSON.parse(saved);
