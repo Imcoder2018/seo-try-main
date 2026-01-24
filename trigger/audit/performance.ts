@@ -19,7 +19,7 @@ interface PageSpeedResult {
 }
 
 async function getPageSpeedInsights(url: string, strategy: "mobile" | "desktop"): Promise<PageSpeedResult | null> {
-  const apiKey = process.env.GOOGLE_PAGESPEED_API_KEY;
+  const apiKey = process.env.GOOGLE_PAGESPEED_API_KEY || process.env.PAGESPEED_API_KEY;
   if (!apiKey) return null;
 
   try {
@@ -80,7 +80,7 @@ export const performanceTask = task({
       weight: 5,
       value: {
         note: 'Server-side measurements only',
-        forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY for real Core Web Vitals (LCP, FID, CLS)'
+        forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY or PAGESPEED_API_KEY for real Core Web Vitals (LCP, FID, CLS)'
       },
       message: 'ℹ️ Basic metrics are server-side proxies. For real Core Web Vitals, PageSpeed Insights API is used below (if configured).',
     });

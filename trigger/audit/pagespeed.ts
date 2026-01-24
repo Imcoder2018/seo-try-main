@@ -45,7 +45,7 @@ export const pageSpeedTask = task({
   },
   run: async (payload: PageSpeedPayload): Promise<PageSpeedResult> => {
     const { url, strategy = "mobile" } = payload;
-    const apiKey = process.env.GOOGLE_PAGESPEED_API_KEY;
+    const apiKey = process.env.GOOGLE_PAGESPEED_API_KEY || process.env.PAGESPEED_API_KEY;
 
     metadata.set("status", {
       progress: 10,
@@ -54,7 +54,7 @@ export const pageSpeedTask = task({
 
     if (!apiKey) {
       // Return clearly labeled unavailable data when no API key
-      console.warn("⚠️ No GOOGLE_PAGESPEED_API_KEY configured - PageSpeed data unavailable");
+      console.warn("⚠️ No GOOGLE_PAGESPEED_API_KEY or PAGESPEED_API_KEY configured - PageSpeed data unavailable");
       
       metadata.set("status", {
         progress: 100,
@@ -77,7 +77,7 @@ export const pageSpeedTask = task({
         opportunities: [],
         diagnostics: [],
         error: "⚠️ PAGESPEED DATA UNAVAILABLE: No Google PageSpeed API key configured. " +
-               "Set GOOGLE_PAGESPEED_API_KEY environment variable to get real Core Web Vitals data. " +
+               "Set GOOGLE_PAGESPEED_API_KEY or PAGESPEED_API_KEY environment variable to get real Core Web Vitals data. " +
                "Without this, performance metrics cannot be accurately measured. " +
                "Get a free API key at: https://developers.google.com/speed/docs/insights/v5/get-started",
       };
