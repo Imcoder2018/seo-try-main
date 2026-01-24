@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, X, AlertTriangle, Info, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, X, AlertTriangle, Info, ChevronDown, ChevronUp, ExternalLink, Shield, Zap, Link2, FileText, Globe, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { VerificationModal } from "./verification-modal";
 import { GoogleSearchPreview } from "./google-search-preview";
 import { KeywordConsistencyTable } from "./keyword-consistency-table";
 import { HeaderHierarchy } from "./header-hierarchy";
@@ -20,6 +21,7 @@ interface CheckItemProps {
 
 export function CheckItem({ id, name, status, message, value, forceShow, sourcePages }: CheckItemProps) {
   const [expanded, setExpanded] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
   const { viewMode } = useViewMode();
   
   // Hide technical checks in simple mode (unless they have issues)
@@ -56,14 +58,8 @@ export function CheckItem({ id, name, status, message, value, forceShow, sourceP
   const config = statusConfig[status];
   const Icon = config.icon;
 
-  // Check if this item has expandable content
-  const hasExpandableContent: boolean = 
-    id === "searchPreview" || 
-    id === "keywordConsistency" || 
-    id === "headingStructure" ||
-    id === "localKeywords" ||
-    id === "serviceAreas" ||
-    id === "localBusinessSchema";
+  // All checks with value data are expandable to show proof of audit
+  const hasExpandableContent: boolean = !!(value && Object.keys(value).length > 0);
 
   const renderExpandedContent = () => {
     if (!value) return null;
@@ -195,7 +191,111 @@ export function CheckItem({ id, name, status, message, value, forceShow, sourceP
         );
       
       default:
-        return null;
+        // Generic proof of audit display for all other checks
+        return (
+          <div className="space-y-3">
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-2">
+              <FileText className="w-4 h-4" />
+              Audit Findings & Proof
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Object.entries(value).map(([key, val]) => {
+                // Skip internal or complex nested objects for display
+                if (key === 'recommendation' || val === null || val === undefined) return null;
+                
+                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                
+                // Handle different value types
+                if (typeof val === 'boolean') {
+                  return (
+                    <div key={key} className="flex items-center gap-2 text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                      <span className={cn("w-5 h-5 rounded-full flex items-center justify-center", val ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600")}>
+                        {val ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      </span>
+                      <span className="font-medium text-slate-600 dark:text-slate-400">{formattedKey}</span>
+                    </div>
+                  );
+                }
+                
+                if (Array.isArray(val)) {
+                  if (val.length === 0) return null;
+                  return (
+                    <div key={key} className="col-span-full p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{formattedKey}:</span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {val.slice(0, 10).map((item, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs rounded-full">
+                            {typeof item === 'string' ? item : JSON.stringify(item)}
+                          </span>
+                        ))}
+                        {val.length > 10 && <span className="text-xs text-slate-500">+{val.length - 10} more</span>}
+                      </div>
+                    </div>
+                  );
+                }
+                
+                if (typeof val === 'number') {
+                  const isPercentage = key.toLowerCase().includes('percent') || key.toLowerCase().includes('ratio') || key.toLowerCase().includes('score');
+                  const isCount = key.toLowerCase().includes('count') || key.toLowerCase().includes('total') || key.toLowerCase().includes('length');
+                  return (
+                    <div key={key} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs">
+                      <span className="font-medium text-slate-600 dark:text-slate-400">{formattedKey}</span>
+                      <span className={cn(
+                        "font-bold px-2 py-0.5 rounded",
+                        isPercentage && val >= 80 ? "bg-green-100 text-green-700" :
+                        isPercentage && val >= 50 ? "bg-yellow-100 text-yellow-700" :
+                        isPercentage && val < 50 ? "bg-red-100 text-red-700" :
+                        "bg-blue-100 text-blue-700"
+                      )}>
+                        {isPercentage ? `${val}%` : isCount ? val : val}
+                      </span>
+                    </div>
+                  );
+                }
+                
+                if (typeof val === 'string' && val.length > 0) {
+                  const isUrl = val.startsWith('http') || val.startsWith('/');
+                  return (
+                    <div key={key} className={cn("p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs", val.length > 60 && "col-span-full")}>
+                      <span className="font-medium text-slate-600 dark:text-slate-400">{formattedKey}:</span>
+                      {isUrl ? (
+                        <a href={val} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-600 hover:underline flex items-center gap-1 mt-1">
+                          <ExternalLink className="w-3 h-3" />
+                          <span className="truncate max-w-[300px]">{val}</span>
+                        </a>
+                      ) : (
+                        <span className="ml-1 text-slate-800 dark:text-slate-200 break-words">{val.length > 100 ? val.substring(0, 100) + '...' : val}</span>
+                      )}
+                    </div>
+                  );
+                }
+                
+                return null;
+              })}
+            </div>
+            {sourcePages && sourcePages.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <span className="text-xs font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                  <Globe className="w-3 h-3" />
+                  Detected on:
+                </span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {sourcePages.slice(0, 5).map((url, i) => {
+                    try {
+                      const pathname = new URL(url).pathname || '/';
+                      return (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-blue-600 dark:text-blue-400 rounded hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center gap-1">
+                          <ExternalLink className="w-3 h-3" />
+                          {pathname}
+                        </a>
+                      );
+                    } catch { return null; }
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
     }
   };
 
@@ -269,8 +369,44 @@ export function CheckItem({ id, name, status, message, value, forceShow, sourceP
       {expanded && hasExpandableContent && (
         <div className="px-4 pb-4 pt-2 ml-14 bg-slate-50/50 dark:bg-slate-800/30 rounded-b-lg border-l-4 border-l-blue-200 dark:border-l-blue-800">
           {renderExpandedContent()}
+          
+          {/* Verification Button */}
+          <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowVerification(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+            >
+              <Eye className="w-4 h-4" />
+              View Audit Details
+            </button>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+              Click to see detailed findings from this audit check
+            </p>
+          </div>
         </div>
       )}
+
+      {/* Verification Modal */}
+      <VerificationModal
+        isOpen={showVerification}
+        onClose={() => setShowVerification(false)}
+        checkName={name}
+        checkStatus={status}
+        sourceUrl={sourcePages?.[0]}
+        findings={value || {}}
+        sourceCode={(value as any)?.sourceCode || (value as any)?.htmlSnippet}
+        detectedElements={(
+          Object.entries(value || {}).filter(([key, val]) => 
+            typeof val === 'string' && (val.includes('<') || val.includes('>'))
+          ).map(([key, val]) => ({
+            element: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
+            snippet: String(val).substring(0, 500),
+          }))
+        )}
+      />
     </div>
   );
 }

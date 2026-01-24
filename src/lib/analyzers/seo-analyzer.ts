@@ -7,15 +7,17 @@ export function analyzeSEO(data: PageData): CategoryResult {
   const checks: Check[] = [];
 
   // 1. Title Tag
-  const title = $("title").text().trim();
+  const titleEl = $("title");
+  const title = titleEl.text().trim();
   const titleLength = title.length;
+  const titleHtml = titleEl.length > 0 ? `<title>${title}</title>` : 'Not found';
   checks.push({
     id: "title",
     name: "Title Tag",
     status: titleLength >= 50 && titleLength <= 60 ? "pass" : titleLength > 0 ? "warning" : "fail",
     score: titleLength >= 50 && titleLength <= 60 ? 100 : titleLength > 60 ? 70 : titleLength > 0 ? 50 : 0,
     weight: 15,
-    value: { title, length: titleLength },
+    value: { title, length: titleLength, htmlSnippet: titleHtml },
     message: title
       ? `Title: "${title}" (${titleLength} characters)`
       : "No Title Tag found",
@@ -29,15 +31,17 @@ export function analyzeSEO(data: PageData): CategoryResult {
   });
 
   // 2. Meta Description
-  const metaDesc = $('meta[name="description"]').attr("content") || "";
+  const metaDescEl = $('meta[name="description"]');
+  const metaDesc = metaDescEl.attr("content") || "";
   const descLength = metaDesc.length;
+  const metaDescHtml = metaDescEl.length > 0 ? `<meta name="description" content="${metaDesc.substring(0, 100)}${metaDesc.length > 100 ? '...' : ''}">` : 'Not found';
   checks.push({
     id: "metaDescription",
     name: "Meta Description Tag",
     status: descLength >= 120 && descLength <= 160 ? "pass" : descLength > 0 ? "warning" : "fail",
     score: descLength >= 120 && descLength <= 160 ? 100 : descLength > 0 ? 50 : 0,
     weight: 12,
-    value: { description: metaDesc, length: descLength },
+    value: { description: metaDesc, length: descLength, htmlSnippet: metaDescHtml },
     message: metaDesc
       ? `Meta Description: ${descLength} characters`
       : "No Meta Description found",
@@ -54,13 +58,14 @@ export function analyzeSEO(data: PageData): CategoryResult {
   const h1Tags = $("h1");
   const h1Count = h1Tags.length;
   const h1Text = h1Tags.first().text().trim();
+  const h1Html = h1Count > 0 ? `<h1>${h1Text.substring(0, 80)}${h1Text.length > 80 ? '...' : ''}</h1>` : 'No H1 tag found';
   checks.push({
     id: "h1Tag",
     name: "H1 Header Tag",
     status: h1Count === 1 ? "pass" : h1Count > 1 ? "warning" : "fail",
     score: h1Count === 1 ? 100 : h1Count > 1 ? 70 : 0,
     weight: 10,
-    value: { count: h1Count, text: h1Text },
+    value: { count: h1Count, text: h1Text, htmlSnippet: h1Html },
     message: h1Count === 1
       ? `H1 Tag: "${h1Text}"`
       : h1Count > 1
@@ -121,14 +126,16 @@ export function analyzeSEO(data: PageData): CategoryResult {
   });
 
   // 6. Canonical Tag
-  const canonical = $('link[rel="canonical"]').attr("href") || "";
+  const canonicalEl = $('link[rel="canonical"]');
+  const canonical = canonicalEl.attr("href") || "";
+  const canonicalHtml = canonical ? `<link rel="canonical" href="${canonical}">` : 'No canonical tag found';
   checks.push({
     id: "canonical",
     name: "Canonical Tag",
     status: canonical ? "pass" : "warning",
     score: canonical ? 100 : 50,
     weight: 8,
-    value: { canonical },
+    value: { canonical, htmlSnippet: canonicalHtml },
     message: canonical
       ? `Canonical URL: ${canonical}`
       : "No Canonical Tag found",

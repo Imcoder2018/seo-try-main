@@ -26,6 +26,7 @@ export interface AnalysisResult {
   content: CategoryResult;
   eeat: CategoryResult;
   localSeo: CategoryResult;
+  technicalSeo: CategoryResult;
   overallScore: number;
   overallGrade: string;
   recommendations: Recommendation[];

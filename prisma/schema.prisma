@@ -70,6 +70,7 @@ model Audit {
   contentScore     Int?
   eeatScore        Int?
   accessibilityScore Int?
+  technicalSeoScore Int?
 
   localSeoResults  Json?
   seoResults         Json?
@@ -81,6 +82,7 @@ model Audit {
   contentResults     Json?
   eeatResults        Json?
   accessibilityResults Json?
+  technicalSeoResults Json?
 
   recommendations Recommendation[]
 

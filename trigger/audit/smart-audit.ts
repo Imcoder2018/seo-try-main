@@ -62,6 +62,7 @@ interface SmartAuditOutput {
   performance: CategoryResult;
   social: CategoryResult;
   technology: CategoryResult;
+  technicalSeo: CategoryResult;
   content: CategoryResult;
   eeat: CategoryResult;
   recommendations: Array<{
@@ -84,6 +85,7 @@ interface SmartAuditOutput {
     eeat: string[];
     social: string[];
     technology: string[];
+    technicalSeo: string[];
     links: string[];
     usability: string[];
   };
@@ -130,19 +132,19 @@ function classifyPage(url: string, crawlData?: SmartAuditPayload['crawlData']): 
 // Determine which audit sections should run for each page type
 function getAuditSectionsForPageType(pageType: PageType): string[] {
   const mapping: Record<PageType, string[]> = {
-    home: ['performance', 'technology', 'social', 'localSeo', 'usability', 'links', 'seo', 'content'],
-    contact: ['localSeo', 'usability', 'technology', 'seo'],
-    about: ['eeat', 'content', 'social', 'seo'],
-    blog: ['content', 'eeat', 'social', 'seo'],
-    product: ['seo', 'performance', 'usability', 'links', 'content'],
-    service: ['seo', 'content', 'eeat', 'performance'],
-    category: ['seo', 'links', 'usability'],
-    tag: ['seo', 'links', 'usability'],
-    archive: ['seo', 'links', 'usability'],
-    legal: ['usability', 'technology'], // Legal pages don't need SEO optimization
-    other: ['seo', 'links', 'usability', 'content'],
+    home: ['performance', 'technology', 'technicalSeo', 'social', 'localSeo', 'usability', 'links', 'seo', 'content'],
+    contact: ['localSeo', 'usability', 'technology', 'seo', 'technicalSeo'],
+    about: ['eeat', 'content', 'social', 'seo', 'technicalSeo'],
+    blog: ['content', 'eeat', 'social', 'seo', 'technicalSeo'],
+    product: ['seo', 'performance', 'usability', 'links', 'content', 'technicalSeo'],
+    service: ['seo', 'content', 'eeat', 'performance', 'technicalSeo'],
+    category: ['seo', 'links', 'usability', 'technicalSeo'],
+    tag: ['seo', 'links', 'usability', 'technicalSeo'],
+    archive: ['seo', 'links', 'usability', 'technicalSeo'],
+    legal: ['usability', 'technology', 'technicalSeo'],
+    other: ['seo', 'links', 'usability', 'content', 'technicalSeo'],
   };
-  return mapping[pageType] || ['seo', 'links', 'usability'];
+  return mapping[pageType] || ['seo', 'links', 'usability', 'technicalSeo'];
 }
 
 // Calculate grade from score
@@ -219,26 +221,44 @@ async function fetchPage(url: string): Promise<{
 function analyzeSEO(pageData: any): CategoryResult {
   const checks: Check[] = [];
   const html = pageData.html;
+  const url = pageData.url;
   
-  // Title tag
+  // Extract text content for analysis
+  const textContent = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const wordCount = textContent.split(/\s+/).filter((w: string) => w.length > 2).length;
+  
+  // 1. Title tag optimization
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  const titleFullMatch = html.match(/<title[^>]*>[^<]*<\/title>/i);
   const title = titleMatch ? titleMatch[1].trim() : '';
   const titleLength = title.length;
   
   checks.push({
     id: 'title-tag',
-    name: 'Title Tag',
+    name: 'Title Tag Optimization',
     status: titleLength >= 30 && titleLength <= 60 ? 'pass' : titleLength > 0 ? 'warning' : 'fail',
     score: titleLength >= 30 && titleLength <= 60 ? 100 : titleLength > 0 ? 50 : 0,
-    weight: 15,
-    value: { title, length: titleLength },
+    weight: 12,
+    value: { 
+      title, 
+      length: titleLength, 
+      optimal: '30-60 characters',
+      htmlSnippet: titleFullMatch ? titleFullMatch[0] : 'Not found'
+    },
     message: titleLength > 0 
       ? `Title tag found (${titleLength} chars): "${title.substring(0, 50)}${title.length > 50 ? '...' : ''}"`
       : 'No title tag found',
     recommendation: titleLength === 0 ? 'Add a descriptive title tag (30-60 characters)' : titleLength < 30 || titleLength > 60 ? 'Optimize title length to 30-60 characters' : undefined,
   });
   
-  // Meta description
+  // 2. Meta description
+  const metaDescFullMatch = html.match(/<meta[^>]*name=["']description["'][^>]*>/i) ||
+                            html.match(/<meta[^>]*content=["'][^"']*["'][^>]*name=["']description["'][^>]*>/i);
   const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i) ||
                         html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*name=["']description["']/i);
   const metaDesc = metaDescMatch ? metaDescMatch[1].trim() : '';
@@ -249,29 +269,169 @@ function analyzeSEO(pageData: any): CategoryResult {
     name: 'Meta Description',
     status: metaDescLength >= 120 && metaDescLength <= 160 ? 'pass' : metaDescLength > 0 ? 'warning' : 'fail',
     score: metaDescLength >= 120 && metaDescLength <= 160 ? 100 : metaDescLength > 0 ? 50 : 0,
-    weight: 12,
-    value: { description: metaDesc, length: metaDescLength },
+    weight: 10,
+    value: { 
+      description: metaDesc.substring(0, 100) + (metaDesc.length > 100 ? '...' : ''), 
+      length: metaDescLength, 
+      optimal: '120-160 characters',
+      htmlSnippet: metaDescFullMatch ? metaDescFullMatch[0] : 'Not found'
+    },
     message: metaDescLength > 0 
       ? `Meta description found (${metaDescLength} chars)`
       : 'No meta description found',
-    recommendation: metaDescLength === 0 ? 'Add a compelling meta description (120-160 characters)' : undefined,
+    recommendation: metaDescLength === 0 ? 'Add a compelling meta description (120-160 characters)' : metaDescLength < 120 ? 'Expand meta description to 120-160 characters' : metaDescLength > 160 ? 'Shorten meta description to 160 characters max' : undefined,
   });
   
-  // H1 tag - use parsed data for consistency
+  // 3. H1-H3 Structure Analysis
   const h1Count = pageData.parsedData?.h1Count || (html.match(/<h1[^>]*>/gi) || []).length;
+  const h2Count = pageData.parsedData?.h2Count || (html.match(/<h2[^>]*>/gi) || []).length;
+  const h3Count = pageData.parsedData?.h3Count || (html.match(/<h3[^>]*>/gi) || []).length;
+  
+  // Extract H1 full tag and text
+  const h1FullMatch = html.match(/<h1[^>]*>[^<]*<\/h1>/i);
+  const h1TextMatch = html.match(/<h1[^>]*>([^<]*)<\/h1>/i);
+  const h1Text = h1TextMatch ? h1TextMatch[1].trim() : '';
+  
+  const hasProperStructure = h1Count === 1 && h2Count >= 1;
+  const structureScore = (h1Count === 1 ? 50 : h1Count === 0 ? 0 : 30) + (h2Count >= 2 ? 30 : h2Count >= 1 ? 20 : 0) + (h3Count >= 1 ? 20 : 0);
   
   checks.push({
-    id: 'h1-tag',
-    name: 'H1 Tag',
-    status: h1Count === 1 ? 'pass' : h1Count > 1 ? 'warning' : 'fail',
-    score: h1Count === 1 ? 100 : h1Count > 1 ? 70 : 0,
+    id: 'heading-structure',
+    name: 'H1-H3 Heading Structure',
+    status: hasProperStructure && h3Count >= 1 ? 'pass' : hasProperStructure ? 'warning' : 'fail',
+    score: structureScore,
     weight: 10,
-    value: { count: h1Count },
-    message: h1Count === 1 ? 'Single H1 tag found' : h1Count > 1 ? `Multiple H1 tags found (${h1Count})` : 'No H1 tag found',
-    recommendation: h1Count === 0 ? 'Add exactly one H1 tag per page' : h1Count > 1 ? 'Use only one H1 tag per page' : undefined,
+    value: { 
+      h1: h1Count, h2: h2Count, h3: h3Count,
+      h1Text: h1Text.substring(0, 60) + (h1Text.length > 60 ? '...' : ''),
+      hasProperHierarchy: hasProperStructure,
+      htmlSnippet: h1FullMatch ? h1FullMatch[0] : 'No H1 tag found'
+    },
+    message: `Found ${h1Count} H1, ${h2Count} H2, ${h3Count} H3 tags${h1Text ? `. H1: "${h1Text.substring(0, 40)}..."` : ''}`,
+    recommendation: h1Count === 0 ? 'Add exactly one H1 tag' : h1Count > 1 ? 'Use only one H1 tag per page' : h2Count === 0 ? 'Add H2 subheadings to structure content' : h3Count === 0 ? 'Consider adding H3 tags for better content hierarchy' : undefined,
   });
   
-  // Canonical URL
+  // 4. Keyword Placement Analysis (check if title keywords appear in H1, meta, content)
+  const titleWords = title.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
+  const h1Words = h1Text.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
+  const metaWords = metaDesc.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
+  
+  // Find common keywords between title and H1
+  const titleH1Match = titleWords.filter((w: string) => h1Words.includes(w)).length;
+  const titleMetaMatch = titleWords.filter((w: string) => metaWords.includes(w)).length;
+  const keywordConsistency = titleWords.length > 0 ? Math.round(((titleH1Match + titleMetaMatch) / (titleWords.length * 2)) * 100) : 0;
+  
+  checks.push({
+    id: 'keyword-placement',
+    name: 'Keyword Placement (Primary + Secondary)',
+    status: keywordConsistency >= 50 ? 'pass' : keywordConsistency >= 25 ? 'warning' : 'fail',
+    score: keywordConsistency,
+    weight: 8,
+    value: { 
+      titleKeywords: titleWords.slice(0, 5),
+      titleH1Match,
+      titleMetaMatch,
+      consistency: keywordConsistency + '%'
+    },
+    message: keywordConsistency >= 50 
+      ? `Good keyword consistency: ${keywordConsistency}% match between title, H1, and meta`
+      : `Low keyword consistency (${keywordConsistency}%): Align keywords across title, H1, and meta description`,
+    recommendation: keywordConsistency < 50 ? 'Use your primary keyword in the title, H1, and meta description for better relevance' : undefined,
+  });
+  
+  // 5. URL Optimization
+  let urlScore = 100;
+  const urlIssues: string[] = [];
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    if (pathname.includes('_')) { urlScore -= 15; urlIssues.push('underscores'); }
+    if (/[A-Z]/.test(pathname)) { urlScore -= 10; urlIssues.push('uppercase'); }
+    if (pathname.length > 75) { urlScore -= 15; urlIssues.push('too long'); }
+    if (/\d{5,}/.test(pathname)) { urlScore -= 10; urlIssues.push('contains IDs'); }
+    if (/\.(html|php|asp)$/i.test(pathname)) { urlScore -= 5; urlIssues.push('file extension'); }
+  } catch { urlScore = 50; }
+  
+  checks.push({
+    id: 'url-optimization',
+    name: 'URL Optimization',
+    status: urlScore >= 85 ? 'pass' : urlScore >= 60 ? 'warning' : 'fail',
+    score: Math.max(0, urlScore),
+    weight: 6,
+    value: { url: url, issues: urlIssues },
+    message: urlIssues.length === 0 ? 'URL is well-optimized' : `URL issues: ${urlIssues.join(', ')}`,
+    recommendation: urlIssues.length > 0 ? 'Use lowercase, hyphen-separated URLs without parameters or file extensions' : undefined,
+  });
+  
+  // 6. Internal Linking
+  const internalLinks = (html.match(/href=["']\/[^"']*["']/gi) || []).length;
+  const sameHostLinks = (html.match(new RegExp(`href=["']https?://[^"']*${new URL(url).hostname}[^"']*["']`, 'gi')) || []).length;
+  const totalInternalLinks = internalLinks + sameHostLinks;
+  
+  checks.push({
+    id: 'internal-linking',
+    name: 'Internal Linking',
+    status: totalInternalLinks >= 5 ? 'pass' : totalInternalLinks >= 2 ? 'warning' : 'fail',
+    score: totalInternalLinks >= 10 ? 100 : totalInternalLinks >= 5 ? 80 : totalInternalLinks >= 2 ? 50 : 20,
+    weight: 8,
+    value: { count: totalInternalLinks, relativeLinks: internalLinks, absoluteLinks: sameHostLinks },
+    message: `Found ${totalInternalLinks} internal links`,
+    recommendation: totalInternalLinks < 5 ? 'Add more internal links to improve site navigation and pass link equity' : undefined,
+  });
+  
+  // 7. Image Alt Tags
+  const images = html.match(/<img[^>]*>/gi) || [];
+  const imagesWithAlt = images.filter((img: string) => /alt=["'][^"']+["']/i.test(img)).length;
+  const imagesWithEmptyAlt = images.filter((img: string) => /alt=["']\s*["']/i.test(img)).length;
+  const altPercentage = images.length > 0 ? Math.round((imagesWithAlt / images.length) * 100) : 100;
+  
+  checks.push({
+    id: 'image-alt-tags',
+    name: 'Image Alt Tags',
+    status: altPercentage >= 90 ? 'pass' : altPercentage >= 50 ? 'warning' : 'fail',
+    score: altPercentage,
+    weight: 8,
+    value: { total: images.length, withAlt: imagesWithAlt, emptyAlt: imagesWithEmptyAlt, percentage: altPercentage },
+    message: `${imagesWithAlt}/${images.length} images have alt tags (${altPercentage}%)${imagesWithEmptyAlt > 0 ? `, ${imagesWithEmptyAlt} with empty alt` : ''}`,
+    recommendation: altPercentage < 90 ? 'Add descriptive alt text to all content images' : undefined,
+  });
+  
+  // 8. Content Duplication Detection (check for duplicate paragraphs/blocks)
+  const paragraphs = html.match(/<p[^>]*>([^<]{50,})<\/p>/gi) || [];
+  const uniqueParagraphs = new Set(paragraphs.map((p: string) => p.toLowerCase().replace(/<[^>]+>/g, '').trim()));
+  const duplicationRatio = paragraphs.length > 0 ? Math.round((uniqueParagraphs.size / paragraphs.length) * 100) : 100;
+  
+  checks.push({
+    id: 'content-duplication',
+    name: 'Content Duplication',
+    status: duplicationRatio >= 90 ? 'pass' : duplicationRatio >= 70 ? 'warning' : 'fail',
+    score: duplicationRatio,
+    weight: 6,
+    value: { totalParagraphs: paragraphs.length, uniqueParagraphs: uniqueParagraphs.size, duplicationRatio },
+    message: duplicationRatio >= 90 
+      ? `Content appears unique (${duplicationRatio}% unique paragraphs)`
+      : `Possible duplicate content detected (${duplicationRatio}% unique)`,
+    recommendation: duplicationRatio < 90 ? 'Review and remove or rewrite duplicate content blocks' : undefined,
+  });
+  
+  // 9. Thin Content Detection
+  const isThinContent = wordCount < 300;
+  const contentScore = wordCount >= 1000 ? 100 : wordCount >= 500 ? 85 : wordCount >= 300 ? 70 : wordCount >= 100 ? 40 : 10;
+  
+  checks.push({
+    id: 'thin-content',
+    name: 'Thin Content Detection',
+    status: wordCount >= 300 ? 'pass' : wordCount >= 100 ? 'warning' : 'fail',
+    score: contentScore,
+    weight: 8,
+    value: { wordCount, isThinContent, recommended: '300+ words for informational pages' },
+    message: isThinContent 
+      ? `Thin content: Only ${wordCount} words (recommended: 300+)`
+      : `Good content length: ${wordCount} words`,
+    recommendation: isThinContent ? 'Expand content to at least 300 words for better SEO performance' : undefined,
+  });
+  
+  // 10. Canonical URL
   const canonicalMatch = html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["']/i);
   const hasCanonical = !!canonicalMatch;
   
@@ -280,26 +440,10 @@ function analyzeSEO(pageData: any): CategoryResult {
     name: 'Canonical URL',
     status: hasCanonical ? 'pass' : 'warning',
     score: hasCanonical ? 100 : 50,
-    weight: 8,
-    value: { canonical: canonicalMatch?.[1] || null },
+    weight: 6,
+    value: { canonical: canonicalMatch?.[1] || null, currentUrl: url },
     message: hasCanonical ? `Canonical URL set: ${canonicalMatch![1]}` : 'No canonical URL defined',
     recommendation: !hasCanonical ? 'Add a canonical URL to prevent duplicate content issues' : undefined,
-  });
-  
-  // Content image accessibility (ignoring decorative icons like logos, footer icons)
-  const images = html.match(/<img[^>]*>/gi) || [];
-  const imagesWithAlt = images.filter((img: string) => /alt=["'][^"']+["']/i.test(img)).length;
-  const altPercentage = images.length > 0 ? Math.round((imagesWithAlt / images.length) * 100) : 100;
-  
-  checks.push({
-    id: 'content-image-accessibility',
-    name: 'Content Image Accessibility',
-    status: altPercentage >= 90 ? 'pass' : altPercentage >= 50 ? 'warning' : 'fail',
-    score: altPercentage,
-    weight: 8,
-    value: { total: images.length, withAlt: imagesWithAlt, percentage: altPercentage },
-    message: `${imagesWithAlt}/${images.length} content images have alt tags (${altPercentage}%)`,
-    recommendation: altPercentage < 90 ? 'Add descriptive alt text to content images for accessibility and SEO' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -955,6 +1099,315 @@ function analyzeUsability(pageData: any): CategoryResult {
   };
 }
 
+// Technical SEO Analyzer - comprehensive technical checks
+function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResult {
+  const checks: Check[] = [];
+  const html = pageData.html;
+  const url = pageData.url;
+  
+  // 1. Indexing Status Check (robots meta tag)
+  const robotsMetaFull = html.match(/<meta[^>]*name=["']robots["'][^>]*>/i);
+  const robotsMeta = html.match(/<meta[^>]*name=["']robots["'][^>]*content=["']([^"']*)["\']/i);
+  const robotsContent = robotsMeta?.[1]?.toLowerCase() || '';
+  const isNoIndex = robotsContent.includes('noindex');
+  const isNoFollow = robotsContent.includes('nofollow');
+  
+  checks.push({
+    id: 'indexing-status',
+    name: 'Indexing Status',
+    status: isNoIndex ? 'fail' : 'pass',
+    score: isNoIndex ? 0 : 100,
+    weight: 15,
+    value: { 
+      isIndexable: !isNoIndex, 
+      isFollowable: !isNoFollow,
+      robotsContent: robotsContent || 'index, follow (default)',
+      pageUrl: url,
+      htmlSnippet: robotsMetaFull?.[0] || '<meta name="robots" content="index, follow"> (default - not explicitly set)'
+    },
+    message: isNoIndex 
+      ? `Page is blocked from indexing (noindex)` 
+      : `Page is indexable by search engines`,
+    recommendation: isNoIndex ? 'Remove noindex directive if this page should appear in search results' : undefined,
+  });
+  
+  // 2. Sitemap Check
+  const hasSitemapLink = html.includes('sitemap') || html.includes('Sitemap');
+  
+  checks.push({
+    id: 'sitemap-reference',
+    name: 'Sitemap & Robots.txt',
+    status: 'info',
+    score: 70,
+    weight: 10,
+    value: { 
+      hasSitemapReference: hasSitemapLink,
+      recommendation: 'Verify sitemap.xml exists at /sitemap.xml'
+    },
+    message: 'Sitemap should be present at /sitemap.xml and referenced in robots.txt',
+    recommendation: 'Ensure your sitemap.xml is properly configured and submitted to Google Search Console',
+  });
+  
+  // 3. Page Speed Indicators (basic checks)
+  const scripts = (html.match(/<script[^>]*>/gi) || []).length;
+  const stylesheets = (html.match(/<link[^>]*rel=["']stylesheet["']/gi) || []).length;
+  const inlineStyles = (html.match(/<style[^>]*>/gi) || []).length;
+  const totalResources = scripts + stylesheets;
+  
+  const hasRenderBlocking = scripts > 5 || stylesheets > 3;
+  
+  checks.push({
+    id: 'page-speed-indicators',
+    name: 'Page Speed (Resource Count)',
+    status: totalResources <= 10 ? 'pass' : totalResources <= 20 ? 'warning' : 'fail',
+    score: totalResources <= 10 ? 100 : totalResources <= 20 ? 70 : 40,
+    weight: 12,
+    value: { 
+      scripts, 
+      stylesheets, 
+      inlineStyles,
+      totalResources,
+      hasRenderBlocking
+    },
+    message: `Found ${scripts} scripts, ${stylesheets} stylesheets (${totalResources} total resources)`,
+    recommendation: totalResources > 15 ? 'Reduce render-blocking resources for better page speed. Consider bundling CSS/JS files.' : undefined,
+  });
+  
+  // 4. Mobile Friendliness
+  const viewportMetaFull = html.match(/<meta[^>]*name=["']viewport["'][^>]*>/i);
+  const viewportMeta = html.match(/<meta[^>]*name=["']viewport["'][^>]*content=["']([^"']*)["\']/i);
+  const hasProperViewport = viewportMeta && viewportMeta[1].includes('width=device-width');
+  const touchIconMatch = html.match(/<link[^>]*rel=["']apple-touch-icon["'][^>]*>/i);
+  const hasTouchIcons = !!touchIconMatch;
+  const hasResponsiveImages = html.includes('srcset') || html.includes('sizes=');
+  
+  const mobileScore = (hasProperViewport ? 40 : 0) + (hasTouchIcons ? 20 : 0) + (hasResponsiveImages ? 40 : 0);
+  
+  checks.push({
+    id: 'mobile-friendliness',
+    name: 'Mobile Friendliness',
+    status: mobileScore >= 80 ? 'pass' : mobileScore >= 40 ? 'warning' : 'fail',
+    score: mobileScore,
+    weight: 12,
+    value: { 
+      hasProperViewport, 
+      hasTouchIcons,
+      hasResponsiveImages,
+      viewportContent: viewportMeta?.[1] || 'Not set',
+      htmlSnippet: viewportMetaFull?.[0] || 'No viewport meta tag found'
+    },
+    message: hasProperViewport 
+      ? `Mobile-friendly: viewport set${hasResponsiveImages ? ', responsive images detected' : ''}`
+      : 'Missing proper viewport meta tag for mobile devices',
+    recommendation: !hasProperViewport ? 'Add viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">' : undefined,
+  });
+  
+  // 5. HTTPS & Security
+  const isHttps = pageData.isHttps;
+  const hasHSTS = pageData.headers?.['strict-transport-security'];
+  const hasCSP = pageData.headers?.['content-security-policy'];
+  const hasXFrameOptions = pageData.headers?.['x-frame-options'];
+  const hasXContentType = pageData.headers?.['x-content-type-options'];
+  
+  const securityScore = (isHttps ? 50 : 0) + (hasHSTS ? 15 : 0) + (hasCSP ? 15 : 0) + (hasXFrameOptions ? 10 : 0) + (hasXContentType ? 10 : 0);
+  
+  checks.push({
+    id: 'https-security',
+    name: 'HTTPS & Security Headers',
+    status: securityScore >= 80 ? 'pass' : securityScore >= 50 ? 'warning' : 'fail',
+    score: securityScore,
+    weight: 12,
+    value: { 
+      isHttps, 
+      hasHSTS: !!hasHSTS,
+      hasCSP: !!hasCSP,
+      hasXFrameOptions: !!hasXFrameOptions,
+      hasXContentType: !!hasXContentType,
+      missingHeaders: [
+        !hasHSTS && 'Strict-Transport-Security',
+        !hasCSP && 'Content-Security-Policy',
+        !hasXFrameOptions && 'X-Frame-Options',
+        !hasXContentType && 'X-Content-Type-Options'
+      ].filter(Boolean)
+    },
+    message: isHttps 
+      ? `HTTPS enabled. Security headers: ${[hasHSTS && 'HSTS', hasCSP && 'CSP', hasXFrameOptions && 'X-Frame-Options'].filter(Boolean).join(', ') || 'none detected'}`
+      : 'Site not served over HTTPS - critical security issue',
+    recommendation: !isHttps ? 'Enable HTTPS immediately for security and SEO benefits' : !hasHSTS ? 'Add security headers like HSTS, CSP, X-Frame-Options' : undefined,
+  });
+  
+  // 6. Broken Links Detection (basic - check for common error patterns)
+  const allLinks = html.match(/href=["']([^"']+)["']/gi) || [];
+  const emptyLinks = allLinks.filter((l: string) => /href=["']\s*["']|href=["']#["']|href=["']javascript:/i.test(l)).length;
+  const brokenLinkPatterns = allLinks.filter((l: string) => /404|error|not-found/i.test(l)).length;
+  
+  checks.push({
+    id: 'broken-links',
+    name: 'Broken Links (4xx/5xx Detection)',
+    status: emptyLinks === 0 && brokenLinkPatterns === 0 ? 'pass' : emptyLinks > 5 ? 'fail' : 'warning',
+    score: emptyLinks === 0 ? 100 : Math.max(0, 100 - emptyLinks * 10),
+    weight: 10,
+    value: { 
+      totalLinks: allLinks.length,
+      emptyLinks,
+      suspiciousPatterns: brokenLinkPatterns
+    },
+    message: emptyLinks === 0 
+      ? `${allLinks.length} links found, no empty or broken links detected`
+      : `Found ${emptyLinks} empty/placeholder links that need fixing`,
+    recommendation: emptyLinks > 0 ? 'Fix empty href attributes and placeholder links' : undefined,
+  });
+  
+  // 7. URL Structure Analysis
+  let pathname = '/';
+  let hasUnderscores = false;
+  let hasUppercase = false;
+  let hasParameters = false;
+  let pathLength = 1;
+  let hasMultipleSlashes = false;
+  let hasFileExtension = false;
+  
+  try {
+    const urlObj = new URL(url);
+    pathname = urlObj.pathname;
+    hasUnderscores = pathname.includes('_');
+    hasUppercase = /[A-Z]/.test(pathname);
+    hasParameters = urlObj.search.length > 0;
+    pathLength = pathname.length;
+    hasMultipleSlashes = /\/\//.test(pathname);
+    hasFileExtension = /\.(html|php|asp|aspx|jsp)$/i.test(pathname);
+  } catch (urlError) {
+    console.error('[TechnicalSEO] Error parsing URL:', url, urlError);
+  }
+  
+  const urlIssues = [
+    hasUnderscores && 'Contains underscores (use hyphens)',
+    hasUppercase && 'Contains uppercase letters',
+    hasParameters && 'Has query parameters',
+    pathLength > 100 && 'URL path is very long',
+    hasMultipleSlashes && 'Contains double slashes',
+    hasFileExtension && 'Contains file extension (prefer clean URLs)'
+  ].filter(Boolean);
+  
+  const urlScore = 100 - (urlIssues.length * 15);
+  
+  checks.push({
+    id: 'url-structure',
+    name: 'URL Structure',
+    status: urlIssues.length === 0 ? 'pass' : urlIssues.length <= 2 ? 'warning' : 'fail',
+    score: Math.max(0, urlScore),
+    weight: 8,
+    value: { 
+      url: pathname,
+      length: pathLength,
+      issues: urlIssues,
+      hasUnderscores,
+      hasUppercase,
+      hasParameters,
+      hasFileExtension
+    },
+    message: urlIssues.length === 0 
+      ? `Clean URL structure: ${pathname}`
+      : `URL issues: ${urlIssues.join(', ')}`,
+    recommendation: urlIssues.length > 0 ? 'Use lowercase, hyphen-separated, parameter-free URLs for best SEO' : undefined,
+  });
+  
+  // 8. Canonical Tag Analysis
+  const canonicalFullMatch = html.match(/<link[^>]*rel=["']canonical["'][^>]*>/i);
+  const canonicalMatch = html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["\']/i);
+  const canonical = canonicalMatch?.[1];
+  const hasCanonical = !!canonical;
+  const isSelfReferencing = canonical === url || canonical === url.replace(/\/$/, '') || canonical === url + '/';
+  
+  checks.push({
+    id: 'canonical-tag',
+    name: 'Canonical Tag',
+    status: hasCanonical ? 'pass' : 'warning',
+    score: hasCanonical ? (isSelfReferencing ? 100 : 80) : 40,
+    weight: 10,
+    value: { 
+      hasCanonical, 
+      canonicalUrl: canonical || null,
+      currentUrl: url,
+      isSelfReferencing,
+      htmlSnippet: canonicalFullMatch?.[0] || 'No canonical tag found'
+    },
+    message: hasCanonical 
+      ? `Canonical URL: ${canonical}${isSelfReferencing ? ' (self-referencing)' : ' (points to different URL)'}`
+      : 'No canonical tag found - may cause duplicate content issues',
+    recommendation: !hasCanonical ? 'Add a canonical tag to prevent duplicate content issues' : undefined,
+  });
+  
+  // 9. Redirect Detection (check for meta refresh)
+  const metaRefreshFull = html.match(/<meta[^>]*http-equiv=["']refresh["'][^>]*>/i);
+  const metaRefresh = html.match(/<meta[^>]*http-equiv=["']refresh["'][^>]*content=["']([^"']*)["\']/i);
+  const hasMetaRedirect = !!metaRefresh;
+  const jsRedirectMatch = html.match(/(window\.location|location\.href|location\.replace)[^;]{0,100}/i);
+  const jsRedirects = !!jsRedirectMatch;
+  
+  checks.push({
+    id: 'redirect-issues',
+    name: 'Redirect Issues',
+    status: !hasMetaRedirect && !jsRedirects ? 'pass' : 'warning',
+    score: !hasMetaRedirect && !jsRedirects ? 100 : 60,
+    weight: 8,
+    value: { 
+      hasMetaRedirect,
+      hasJsRedirect: jsRedirects,
+      metaRefreshContent: metaRefresh?.[1] || null,
+      htmlSnippet: metaRefreshFull?.[0] || jsRedirectMatch?.[0] || 'No redirects detected'
+    },
+    message: !hasMetaRedirect && !jsRedirects 
+      ? 'No client-side redirects detected'
+      : `${hasMetaRedirect ? 'Meta refresh redirect detected. ' : ''}${jsRedirects ? 'JavaScript redirect detected.' : ''} Use server-side 301 redirects instead.`,
+    recommendation: (hasMetaRedirect || jsRedirects) ? 'Replace client-side redirects with server-side 301 redirects for better SEO' : undefined,
+  });
+  
+  // 10. Core Web Vitals Indicators
+  const hasLazyLoading = html.includes('loading="lazy"') || html.includes("loading='lazy'");
+  const hasPreload = /<link[^>]*rel=["']preload["']/i.test(html);
+  const hasPreconnect = /<link[^>]*rel=["']preconnect["']/i.test(html);
+  const hasDeferredScripts = /<script[^>]*defer/i.test(html);
+  const hasAsyncScripts = /<script[^>]*async/i.test(html);
+  
+  const cwvScore = (hasLazyLoading ? 25 : 0) + (hasPreload ? 20 : 0) + (hasPreconnect ? 15 : 0) + ((hasDeferredScripts || hasAsyncScripts) ? 40 : 0);
+  
+  checks.push({
+    id: 'core-web-vitals-indicators',
+    name: 'Core Web Vitals Optimization',
+    status: cwvScore >= 80 ? 'pass' : cwvScore >= 40 ? 'warning' : 'fail',
+    score: cwvScore,
+    weight: 10,
+    value: { 
+      hasLazyLoading,
+      hasPreload,
+      hasPreconnect,
+      hasDeferredScripts,
+      hasAsyncScripts,
+      optimizations: [
+        hasLazyLoading && 'Lazy loading',
+        hasPreload && 'Resource preloading',
+        hasPreconnect && 'DNS preconnect',
+        hasDeferredScripts && 'Deferred scripts',
+        hasAsyncScripts && 'Async scripts'
+      ].filter(Boolean)
+    },
+    message: cwvScore >= 60 
+      ? `CWV optimizations: ${[hasLazyLoading && 'lazy loading', hasPreload && 'preload', hasDeferredScripts && 'defer'].filter(Boolean).join(', ')}`
+      : 'Missing Core Web Vitals optimizations',
+    recommendation: cwvScore < 60 ? 'Add lazy loading for images, defer/async for scripts, and preload critical resources' : undefined,
+  });
+  
+  const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
+  
+  return {
+    score: totalScore,
+    grade: calculateGrade(totalScore),
+    message: `Technical SEO analysis complete`,
+    checks,
+  };
+}
+
 const CATEGORY_WEIGHTS = {
   localSeo: 25,
   seo: 15,
@@ -963,8 +1416,9 @@ const CATEGORY_WEIGHTS = {
   performance: 10,
   social: 5,
   technology: 5,
-  content: 8,
-  eeat: 8,
+  technicalSeo: 8,
+  content: 6,
+  eeat: 6,
 };
 
 export const smartAuditTask = task({
@@ -1029,6 +1483,7 @@ export const smartAuditTask = task({
       eeat: [],
       social: [],
       technology: [],
+      technicalSeo: [],
       links: [],
       usability: [],
     };
@@ -1118,6 +1573,10 @@ export const smartAuditTask = task({
           // All pages (link structure analysis)
           return allPages.slice(0, 5).map(p => p.url);
 
+        case 'technicalSeo':
+          // All pages for comprehensive technical analysis
+          return allPages.slice(0, 5).map(p => p.url);
+
         default:
           return [homePage?.url || allPages[0]?.url].filter(Boolean);
       }
@@ -1142,6 +1601,7 @@ export const smartAuditTask = task({
         eeat: CategoryResult;
         social: CategoryResult;
         technology: CategoryResult;
+        technicalSeo: CategoryResult;
         links: CategoryResult;
         usability: CategoryResult;
       }>;
@@ -1194,6 +1654,21 @@ export const smartAuditTask = task({
         if (sectionsToRun.includes('usability')) {
           results.usability = analyzeUsability(pageData);
         }
+        if (sectionsToRun.includes('technicalSeo')) {
+          try {
+            results.technicalSeo = analyzeTechnicalSEO(pageData);
+            console.log(`[Smart Audit] TechnicalSEO analyzed for ${url}: score=${results.technicalSeo?.score}`);
+          } catch (techSeoError) {
+            console.error(`[Smart Audit] Error analyzing technicalSeo for ${url}:`, techSeoError);
+            // Provide a fallback result to ensure technicalSeo is always defined
+            results.technicalSeo = {
+              score: 50,
+              grade: 'D',
+              message: 'Technical SEO analysis encountered an error',
+              checks: [],
+            };
+          }
+        }
 
         pageResults.set(url, { pageData, results });
         pagesAnalyzed++;
@@ -1242,6 +1717,14 @@ export const smartAuditTask = task({
             case 'technology': fallbackResult = analyzeTechnology(pageResult.pageData); break;
             case 'links': fallbackResult = analyzeLinks(pageResult.pageData); break;
             case 'usability': fallbackResult = analyzeUsability(pageResult.pageData); break;
+            case 'technicalSeo': 
+              try {
+                fallbackResult = analyzeTechnicalSEO(pageResult.pageData);
+              } catch (e) {
+                console.error('[Smart Audit] Error in technicalSeo fallback:', e);
+                fallbackResult = { score: 50, grade: 'D', message: 'Technical SEO analysis error', checks: [] };
+              }
+              break;
             default: fallbackResult = { score: 50, grade: 'D', message: 'No data', checks: [] };
           }
           return { ...fallbackResult, sourcePages: [fallbackUrl] };
@@ -1292,8 +1775,17 @@ export const smartAuditTask = task({
     const eeat = aggregateSection('eeat');
     const social = aggregateSection('social');
     const technology = aggregateSection('technology');
+    const technicalSeo = aggregateSection('technicalSeo');
     const links = aggregateSection('links');
     const usability = aggregateSection('usability');
+
+    // Debug logging for technicalSeo
+    console.log('[Smart Audit] TechnicalSeo aggregated result:', {
+      score: technicalSeo.score,
+      grade: technicalSeo.grade,
+      checksCount: technicalSeo.checks?.length || 0,
+      sourcePages: technicalSeo.sourcePages,
+    });
 
     // Calculate overall score
     const overallScore = Math.round(
@@ -1304,6 +1796,7 @@ export const smartAuditTask = task({
         performance.score * CATEGORY_WEIGHTS.performance +
         social.score * CATEGORY_WEIGHTS.social +
         technology.score * CATEGORY_WEIGHTS.technology +
+        technicalSeo.score * CATEGORY_WEIGHTS.technicalSeo +
         content.score * CATEGORY_WEIGHTS.content +
         eeat.score * CATEGORY_WEIGHTS.eeat) /
         100
@@ -1316,6 +1809,7 @@ export const smartAuditTask = task({
     const allCategories = [
       { key: 'localSeo', name: 'Local SEO', result: localSeo },
       { key: 'seo', name: 'On-Page SEO', result: seo },
+      { key: 'technicalSeo', name: 'Technical SEO', result: technicalSeo },
       { key: 'content', name: 'Content Quality', result: content },
       { key: 'performance', name: 'Performance', result: performance },
       { key: 'eeat', name: 'E-E-A-T', result: eeat },
@@ -1362,6 +1856,7 @@ export const smartAuditTask = task({
       performance,
       social,
       technology,
+      technicalSeo,
       content,
       eeat,
       recommendations,

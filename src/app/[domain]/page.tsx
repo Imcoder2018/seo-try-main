@@ -9,6 +9,7 @@ import { CategoryScores } from "@/components/report/category-scores";
 import { CategorySection } from "@/components/report/category-section";
 import { SidebarNav } from "@/components/report/sidebar-nav";
 import { WordPressConnect, BulkFixButton, AutoFixButton } from "@/components/report/wordpress-connect";
+import { GoogleSearchConsoleConnect } from "@/components/report/google-search-console";
 import { CheckItem } from "@/components/report/check-item";
 import { ScoreRing } from "@/components/report/score-ring";
 import { ViewModeProvider, ViewModeToggle } from "@/components/report/view-mode-toggle";
@@ -32,6 +33,7 @@ interface Audit {
   socialScore: number | null;
   contentScore: number | null;
   eeatScore: number | null;
+  technicalSeoScore: number | null;
   localSeoResults: Record<string, unknown> | null;
   seoResults: Record<string, unknown> | null;
   linksResults: Record<string, unknown> | null;
@@ -39,6 +41,7 @@ interface Audit {
   performanceResults: Record<string, unknown> | null;
   socialResults: Record<string, unknown> | null;
   technologyResults: Record<string, unknown> | null;
+  technicalSeoResults: Record<string, unknown> | null;
   contentResults: Record<string, unknown> | null;
   eeatResults: Record<string, unknown> | null;
   recommendations: Array<{
@@ -65,6 +68,7 @@ interface Audit {
     eeat: string[];
     social: string[];
     technology: string[];
+    technicalSeo: string[];
     links: string[];
     usability: string[];
   };
@@ -81,13 +85,36 @@ const checkToFixAction: Record<string, { action: string; label: string }> = {
   "title": { action: "fix_meta", label: "Generate Meta" },
   "image-alt": { action: "fix_alt_text", label: "Fix Alt Text" },
   "imageAlt": { action: "fix_alt_text", label: "Fix Alt Text" },
+  "image-alt-tags": { action: "fix_alt_text", label: "Fix Alt Text" },
   "og-tags": { action: "fix_og_tags", label: "Enable OG Tags" },
   "openGraph": { action: "fix_og_tags", label: "Enable OG Tags" },
+  "open-graph": { action: "fix_og_tags", label: "Enable OG Tags" },
   "twitter-card": { action: "fix_og_tags", label: "Enable Twitter Cards" },
   "xml-sitemap": { action: "fix_sitemap", label: "Generate Sitemap" },
   "xmlSitemap": { action: "fix_sitemap", label: "Generate Sitemap" },
+  "sitemap-reference": { action: "fix_sitemap", label: "Generate Sitemap" },
   "robots-txt": { action: "fix_robots", label: "Optimize Robots.txt" },
   "robotsTxt": { action: "fix_robots", label: "Optimize Robots.txt" },
+  
+  // Technical SEO
+  "indexing-status": { action: "fix_indexing", label: "Fix Indexing" },
+  "page-speed-indicators": { action: "fix_performance", label: "Optimize Speed" },
+  "mobile-friendliness": { action: "fix_mobile", label: "Fix Mobile" },
+  "https-security": { action: "fix_security", label: "Enable Security" },
+  "broken-links": { action: "fix_links", label: "Fix Links" },
+  "url-structure": { action: "fix_urls", label: "Fix URLs" },
+  "canonical-tag": { action: "fix_canonical", label: "Add Canonical" },
+  "canonical-url": { action: "fix_canonical", label: "Add Canonical" },
+  "redirect-issues": { action: "fix_redirects", label: "Fix Redirects" },
+  "core-web-vitals-indicators": { action: "fix_cwv", label: "Optimize CWV" },
+  
+  // On-Page SEO Enhanced
+  "heading-structure": { action: "fix_headings", label: "Fix Headings" },
+  "keyword-placement": { action: "fix_keywords", label: "Optimize Keywords" },
+  "url-optimization": { action: "fix_urls", label: "Optimize URL" },
+  "internal-linking": { action: "fix_internal_links", label: "Add Internal Links" },
+  "content-duplication": { action: "fix_content", label: "Fix Duplicate Content" },
+  "thin-content": { action: "fix_content", label: "Expand Content" },
   
   // Performance
   "lazy-loading": { action: "fix_lazy_loading", label: "Enable Lazy Loading" },
@@ -419,14 +446,15 @@ export default function ReportPage({
           </div>
 
           <CategoryScores
-            localSeoScore={audit.localSeoScore || undefined}
+            localSeoScore={audit.localSeoScore ?? undefined}
             seoScore={audit.seoScore || 0}
             linksScore={audit.linksScore || 0}
             usabilityScore={audit.usabilityScore || 0}
             performanceScore={audit.performanceScore || 0}
             socialScore={audit.socialScore || 0}
-            contentScore={audit.contentScore || undefined}
-            eeatScore={audit.eeatScore || undefined}
+            contentScore={audit.contentScore ?? undefined}
+            eeatScore={audit.eeatScore ?? undefined}
+            technicalSeoScore={audit.technicalSeoScore ?? undefined}
           />
 
           {/* Recommendations */}
@@ -515,6 +543,19 @@ export default function ReportPage({
               wpConnected={wpConnected}
               fixAction="fix_onpage"
               sampleSizeExplanation={getSampleSizeExplanation('seo')}
+            />
+          )}
+
+          {audit.technicalSeoResults && (
+            <CategorySectionWithFix
+              id="technical-seo"
+              title="Technical SEO"
+              data={audit.technicalSeoResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              domain={domain}
+              wpConnected={wpConnected}
+              fixAction="fix_technical_seo"
+              sampleSizeExplanation={getSampleSizeExplanation('technical-seo')}
+              showGoogleSearchConsole={true}
             />
           )}
 
@@ -632,6 +673,7 @@ const getSampleSizeExplanation = (sectionId: string): string => {
   const explanations: Record<string, string> = {
     'performance': 'We audit the Homepage for speed as it represents your server\'s baseline performance.',
     'technology': 'We audit the Homepage as it represents your site\'s technical foundation.',
+    'technical-seo': 'We analyze all pages for indexing, sitemaps, page speed indicators, mobile-friendliness, security, broken links, URL structure, canonical tags, and redirects.',
     'local-seo': 'We check the Header, Footer, and Contact page where contact info is critical.',
     'seo': 'We analyze content pages (excluding category/tag pages) to assess your SEO efforts.',
     'content': 'We analyze blog and content pages for depth and structure.',
@@ -652,12 +694,14 @@ interface CategorySectionWithFixProps {
   wpConnected: boolean;
   sampleSizeExplanation?: string;
   fixAction?: string;
+  showGoogleSearchConsole?: boolean;
 }
 
-function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSizeExplanation, fixAction }: CategorySectionWithFixProps) {
-  const checks = data.checks as Array<{ id: string; name: string; status: string; message: string; value?: Record<string, unknown> }>;
+function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSizeExplanation, fixAction, showGoogleSearchConsole }: CategorySectionWithFixProps) {
+  const checks = data.checks as Array<{ id: string; name: string; status: string; message: string; value?: Record<string, unknown>; sourcePages?: string[] }>;
   const sourcePages = (data as any).sourcePages || [];
   const [showSourcePages, setShowSourcePages] = React.useState(false);
+  const [isExpanded, setIsExpanded] = React.useState(false); // Default collapsed
   
   // Count failed checks
   const failedChecks = checks.filter(c => c.status !== "pass" && c.status !== "info").length;
@@ -677,7 +721,7 @@ function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSi
       <div className={`h-1.5 bg-gradient-to-r ${getGradeColor(data.grade)}`}></div>
       
       <div className="p-6 lg:p-8">
-        <div className="flex flex-col md:flex-row gap-6 mb-6">
+        <div className="flex flex-col md:flex-row gap-6 mb-4">
           <div className="flex-shrink-0">
             <ScoreRing score={data.score} grade={data.grade} size="md" />
           </div>
@@ -744,35 +788,57 @@ function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSi
           </div>
         </div>
 
-        {/* Checks list with better styling */}
-        <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-6">
-          {checks.map((check) => {
-            const fix = checkToFixAction[check.id];
-            const isPassed = check.status === "pass" || check.status === "info";
-            
-            return (
-              <div key={check.id} className="relative group">
-                <CheckItem
-                  id={check.id}
-                  name={check.name}
-                  status={check.status as "pass" | "warning" | "fail" | "info"}
-                  message={check.message}
-                  value={check.value}
-                />
-                {!isPassed && wpConnected && fix && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-80 group-hover:opacity-100 transition-opacity">
-                    <AutoFixButton
-                      domain={domain}
-                      fixType={fix.action}
-                      label={fix.label}
-                      checkId={check.id}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {/* Google Search Console Integration for Technical SEO */}
+        {showGoogleSearchConsole && (
+          <GoogleSearchConsoleConnect domain={domain} />
+        )}
+
+        {/* Expand/Collapse toggle for checks */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mb-4 mt-4"
+        >
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {isExpanded ? 'Hide' : 'Show'} {checks.length} Audit Checks & Proof
+          </span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Click to {isExpanded ? 'collapse' : 'expand'}
+          </span>
+        </button>
+
+        {/* Checks list - collapsible */}
+        {isExpanded && (
+          <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-4 animate-in slide-in-from-top-2 duration-200">
+            {checks.map((check) => {
+              const fix = checkToFixAction[check.id];
+              const isPassed = check.status === "pass" || check.status === "info";
+              
+              return (
+                <div key={check.id} className="relative group">
+                  <CheckItem
+                    id={check.id}
+                    name={check.name}
+                    status={check.status as "pass" | "warning" | "fail" | "info"}
+                    message={check.message}
+                    value={check.value}
+                    sourcePages={check.sourcePages}
+                  />
+                  {!isPassed && wpConnected && fix && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-80 group-hover:opacity-100 transition-opacity">
+                      <AutoFixButton
+                        domain={domain}
+                        fixType={fix.action}
+                        label={fix.label}
+                        checkId={check.id}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

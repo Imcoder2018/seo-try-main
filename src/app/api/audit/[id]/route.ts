@@ -32,6 +32,7 @@ export async function GET(
         socialScore: true,
         contentScore: true,
         eeatScore: true,
+        technicalSeoScore: true,
         localSeoResults: true,
         seoResults: true,
         linksResults: true,
@@ -41,6 +42,7 @@ export async function GET(
         technologyResults: true,
         contentResults: true,
         eeatResults: true,
+        technicalSeoResults: true,
         createdAt: true,
         completedAt: true,
         recommendations: {

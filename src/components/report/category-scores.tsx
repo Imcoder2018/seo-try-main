@@ -1,6 +1,6 @@
 import { ScoreRing } from "./score-ring";
 import { calculateGrade } from "@/lib/utils";
-import { MapPin, Search, Link2, Users, Zap, Share2, FileText, Award } from "lucide-react";
+import { MapPin, Search, Link2, Users, Zap, Share2, FileText, Award, Settings, Shield } from "lucide-react";
 
 interface CategoryScoresProps {
   localSeoScore?: number;
@@ -11,11 +11,13 @@ interface CategoryScoresProps {
   socialScore: number;
   contentScore?: number;
   eeatScore?: number;
+  technicalSeoScore?: number;
 }
 
 const categoryIcons: Record<string, typeof Search> = {
   "Local SEO": MapPin,
   "On-Page SEO": Search,
+  "Technical SEO": Shield,
   "Links": Link2,
   "Usability": Users,
   "Performance": Zap,
@@ -27,6 +29,7 @@ const categoryIcons: Record<string, typeof Search> = {
 const categoryColors: Record<string, string> = {
   "Local SEO": "from-purple-500 to-indigo-500",
   "On-Page SEO": "from-blue-500 to-cyan-500",
+  "Technical SEO": "from-slate-600 to-slate-800",
   "Links": "from-green-500 to-emerald-500",
   "Usability": "from-amber-500 to-orange-500",
   "Performance": "from-yellow-500 to-amber-500",
@@ -44,10 +47,12 @@ export function CategoryScores({
   socialScore,
   contentScore,
   eeatScore,
+  technicalSeoScore,
 }: CategoryScoresProps) {
   const categories = [
     ...(localSeoScore !== undefined ? [{ label: "Local SEO", score: localSeoScore, href: "#local-seo" }] : []),
     { label: "On-Page SEO", score: seoScore, href: "#seo" },
+    ...(technicalSeoScore !== undefined ? [{ label: "Technical SEO", score: technicalSeoScore, href: "#technical-seo" }] : []),
     { label: "Links", score: linksScore, href: "#links" },
     { label: "Usability", score: usabilityScore, href: "#usability" },
     { label: "Performance", score: performanceScore, href: "#performance" },

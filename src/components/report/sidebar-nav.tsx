@@ -12,6 +12,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: "local-seo", label: "Local SEO", shortLabel: "Local" },
   { id: "seo", label: "On-Page SEO", shortLabel: "SEO" },
+  { id: "technical-seo", label: "Technical SEO", shortLabel: "Tech SEO" },
   { id: "links", label: "Links Analysis", shortLabel: "Links" },
   { id: "usability", label: "Usability", shortLabel: "Usability" },
   { id: "performance", label: "Performance", shortLabel: "Perf" },

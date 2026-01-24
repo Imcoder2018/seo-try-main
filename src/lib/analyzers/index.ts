@@ -22,6 +22,7 @@ const CATEGORY_WEIGHTS = {
   technology: 5,
   content: 8,
   eeat: 8,
+  technicalSeo: 4,
 };
 
 export async function fetchPage(url: string): Promise<PageData> {
@@ -290,6 +291,9 @@ export async function analyzeWebsite(url: string, options?: AnalyzeOptions): Pro
 
   const overallGrade = calculateGrade(overallScore);
 
+  // Analyze Technical SEO
+  const technicalSeo = analyzeTechnicalSEOBasic(pageData);
+
   // Generate recommendations from all categories
   const recommendations = generateRecommendations({
     localSeo,
@@ -313,9 +317,144 @@ export async function analyzeWebsite(url: string, options?: AnalyzeOptions): Pro
     technology,
     content,
     eeat,
+    technicalSeo,
     overallScore,
     overallGrade,
     recommendations,
+  };
+}
+
+function analyzeTechnicalSEOBasic(pageData: PageData): CategoryResult {
+  const checks: Check[] = [];
+  const html = pageData.html;
+  
+  // Check for robots meta tag
+  const robotsFullMatch = html.match(/<meta[^>]*name=["']robots["'][^>]*>/i);
+  const robotsMatch = html.match(/<meta[^>]*name=["']robots["'][^>]*content=["']([^"']*)["']/i);
+  const robotsContent = robotsMatch ? robotsMatch[1].toLowerCase() : '';
+  const isIndexable = !robotsContent.includes('noindex');
+  
+  checks.push({
+    id: 'indexing-status',
+    name: 'Indexing Status',
+    status: isIndexable ? 'pass' : 'fail',
+    score: isIndexable ? 100 : 0,
+    weight: 15,
+    value: { 
+      isIndexable, 
+      robotsDirective: robotsContent || 'index, follow (default)',
+      htmlSnippet: robotsFullMatch ? robotsFullMatch[0] : '<meta name="robots" content="index, follow"> (default - not explicitly set)'
+    },
+    message: isIndexable ? 'Page is indexable' : 'Page has noindex directive',
+    recommendation: !isIndexable ? 'Remove noindex directive to allow search engines to index this page' : undefined,
+  });
+  
+  // Check canonical tag
+  const canonicalFullMatch = html.match(/<link[^>]*rel=["']canonical["'][^>]*>/i);
+  const canonicalMatch = html.match(/<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["']/i);
+  const hasCanonical = !!canonicalMatch;
+  
+  checks.push({
+    id: 'canonical-tag',
+    name: 'Canonical Tag',
+    status: hasCanonical ? 'pass' : 'warning',
+    score: hasCanonical ? 100 : 50,
+    weight: 10,
+    value: { 
+      hasCanonical, 
+      canonicalUrl: canonicalMatch ? canonicalMatch[1] : null,
+      htmlSnippet: canonicalFullMatch ? canonicalFullMatch[0] : 'No canonical tag found'
+    },
+    message: hasCanonical ? `Canonical URL set: ${canonicalMatch![1]}` : 'No canonical tag found',
+    recommendation: !hasCanonical ? 'Add a canonical tag to prevent duplicate content issues' : undefined,
+  });
+  
+  // Check HTTPS
+  const isHttps = pageData.isHttps;
+  
+  checks.push({
+    id: 'https-security',
+    name: 'HTTPS Security',
+    status: isHttps ? 'pass' : 'fail',
+    score: isHttps ? 100 : 0,
+    weight: 15,
+    value: { 
+      isHttps,
+      htmlSnippet: isHttps ? '<!-- Page served over HTTPS -->' : '<!-- WARNING: Page not served over HTTPS -->'
+    },
+    message: isHttps ? 'Page served over HTTPS' : 'Page not served over HTTPS',
+    recommendation: !isHttps ? 'Enable HTTPS to secure your website' : undefined,
+  });
+  
+  // Check viewport
+  const viewportFullMatch = html.match(/<meta[^>]*name=["']viewport["'][^>]*>/i);
+  const hasViewport = !!viewportFullMatch;
+  
+  checks.push({
+    id: 'mobile-friendliness',
+    name: 'Mobile Friendliness',
+    status: hasViewport ? 'pass' : 'fail',
+    score: hasViewport ? 100 : 0,
+    weight: 10,
+    value: { 
+      hasViewport,
+      htmlSnippet: viewportFullMatch ? viewportFullMatch[0] : 'No viewport meta tag found'
+    },
+    message: hasViewport ? 'Viewport meta tag found' : 'No viewport meta tag',
+    recommendation: !hasViewport ? 'Add viewport meta tag for mobile responsiveness' : undefined,
+  });
+  
+  // Check page speed indicators (resource count)
+  const scripts = (html.match(/<script[^>]*>/gi) || []).length;
+  const stylesheets = (html.match(/<link[^>]*rel=["']stylesheet["']/gi) || []).length;
+  const totalResources = scripts + stylesheets;
+  
+  checks.push({
+    id: 'page-speed-indicators',
+    name: 'Page Speed (Resource Count)',
+    status: totalResources <= 10 ? 'pass' : totalResources <= 20 ? 'warning' : 'fail',
+    score: totalResources <= 10 ? 100 : totalResources <= 20 ? 70 : 40,
+    weight: 12,
+    value: { 
+      scripts, 
+      stylesheets, 
+      totalResources,
+      htmlSnippet: `<!-- Found ${scripts} scripts and ${stylesheets} stylesheets (${totalResources} total) -->`
+    },
+    message: `Found ${scripts} scripts, ${stylesheets} stylesheets (${totalResources} total resources)`,
+    recommendation: totalResources > 15 ? 'Reduce render-blocking resources for better page speed' : undefined,
+  });
+  
+  // Check for structured data
+  const hasJsonLd = html.includes('application/ld+json');
+  const hasMicrodata = html.includes('itemscope') || html.includes('itemtype');
+  const hasStructuredData = hasJsonLd || hasMicrodata;
+  
+  checks.push({
+    id: 'structured-data',
+    name: 'Structured Data',
+    status: hasStructuredData ? 'pass' : 'warning',
+    score: hasStructuredData ? 100 : 50,
+    weight: 8,
+    value: { 
+      hasJsonLd, 
+      hasMicrodata,
+      htmlSnippet: hasJsonLd ? '<script type="application/ld+json">...</script>' : hasMicrodata ? '<!-- Microdata found -->' : 'No structured data found'
+    },
+    message: hasStructuredData ? `Structured data found (${hasJsonLd ? 'JSON-LD' : 'Microdata'})` : 'No structured data detected',
+    recommendation: !hasStructuredData ? 'Add structured data (JSON-LD recommended) for rich search results' : undefined,
+  });
+  
+  const totalWeight = checks.reduce((sum, c) => sum + c.weight, 0);
+  const weightedScore = checks.reduce((sum, c) => sum + (c.score * c.weight), 0);
+  const score = Math.round(weightedScore / totalWeight);
+  const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : score >= 50 ? 'D' : 'F';
+  
+  return {
+    score,
+    grade,
+    message: score >= 80 ? 'Technical SEO is well optimized' : score >= 60 ? 'Some technical SEO improvements needed' : 'Technical SEO needs attention',
+    checks,
   };
 }
 
