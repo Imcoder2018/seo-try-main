@@ -1,5 +1,195 @@
 import { task, metadata } from "@trigger.dev/sdk";
 
+// PageSpeed API interfaces and helper
+interface PageSpeedCoreWebVitals {
+  lcp: number; // Largest Contentful Paint (ms)
+  lcpDisplay: string;
+  fcp: number; // First Contentful Paint (ms)
+  fcpDisplay: string;
+  cls: number; // Cumulative Layout Shift
+  clsDisplay: string;
+  tbt: number; // Total Blocking Time (ms)
+  tbtDisplay: string;
+  si: number; // Speed Index
+  siDisplay: string;
+  ttfb: number; // Time to First Byte (ms)
+  ttfbDisplay: string;
+}
+
+interface PageSpeedOpportunity {
+  id: string;
+  title: string;
+  description: string;
+  score: number;
+  savings?: string;
+}
+
+interface PageSpeedAPIResult {
+  success: boolean;
+  score: number;
+  coreWebVitals: PageSpeedCoreWebVitals;
+  opportunities: PageSpeedOpportunity[];
+  error?: string;
+  debugInfo?: {
+    apiKeyConfigured: boolean;
+    apiKeySource: string;
+    apiResponseStatus?: number;
+    fetchDuration?: number;
+  };
+}
+
+// Fetch PageSpeed Insights from Google API with comprehensive debug logging
+async function fetchPageSpeedInsights(url: string, strategy: 'mobile' | 'desktop' = 'mobile'): Promise<PageSpeedAPIResult> {
+  const apiKey = process.env.GOOGLE_PAGESPEED_API_KEY || process.env.PAGESPEED_API_KEY;
+  
+  // Debug: Log API key status
+  const apiKeySource = process.env.GOOGLE_PAGESPEED_API_KEY 
+    ? 'GOOGLE_PAGESPEED_API_KEY' 
+    : process.env.PAGESPEED_API_KEY 
+      ? 'PAGESPEED_API_KEY' 
+      : 'NOT_CONFIGURED';
+  
+  console.log(`🔍 [PageSpeed Debug] API Key Status: ${apiKeySource}`);
+  console.log(`🔍 [PageSpeed Debug] API Key Present: ${!!apiKey}`);
+  if (apiKey) {
+    console.log(`🔍 [PageSpeed Debug] API Key Preview: ${apiKey.substring(0, 15)}...`);
+  }
+  
+  if (!apiKey) {
+    console.warn('⚠️ [PageSpeed] No GOOGLE_PAGESPEED_API_KEY or PAGESPEED_API_KEY configured');
+    return {
+      success: false,
+      score: 0,
+      coreWebVitals: {
+        lcp: 0, lcpDisplay: 'N/A',
+        fcp: 0, fcpDisplay: 'N/A',
+        cls: 0, clsDisplay: 'N/A',
+        tbt: 0, tbtDisplay: 'N/A',
+        si: 0, siDisplay: 'N/A',
+        ttfb: 0, ttfbDisplay: 'N/A',
+      },
+      opportunities: [],
+      error: 'No PageSpeed API key configured. Set GOOGLE_PAGESPEED_API_KEY or PAGESPEED_API_KEY environment variable.',
+      debugInfo: {
+        apiKeyConfigured: false,
+        apiKeySource,
+      }
+    };
+  }
+
+  try {
+    const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=${strategy}&key=${apiKey}&category=performance`;
+    
+    console.log(`📡 [PageSpeed] Fetching ${strategy} insights for: ${url}`);
+    const startTime = Date.now();
+    
+    const response = await fetch(apiUrl, {
+      signal: AbortSignal.timeout(60000),
+    });
+    
+    const fetchDuration = Date.now() - startTime;
+    console.log(`📡 [PageSpeed] API Response: ${response.status} (${fetchDuration}ms)`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ [PageSpeed] API Error: ${response.status} - ${errorText.substring(0, 200)}`);
+      return {
+        success: false,
+        score: 0,
+        coreWebVitals: {
+          lcp: 0, lcpDisplay: 'N/A',
+          fcp: 0, fcpDisplay: 'N/A',
+          cls: 0, clsDisplay: 'N/A',
+          tbt: 0, tbtDisplay: 'N/A',
+          si: 0, siDisplay: 'N/A',
+          ttfb: 0, ttfbDisplay: 'N/A',
+        },
+        opportunities: [],
+        error: `PageSpeed API error: ${response.status}`,
+        debugInfo: {
+          apiKeyConfigured: true,
+          apiKeySource,
+          apiResponseStatus: response.status,
+          fetchDuration,
+        }
+      };
+    }
+
+    const data = await response.json();
+    const lighthouse = data.lighthouseResult;
+    const audits = lighthouse?.audits || {};
+    
+    // Extract Core Web Vitals with display values
+    const coreWebVitals: PageSpeedCoreWebVitals = {
+      lcp: audits['largest-contentful-paint']?.numericValue || 0,
+      lcpDisplay: audits['largest-contentful-paint']?.displayValue || 'N/A',
+      fcp: audits['first-contentful-paint']?.numericValue || 0,
+      fcpDisplay: audits['first-contentful-paint']?.displayValue || 'N/A',
+      cls: audits['cumulative-layout-shift']?.numericValue || 0,
+      clsDisplay: audits['cumulative-layout-shift']?.displayValue || 'N/A',
+      tbt: audits['total-blocking-time']?.numericValue || 0,
+      tbtDisplay: audits['total-blocking-time']?.displayValue || 'N/A',
+      si: audits['speed-index']?.numericValue || 0,
+      siDisplay: audits['speed-index']?.displayValue || 'N/A',
+      ttfb: audits['server-response-time']?.numericValue || 0,
+      ttfbDisplay: audits['server-response-time']?.displayValue || 'N/A',
+    };
+    
+    // Extract opportunities
+    const opportunities: PageSpeedOpportunity[] = Object.values(audits)
+      .filter((audit: any) => audit.details?.type === 'opportunity' && audit.score !== null && audit.score < 1)
+      .map((audit: any) => ({
+        id: audit.id,
+        title: audit.title,
+        description: audit.description,
+        score: audit.score,
+        savings: audit.details?.overallSavingsMs ? `${Math.round(audit.details.overallSavingsMs)}ms` : undefined,
+      }))
+      .sort((a: any, b: any) => a.score - b.score)
+      .slice(0, 5);
+    
+    const score = Math.round((lighthouse.categories?.performance?.score || 0) * 100);
+    
+    console.log(`✅ [PageSpeed] ${strategy} Score: ${score}/100`);
+    console.log(`✅ [PageSpeed] Core Web Vitals - LCP: ${coreWebVitals.lcpDisplay}, FCP: ${coreWebVitals.fcpDisplay}, CLS: ${coreWebVitals.clsDisplay}, TBT: ${coreWebVitals.tbtDisplay}`);
+    
+    return {
+      success: true,
+      score,
+      coreWebVitals,
+      opportunities,
+      debugInfo: {
+        apiKeyConfigured: true,
+        apiKeySource,
+        apiResponseStatus: response.status,
+        fetchDuration,
+      }
+    };
+    
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`❌ [PageSpeed] Exception: ${errorMsg}`);
+    return {
+      success: false,
+      score: 0,
+      coreWebVitals: {
+        lcp: 0, lcpDisplay: 'N/A',
+        fcp: 0, fcpDisplay: 'N/A',
+        cls: 0, clsDisplay: 'N/A',
+        tbt: 0, tbtDisplay: 'N/A',
+        si: 0, siDisplay: 'N/A',
+        ttfb: 0, ttfbDisplay: 'N/A',
+      },
+      opportunities: [],
+      error: errorMsg,
+      debugInfo: {
+        apiKeyConfigured: !!apiKey,
+        apiKeySource,
+      }
+    };
+  }
+}
+
 // Page type classification
 type PageType = 'home' | 'contact' | 'about' | 'blog' | 'product' | 'service' | 'category' | 'tag' | 'archive' | 'legal' | 'other';
 
@@ -406,21 +596,46 @@ function analyzeSEO(pageData: any): CategoryResult {
     recommendation: totalInternalLinks < 5 ? 'Add more internal links to improve site navigation and pass link equity' : undefined,
   });
   
-  // 7. Image Alt Tags
+  // 7. Image Alt Tags - improved detection with decorative image handling
   const images = html.match(/<img[^>]*>/gi) || [];
   const imagesWithAlt = images.filter((img: string) => /alt=["'][^"']+["']/i.test(img)).length;
   const imagesWithEmptyAlt = images.filter((img: string) => /alt=["']\s*["']/i.test(img)).length;
+  const imagesWithoutAlt = images.length - imagesWithAlt - imagesWithEmptyAlt;
   const altPercentage = images.length > 0 ? Math.round((imagesWithAlt / images.length) * 100) : 100;
+  
+  // Determine severity based on missing vs empty alt
+  // Empty alt (alt="") is valid for decorative images per WCAG
+  // Missing alt entirely is worse
+  const effectiveScore = images.length === 0 ? 100 : 
+    imagesWithoutAlt === 0 ? (altPercentage >= 50 ? 100 : 70) : // No missing alt, only empty (acceptable)
+    altPercentage;
   
   checks.push({
     id: 'image-alt-tags',
     name: 'Image Alt Tags',
-    status: altPercentage >= 90 ? 'pass' : altPercentage >= 50 ? 'warning' : 'fail',
-    score: altPercentage,
+    status: images.length === 0 ? 'pass' : 
+            imagesWithoutAlt === 0 && imagesWithAlt > 0 ? 'pass' :
+            altPercentage >= 50 ? 'warning' : 'fail',
+    score: effectiveScore,
     weight: 8,
-    value: { total: images.length, withAlt: imagesWithAlt, emptyAlt: imagesWithEmptyAlt, percentage: altPercentage },
-    message: `${imagesWithAlt}/${images.length} images have alt tags (${altPercentage}%)${imagesWithEmptyAlt > 0 ? `, ${imagesWithEmptyAlt} with empty alt` : ''}`,
-    recommendation: altPercentage < 90 ? 'Add descriptive alt text to all content images' : undefined,
+    value: { 
+      total: images.length, 
+      withAlt: imagesWithAlt, 
+      emptyAlt: imagesWithEmptyAlt,
+      missingAlt: imagesWithoutAlt,
+      percentage: altPercentage,
+      note: imagesWithEmptyAlt > 0 ? 'Empty alt="" is valid for decorative images (WCAG 2.1)' : undefined
+    },
+    message: images.length === 0 
+      ? 'No images found on page'
+      : imagesWithoutAlt === 0 
+        ? `All ${images.length} images have alt attributes (${imagesWithAlt} with text, ${imagesWithEmptyAlt} decorative)`
+        : `${imagesWithAlt}/${images.length} images have alt text (${altPercentage}%), ${imagesWithEmptyAlt} empty alt, ${imagesWithoutAlt} missing alt`,
+    recommendation: imagesWithoutAlt > 0 
+      ? `Add alt attributes to ${imagesWithoutAlt} images: Use descriptive text for content images, or alt="" for decorative images`
+      : imagesWithAlt === 0 && imagesWithEmptyAlt > 0
+        ? 'Review images marked as decorative (empty alt) - ensure content images have descriptive alt text'
+        : undefined,
   });
   
   // 8. Content Duplication Detection (check for duplicate paragraphs/blocks)
@@ -660,37 +875,48 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
   // Level 3: Generic map element (unverified - could be any map or just a div named "map")
   const hasMapMarker = /class=["'][^"']*\bmap\b[^"']*["']|id=["'][^"']*\bmap\b[^"']*["']/i.test(html);
   
+  // Check if this looks like a local business that would benefit from a map
+  const hasLocalBusinessIndicators = hasAddress || hasPhone || schemaData;
+  
   // Determine verification level
   const mapVerificationLevel = hasConfirmedGoogleMap ? 'confirmed' : hasGoogleMapsApi ? 'likely' : hasMapMarker ? 'unverified' : 'none';
   const hasVerifiedMap = hasConfirmedGoogleMap || hasGoogleMapsApi;
+  const hasAnyMapCode = hasVerifiedMap || hasMapMarker;
   
   checks.push({
     id: 'google-map',
     name: 'Google Map',
     status: hasConfirmedGoogleMap ? 'pass' : hasGoogleMapsApi ? 'pass' : hasMapMarker ? 'warning' : 'info',
-    score: hasConfirmedGoogleMap ? 100 : hasGoogleMapsApi ? 90 : hasMapMarker ? 40 : 50,
+    score: hasConfirmedGoogleMap ? 100 : hasGoogleMapsApi ? 90 : hasMapMarker ? 50 : (hasLocalBusinessIndicators ? 60 : 80),
     weight: 10,
     value: { 
       verificationLevel: mapVerificationLevel,
       hasConfirmedGoogleMap, 
       hasGoogleMapsApi,
       hasMapMarker,
+      hasLocalBusinessIndicators,
       note: hasMapMarker && !hasVerifiedMap 
         ? '⚠️ A div with "map" class/id exists but we cannot verify an actual Google Map is loading'
-        : undefined
+        : !hasAnyMapCode && hasLocalBusinessIndicators
+          ? 'Local business detected - Google Maps embed recommended for visibility'
+          : !hasAnyMapCode
+            ? 'No map code detected on page'
+            : undefined
     },
     message: hasConfirmedGoogleMap 
-      ? 'Google Maps iframe embed confirmed' 
+      ? '✅ Google Maps iframe embed confirmed' 
       : hasGoogleMapsApi 
-        ? 'Google Maps API integration detected'
+        ? '✅ Google Maps API integration detected'
         : hasMapMarker 
-          ? '⚠️ Map element found but NOT verified as Google Maps - could be placeholder div'
-          : 'No Google Maps embed found',
+          ? '⚠️ Map element found but NOT verified as Google Maps'
+          : hasLocalBusinessIndicators
+            ? 'No Google Maps embed found (recommended for local businesses)'
+            : 'No Google Maps embed detected',
     recommendation: !hasVerifiedMap && hasMapMarker 
-      ? 'Verify your map element actually loads Google Maps, or add a proper Google Maps embed'
-      : !hasVerifiedMap && !hasMapMarker
-        ? 'Consider adding a Google Maps embed for local visitors'
-        : undefined,
+      ? 'Verify your map element actually loads Google Maps, or add a proper Google Maps iframe embed'
+      : !hasVerifiedMap && hasLocalBusinessIndicators
+        ? 'Add a Google Maps embed to help local customers find your business location'
+        : undefined, // Don't recommend map if not a local business
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -846,42 +1072,269 @@ function analyzeContent(pageData: any, pageType: PageType = 'other'): CategoryRe
   };
 }
 
-function analyzePerformance(pageData: any): CategoryResult {
+// Async performance analyzer that integrates real PageSpeed API
+async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
   const checks: Check[] = [];
+  const url = pageData.url;
   
-  // Response time - with clear disclaimer about what this measures
+  console.log(`🚀 [Performance] Starting performance analysis for: ${url}`);
+  
+  // Fetch real PageSpeed data
+  const pageSpeedResult = await fetchPageSpeedInsights(url, 'mobile');
+  
+  // If PageSpeed API succeeded, show real Core Web Vitals
+  if (pageSpeedResult.success) {
+    const cwv = pageSpeedResult.coreWebVitals;
+    
+    // Real PageSpeed Score
+    checks.push({
+      id: 'pagespeed-score',
+      name: 'Google PageSpeed Score (Mobile)',
+      status: pageSpeedResult.score >= 90 ? 'pass' : pageSpeedResult.score >= 50 ? 'warning' : 'fail',
+      score: pageSpeedResult.score,
+      weight: 25,
+      value: { 
+        score: pageSpeedResult.score,
+        source: 'Google PageSpeed Insights API',
+        strategy: 'mobile',
+        debugInfo: pageSpeedResult.debugInfo
+      },
+      message: `📊 PageSpeed Score: ${pageSpeedResult.score}/100`,
+      recommendation: pageSpeedResult.score < 50 ? 'Critical: Improve page performance. Score below 50 significantly impacts user experience and SEO.' : 
+                      pageSpeedResult.score < 90 ? 'Optimize for better PageSpeed score (aim for 90+)' : undefined,
+    });
+    
+    // Core Web Vitals - LCP
+    const lcpGood = cwv.lcp < 2500;
+    const lcpNeedsImprovement = cwv.lcp < 4000;
+    checks.push({
+      id: 'core-web-vitals-lcp',
+      name: 'Largest Contentful Paint (LCP)',
+      status: lcpGood ? 'pass' : lcpNeedsImprovement ? 'warning' : 'fail',
+      score: lcpGood ? 100 : lcpNeedsImprovement ? 60 : 20,
+      weight: 20,
+      value: { 
+        lcp: cwv.lcp,
+        lcpDisplay: cwv.lcpDisplay,
+        threshold: { good: '<2.5s', needsImprovement: '2.5s-4s', poor: '>4s' }
+      },
+      message: `🎯 LCP: ${cwv.lcpDisplay} ${lcpGood ? '(Good)' : lcpNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
+      recommendation: !lcpGood ? 'Optimize LCP: Reduce server response time, optimize images, remove render-blocking resources' : undefined,
+    });
+    
+    // Core Web Vitals - FCP
+    const fcpGood = cwv.fcp < 1800;
+    const fcpNeedsImprovement = cwv.fcp < 3000;
+    checks.push({
+      id: 'core-web-vitals-fcp',
+      name: 'First Contentful Paint (FCP)',
+      status: fcpGood ? 'pass' : fcpNeedsImprovement ? 'warning' : 'fail',
+      score: fcpGood ? 100 : fcpNeedsImprovement ? 60 : 20,
+      weight: 15,
+      value: { 
+        fcp: cwv.fcp,
+        fcpDisplay: cwv.fcpDisplay,
+        threshold: { good: '<1.8s', needsImprovement: '1.8s-3s', poor: '>3s' }
+      },
+      message: `🎯 FCP: ${cwv.fcpDisplay} ${fcpGood ? '(Good)' : fcpNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
+      recommendation: !fcpGood ? 'Optimize FCP: Eliminate render-blocking resources, reduce server response time' : undefined,
+    });
+    
+    // Core Web Vitals - CLS
+    const clsGood = cwv.cls < 0.1;
+    const clsNeedsImprovement = cwv.cls < 0.25;
+    checks.push({
+      id: 'core-web-vitals-cls',
+      name: 'Cumulative Layout Shift (CLS)',
+      status: clsGood ? 'pass' : clsNeedsImprovement ? 'warning' : 'fail',
+      score: clsGood ? 100 : clsNeedsImprovement ? 60 : 20,
+      weight: 15,
+      value: { 
+        cls: cwv.cls,
+        clsDisplay: cwv.clsDisplay,
+        threshold: { good: '<0.1', needsImprovement: '0.1-0.25', poor: '>0.25' }
+      },
+      message: `🎯 CLS: ${cwv.clsDisplay} ${clsGood ? '(Good)' : clsNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
+      recommendation: !clsGood ? 'Optimize CLS: Set explicit dimensions on images/videos, avoid inserting content above existing content' : undefined,
+    });
+    
+    // Core Web Vitals - TBT
+    const tbtGood = cwv.tbt < 200;
+    const tbtNeedsImprovement = cwv.tbt < 600;
+    checks.push({
+      id: 'core-web-vitals-tbt',
+      name: 'Total Blocking Time (TBT)',
+      status: tbtGood ? 'pass' : tbtNeedsImprovement ? 'warning' : 'fail',
+      score: tbtGood ? 100 : tbtNeedsImprovement ? 60 : 20,
+      weight: 10,
+      value: { 
+        tbt: cwv.tbt,
+        tbtDisplay: cwv.tbtDisplay,
+        threshold: { good: '<200ms', needsImprovement: '200ms-600ms', poor: '>600ms' }
+      },
+      message: `🎯 TBT: ${cwv.tbtDisplay} ${tbtGood ? '(Good)' : tbtNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
+      recommendation: !tbtGood ? 'Optimize TBT: Reduce JavaScript execution time, break up long tasks' : undefined,
+    });
+    
+    // TTFB from PageSpeed
+    const ttfbGood = cwv.ttfb < 800;
+    checks.push({
+      id: 'core-web-vitals-ttfb',
+      name: 'Time to First Byte (TTFB)',
+      status: ttfbGood ? 'pass' : 'warning',
+      score: ttfbGood ? 100 : 50,
+      weight: 8,
+      value: { 
+        ttfb: cwv.ttfb,
+        ttfbDisplay: cwv.ttfbDisplay,
+        threshold: { good: '<800ms', poor: '>800ms' }
+      },
+      message: `🎯 TTFB: ${cwv.ttfbDisplay}`,
+      recommendation: !ttfbGood ? 'Optimize server response time: Use CDN, optimize server configuration, implement caching' : undefined,
+    });
+    
+    // Top Opportunities
+    if (pageSpeedResult.opportunities.length > 0) {
+      const topOpportunities = pageSpeedResult.opportunities.slice(0, 5);
+      checks.push({
+        id: 'pagespeed-opportunities',
+        name: 'Performance Opportunities',
+        status: 'info',
+        score: 70,
+        weight: 5,
+        value: { 
+          opportunities: topOpportunities,
+          count: topOpportunities.length
+        },
+        message: `💡 Top ${topOpportunities.length} opportunities: ${topOpportunities.map(o => o.title + (o.savings ? ` (${o.savings} saved)` : '')).join(', ')}`,
+        recommendation: topOpportunities[0]?.title || undefined,
+      });
+    }
+    
+  } else {
+    // PageSpeed API failed - show disclaimer and use server-side metrics
+    console.warn(`⚠️ [Performance] PageSpeed API unavailable: ${pageSpeedResult.error}`);
+    
+    checks.push({
+      id: 'performance-disclaimer',
+      name: 'Performance Measurement Note',
+      status: 'warning',
+      score: 50,
+      weight: 5,
+      value: {
+        note: 'PageSpeed API unavailable - using server-side measurements only',
+        error: pageSpeedResult.error,
+        debugInfo: pageSpeedResult.debugInfo,
+        forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY or PAGESPEED_API_KEY for real Core Web Vitals'
+      },
+      message: `⚠️ PageSpeed API: ${pageSpeedResult.error || 'Unavailable'}. Using server-side metrics only.`,
+      recommendation: 'Configure Google PageSpeed API key for accurate Core Web Vitals (LCP, FCP, CLS, TBT)',
+    });
+    
+    // Fallback: Server response time
+    const responseTime = pageData.responseTime;
+    checks.push({
+      id: 'response-time',
+      name: 'Server Response Time (Fallback)',
+      status: responseTime < 500 ? 'pass' : responseTime < 1500 ? 'warning' : 'fail',
+      score: responseTime < 200 ? 100 : responseTime < 500 ? 85 : responseTime < 1000 ? 60 : 40,
+      weight: 15,
+      value: { 
+        responseTime,
+        note: 'Server-side measurement (not real user experience)'
+      },
+      message: `Server responded in ${responseTime}ms (server-side only)`,
+      recommendation: responseTime >= 1000 ? 'Improve server response time' : undefined,
+    });
+  }
+  
+  // Page size (always check)
+  const pageSize = pageData.contentLength;
+  const pageSizeMB = Math.round((pageSize / 1024 / 1024) * 100) / 100;
+  
+  checks.push({
+    id: 'page-size',
+    name: 'Page Size',
+    status: pageSizeMB < 1 ? 'pass' : pageSizeMB < 2 ? 'warning' : 'fail',
+    score: pageSizeMB < 0.5 ? 100 : pageSizeMB < 1 ? 85 : pageSizeMB < 2 ? 50 : 10,
+    weight: 10,
+    value: { bytes: pageSize, megabytes: pageSizeMB },
+    message: `Page size: ${pageSizeMB}MB`,
+    recommendation: pageSizeMB >= 2 ? 'Optimize images, minify CSS/JS, consider lazy loading' : undefined,
+  });
+  
+  // HTTPS
+  checks.push({
+    id: 'https',
+    name: 'HTTPS',
+    status: pageData.isHttps ? 'pass' : 'fail',
+    score: pageData.isHttps ? 100 : 0,
+    weight: 8,
+    value: { isHttps: pageData.isHttps },
+    message: pageData.isHttps ? 'Page served over HTTPS' : 'Page not served over HTTPS',
+    recommendation: !pageData.isHttps ? 'Enable HTTPS for security and SEO' : undefined,
+  });
+  
+  // Compression
+  const hasCompression = pageData.headers['content-encoding']?.includes('gzip') || 
+                         pageData.headers['content-encoding']?.includes('br');
+  
+  checks.push({
+    id: 'compression',
+    name: 'Compression',
+    status: hasCompression ? 'pass' : 'warning',
+    score: hasCompression ? 100 : 50,
+    weight: 7,
+    value: { encoding: pageData.headers['content-encoding'] || 'none' },
+    message: hasCompression ? `Compression enabled: ${pageData.headers['content-encoding']}` : 'No compression detected',
+    recommendation: !hasCompression ? 'Enable Gzip or Brotli compression' : undefined,
+  });
+  
+  const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
+  
+  console.log(`✅ [Performance] Analysis complete. Score: ${totalScore}`);
+  
+  return {
+    score: totalScore,
+    grade: calculateGrade(totalScore),
+    message: pageSpeedResult.success ? `Performance analysis complete (PageSpeed: ${pageSpeedResult.score}/100)` : `Performance analysis complete (server-side metrics only)`,
+    checks,
+  };
+}
+
+// Sync wrapper for compatibility (calls async version)
+function analyzePerformance(pageData: any): CategoryResult {
+  // Note: This is a sync fallback - the async version should be called where possible
+  const checks: Check[] = [];
   const responseTime = pageData.responseTime;
   
+  // Server response time with note about PageSpeed
   checks.push({
     id: 'response-time',
-    name: 'Server Response Time (TTFB Proxy)',
+    name: 'Server Response Time',
     status: responseTime < 500 ? 'pass' : responseTime < 1500 ? 'warning' : 'fail',
-    score: responseTime < 200 ? 100 : responseTime < 500 ? 85 : responseTime < 1000 ? 60 : responseTime < 2000 ? 40 : 20,
-    weight: 15, // Reduced weight since this is a proxy metric
-    value: { 
-      responseTime,
-      disclaimer: 'This measures time to download HTML from our server, not real user experience',
-      whatItMeasures: 'Server response time (similar to TTFB)',
-      whatItDoesNotMeasure: 'Actual render time, JavaScript execution, LCP, FCP, or CLS',
-      recommendation: 'For accurate Core Web Vitals, use Google PageSpeed Insights API'
-    },
-    message: `Server responded in ${responseTime}ms (⚠️ server-side measurement only, not real user experience)`,
-    recommendation: responseTime >= 1000 ? 'Improve server response time (aim for <500ms). Note: This does NOT measure actual page render time or Core Web Vitals.' : undefined,
+    score: responseTime < 200 ? 100 : responseTime < 500 ? 85 : responseTime < 1000 ? 60 : 40,
+    weight: 15,
+    value: { responseTime },
+    message: `Server responded in ${responseTime}ms`,
   });
   
-  // Add a disclaimer check about performance measurement limitations
-  checks.push({
-    id: 'performance-disclaimer',
-    name: 'Performance Measurement Note',
-    status: 'info',
-    score: 100,
-    weight: 5,
-    value: {
-      note: 'Server-side measurements only',
-      forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY for real Core Web Vitals (LCP, FID, CLS)'
-    },
-    message: 'ℹ️ Performance metrics here are server-side proxies. For real Core Web Vitals (LCP, FCP, CLS, TBT), configure Google PageSpeed API.',
-  });
+  // Note about PageSpeed - check if API key is configured
+  const apiKey = process.env.GOOGLE_PAGESPEED_API_KEY || process.env.PAGESPEED_API_KEY;
+  if (!apiKey) {
+    checks.push({
+      id: 'performance-disclaimer',
+      name: 'Performance Measurement Note',
+      status: 'info',
+      score: 100,
+      weight: 5,
+      value: {
+        note: 'Server-side measurements only',
+        forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY for real Core Web Vitals'
+      },
+      message: 'ℹ️ For real Core Web Vitals (LCP, FCP, CLS, TBT), configure Google PageSpeed API key.',
+    });
+  }
   
   // Page size
   const pageSize = pageData.contentLength;
@@ -892,10 +1345,10 @@ function analyzePerformance(pageData: any): CategoryResult {
     name: 'Page Size',
     status: pageSizeMB < 1 ? 'pass' : pageSizeMB < 2 ? 'warning' : 'fail',
     score: pageSizeMB < 0.5 ? 100 : pageSizeMB < 1 ? 85 : pageSizeMB < 2 ? 50 : 10,
-    weight: 20, // Increased weight since page size significantly impacts performance
+    weight: 20,
     value: { bytes: pageSize, megabytes: pageSizeMB },
     message: `Page size: ${pageSizeMB}MB`,
-    recommendation: pageSizeMB >= 2 ? 'Page size is >2MB which will significantly impact load time. Optimize images, minify CSS/JS, and consider lazy loading' : pageSizeMB >= 1 ? 'Consider reducing page size for better performance' : undefined,
+    recommendation: pageSizeMB >= 2 ? 'Optimize page size' : undefined,
   });
   
   // HTTPS
@@ -907,7 +1360,6 @@ function analyzePerformance(pageData: any): CategoryResult {
     weight: 15,
     value: { isHttps: pageData.isHttps },
     message: pageData.isHttps ? 'Page served over HTTPS' : 'Page not served over HTTPS',
-    recommendation: !pageData.isHttps ? 'Enable HTTPS for security and SEO benefits' : undefined,
   });
   
   // Compression
@@ -922,7 +1374,6 @@ function analyzePerformance(pageData: any): CategoryResult {
     weight: 10,
     value: { encoding: pageData.headers['content-encoding'] || 'none' },
     message: hasCompression ? `Compression enabled: ${pageData.headers['content-encoding']}` : 'No compression detected',
-    recommendation: !hasCompression ? 'Enable Gzip or Brotli compression' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1232,21 +1683,41 @@ function analyzeUsability(pageData: any): CategoryResult {
     recommendation: !hasFavicon ? 'Add a favicon for better brand recognition' : undefined,
   });
   
-  // Form labels
+  // Form labels - improved detection
   const forms = html.match(/<form[^>]*>[\s\S]*?<\/form>/gi) || [];
-  const inputs = html.match(/<input[^>]*>/gi) || [];
+  const inputs = html.match(/<input[^>]*type=["'](?:text|email|password|tel|number|search|url|date|time)[^>]*>/gi) || [];
+  const textareas = html.match(/<textarea[^>]*>/gi) || [];
+  const selects = html.match(/<select[^>]*>/gi) || [];
+  const totalFormFields = inputs.length + textareas.length + selects.length;
   const labels = html.match(/<label[^>]*>/gi) || [];
-  const hasProperLabels = inputs.length === 0 || labels.length >= inputs.length * 0.8;
+  const ariaLabels = (html.match(/aria-label=["'][^"']+["']/gi) || []).length;
+  const placeholders = (html.match(/placeholder=["'][^"']+["']/gi) || []).length;
+  const totalAccessibleLabels = labels.length + ariaLabels;
+  const labelRatio = totalFormFields > 0 ? Math.round((totalAccessibleLabels / totalFormFields) * 100) : 100;
+  const hasProperLabels = totalFormFields === 0 || labelRatio >= 80;
   
   checks.push({
     id: 'form-labels',
     name: 'Form Labels',
-    status: hasProperLabels ? 'pass' : 'warning',
-    score: hasProperLabels ? 100 : 50,
+    status: totalFormFields === 0 ? 'pass' : hasProperLabels ? 'pass' : labelRatio >= 50 ? 'warning' : 'fail',
+    score: totalFormFields === 0 ? 100 : labelRatio,
     weight: 8,
-    value: { forms: forms.length, inputs: inputs.length, labels: labels.length },
-    message: `${labels.length} labels for ${inputs.length} inputs`,
-    recommendation: !hasProperLabels ? 'Add labels to form inputs for accessibility' : undefined,
+    value: { 
+      forms: forms.length, 
+      inputs: totalFormFields, 
+      labels: labels.length,
+      ariaLabels,
+      placeholders,
+      totalAccessibleLabels,
+      labelRatio: labelRatio + '%',
+      note: totalFormFields === 0 ? 'No text/email/password form fields found' : undefined
+    },
+    message: totalFormFields === 0 
+      ? 'No form input fields requiring labels found'
+      : `${totalAccessibleLabels} labels for ${totalFormFields} form fields (${labelRatio}%)`,
+    recommendation: !hasProperLabels && totalFormFields > 0 
+      ? `Add <label> elements or aria-label attributes to ${totalFormFields - totalAccessibleLabels} unlabeled form fields for accessibility (WCAG 2.1 compliance)`
+      : undefined,
   });
   
   // Text readability (basic contrast check - looks for common readable colors)
@@ -1417,19 +1888,37 @@ function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResul
         : undefined,
   });
   
-  // 5. HTTPS & Security
+  // 5. HTTPS & Security Headers - improved with specific recommendations
   const isHttps = pageData.isHttps;
   const hasHSTS = pageData.headers?.['strict-transport-security'];
   const hasCSP = pageData.headers?.['content-security-policy'];
   const hasXFrameOptions = pageData.headers?.['x-frame-options'];
   const hasXContentType = pageData.headers?.['x-content-type-options'];
   
+  // Count security headers present
+  const securityHeadersPresent = [hasHSTS, hasCSP, hasXFrameOptions, hasXContentType].filter(Boolean).length;
   const securityScore = (isHttps ? 50 : 0) + (hasHSTS ? 15 : 0) + (hasCSP ? 15 : 0) + (hasXFrameOptions ? 10 : 0) + (hasXContentType ? 10 : 0);
+  
+  // Build missing headers list with recommendations
+  const missingHeaders: string[] = [];
+  const headerRecommendations: string[] = [];
+  if (!hasHSTS) {
+    missingHeaders.push('Strict-Transport-Security');
+    headerRecommendations.push('HSTS: Add "Strict-Transport-Security: max-age=31536000; includeSubDomains"');
+  }
+  if (!hasXFrameOptions) {
+    missingHeaders.push('X-Frame-Options');
+    headerRecommendations.push('X-Frame-Options: Add "X-Frame-Options: DENY" or "SAMEORIGIN"');
+  }
+  if (!hasXContentType) {
+    missingHeaders.push('X-Content-Type-Options');
+    headerRecommendations.push('X-Content-Type-Options: Add "X-Content-Type-Options: nosniff"');
+  }
   
   checks.push({
     id: 'https-security',
     name: 'HTTPS & Security Headers',
-    status: securityScore >= 80 ? 'pass' : securityScore >= 50 ? 'warning' : 'fail',
+    status: !isHttps ? 'fail' : securityHeadersPresent >= 3 ? 'pass' : securityHeadersPresent >= 1 ? 'warning' : 'warning',
     score: securityScore,
     weight: 12,
     value: { 
@@ -1438,17 +1927,20 @@ function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResul
       hasCSP: !!hasCSP,
       hasXFrameOptions: !!hasXFrameOptions,
       hasXContentType: !!hasXContentType,
-      missingHeaders: [
-        !hasHSTS && 'Strict-Transport-Security',
-        !hasCSP && 'Content-Security-Policy',
-        !hasXFrameOptions && 'X-Frame-Options',
-        !hasXContentType && 'X-Content-Type-Options'
-      ].filter(Boolean)
+      securityHeadersPresent,
+      missingHeaders,
+      recommendations: headerRecommendations
     },
-    message: isHttps 
-      ? `HTTPS enabled. Security headers: ${[hasHSTS && 'HSTS', hasCSP && 'CSP', hasXFrameOptions && 'X-Frame-Options'].filter(Boolean).join(', ') || 'none detected'}`
-      : 'Site not served over HTTPS - critical security issue',
-    recommendation: !isHttps ? 'Enable HTTPS immediately for security and SEO benefits' : !hasHSTS ? 'Add security headers like HSTS, CSP, X-Frame-Options' : undefined,
+    message: !isHttps 
+      ? '❌ HTTPS not enabled - critical security issue'
+      : securityHeadersPresent === 4
+        ? '✅ HTTPS enabled with all recommended security headers'
+        : `HTTPS enabled. Security headers: ${[hasHSTS && 'HSTS', hasCSP && 'CSP', hasXFrameOptions && 'X-Frame-Options', hasXContentType && 'X-Content-Type'].filter(Boolean).join(', ') || 'none detected'}`,
+    recommendation: !isHttps 
+      ? 'Enable HTTPS immediately for security and SEO benefits' 
+      : missingHeaders.length > 0 
+        ? `Add missing security headers: ${missingHeaders.join(', ')}`
+        : undefined,
   });
   
   // 6. Broken Links Detection (basic - check for common error patterns)
@@ -1882,7 +2374,7 @@ export const smartAuditTask = task({
           results.content = analyzeContent(pageData, pageType);
         }
         if (sectionsToRun.includes('performance')) {
-          results.performance = analyzePerformance(pageData);
+          results.performance = await analyzePerformanceAsync(pageData);
         }
         if (sectionsToRun.includes('eeat')) {
           results.eeat = analyzeEEAT(pageData);
@@ -1932,7 +2424,7 @@ export const smartAuditTask = task({
     } as any);
 
     // Aggregate results by section
-    const aggregateSection = (sectionKey: string): CategoryResult => {
+    const aggregateSection = async (sectionKey: string): Promise<CategoryResult> => {
       const pagesForSection = (auditMapping as any)[sectionKey] as string[];
       const sectionResults: CategoryResult[] = [];
       const sourcePages: string[] = [];
@@ -1956,7 +2448,7 @@ export const smartAuditTask = task({
             case 'localSeo': fallbackResult = analyzeLocalSEO(pageResult.pageData); break;
             case 'seo': fallbackResult = analyzeSEO(pageResult.pageData); break;
             case 'content': fallbackResult = analyzeContent(pageResult.pageData, fallbackPageType); break;
-            case 'performance': fallbackResult = analyzePerformance(pageResult.pageData); break;
+            case 'performance': fallbackResult = await analyzePerformanceAsync(pageResult.pageData); break;
             case 'eeat': fallbackResult = analyzeEEAT(pageResult.pageData); break;
             case 'social': fallbackResult = analyzeSocial(pageResult.pageData); break;
             case 'technology': fallbackResult = analyzeTechnology(pageResult.pageData); break;
@@ -2013,16 +2505,16 @@ export const smartAuditTask = task({
       };
     };
 
-    const localSeo = aggregateSection('localSeo');
-    const seo = aggregateSection('seo');
-    const content = aggregateSection('content');
-    const performance = aggregateSection('performance');
-    const eeat = aggregateSection('eeat');
-    const social = aggregateSection('social');
-    const technology = aggregateSection('technology');
-    const technicalSeo = aggregateSection('technicalSeo');
-    const links = aggregateSection('links');
-    const usability = aggregateSection('usability');
+    const localSeo = await aggregateSection('localSeo');
+    const seo = await aggregateSection('seo');
+    const content = await aggregateSection('content');
+    const performance = await aggregateSection('performance');
+    const eeat = await aggregateSection('eeat');
+    const social = await aggregateSection('social');
+    const technology = await aggregateSection('technology');
+    const technicalSeo = await aggregateSection('technicalSeo');
+    const links = await aggregateSection('links');
+    const usability = await aggregateSection('usability');
 
     // Debug logging for technicalSeo
     console.log('[Smart Audit] TechnicalSeo aggregated result:', {
