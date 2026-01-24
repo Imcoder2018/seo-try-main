@@ -220,6 +220,10 @@ interface SmartAuditPayload {
       other: string[];
     };
   };
+  // Section-specific page selections from the frontend
+  sectionSelections?: {
+    [sectionId: string]: string[];
+  };
 }
 
 interface Check {
@@ -596,8 +600,51 @@ function analyzeSEO(pageData: any): CategoryResult {
     recommendation: totalInternalLinks < 5 ? 'Add more internal links to improve site navigation and pass link equity' : undefined,
   });
   
-  // 7. Image Alt Tags - improved detection with decorative image handling
-  const images = html.match(/<img[^>]*>/gi) || [];
+  // 7. Image Alt Tags - improved detection filtering out icons, logos, and UI elements
+  const allImages = html.match(/<img[^>]*>/gi) || [];
+  
+  // Filter out icons, logos, and non-content images
+  const isContentImage = (img: string): boolean => {
+    const imgLower = img.toLowerCase();
+    const srcMatch = imgLower.match(/src=["']([^"']+)["']/i);
+    const src = srcMatch ? srcMatch[1] : '';
+    const classMatch = imgLower.match(/class=["']([^"']+)["']/i);
+    const classes = classMatch ? classMatch[1] : '';
+    const altMatch = imgLower.match(/alt=["']([^"']+)["']/i);
+    const alt = altMatch ? altMatch[1] : '';
+    
+    // Patterns to exclude (icons, logos, UI elements, tiny images)
+    const excludePatterns = [
+      /icon/i, /logo/i, /favicon/i, /sprite/i, /avatar/i, /badge/i,
+      /arrow/i, /chevron/i, /caret/i, /close/i, /menu/i, /hamburger/i,
+      /social/i, /facebook/i, /twitter/i, /linkedin/i, /instagram/i, /youtube/i,
+      /loading/i, /spinner/i, /placeholder/i, /blank/i, /spacer/i, /pixel/i,
+      /\.svg$/i, /data:image/i, /1x1/i, /transparent/i,
+      /wp-emoji/i, /gravatar/i, /admin-bar/i
+    ];
+    
+    // Check if any exclude pattern matches src, class, or alt
+    for (const pattern of excludePatterns) {
+      if (pattern.test(src) || pattern.test(classes) || pattern.test(alt)) {
+        return false;
+      }
+    }
+    
+    // Check dimensions - exclude tiny images (likely icons)
+    const widthMatch = imgLower.match(/width=["']?(\d+)/i);
+    const heightMatch = imgLower.match(/height=["']?(\d+)/i);
+    const width = widthMatch ? parseInt(widthMatch[1]) : 100;
+    const height = heightMatch ? parseInt(heightMatch[1]) : 100;
+    if (width <= 50 || height <= 50) {
+      return false;
+    }
+    
+    return true;
+  };
+  
+  const images = allImages.filter(isContentImage);
+  const filteredCount = allImages.length - images.length;
+  
   const imagesWithAlt = images.filter((img: string) => /alt=["'][^"']+["']/i.test(img)).length;
   const imagesWithEmptyAlt = images.filter((img: string) => /alt=["']\s*["']/i.test(img)).length;
   const imagesWithoutAlt = images.length - imagesWithAlt - imagesWithEmptyAlt;
@@ -624,13 +671,16 @@ function analyzeSEO(pageData: any): CategoryResult {
       emptyAlt: imagesWithEmptyAlt,
       missingAlt: imagesWithoutAlt,
       percentage: altPercentage,
-      note: imagesWithEmptyAlt > 0 ? 'Empty alt="" is valid for decorative images (WCAG 2.1)' : undefined
+      filteredOut: filteredCount,
+      note: filteredCount > 0 
+        ? `Excluded ${filteredCount} icons/logos/UI images. ${imagesWithEmptyAlt > 0 ? 'Empty alt="" is valid for decorative images (WCAG 2.1)' : ''}`
+        : imagesWithEmptyAlt > 0 ? 'Empty alt="" is valid for decorative images (WCAG 2.1)' : undefined
     },
     message: images.length === 0 
-      ? 'No images found on page'
+      ? `No content images found (${filteredCount} icons/logos excluded)`
       : imagesWithoutAlt === 0 
-        ? `All ${images.length} images have alt attributes (${imagesWithAlt} with text, ${imagesWithEmptyAlt} decorative)`
-        : `${imagesWithAlt}/${images.length} images have alt text (${altPercentage}%), ${imagesWithEmptyAlt} empty alt, ${imagesWithoutAlt} missing alt`,
+        ? `All ${images.length} content images have alt attributes (${imagesWithAlt} with text, ${imagesWithEmptyAlt} decorative)`
+        : `${imagesWithAlt}/${images.length} content images have alt text (${altPercentage}%), ${imagesWithEmptyAlt} empty alt, ${imagesWithoutAlt} missing alt`,
     recommendation: imagesWithoutAlt > 0 
       ? `Add alt attributes to ${imagesWithoutAlt} images: Use descriptive text for content images, or alt="" for decorative images`
       : imagesWithAlt === 0 && imagesWithEmptyAlt > 0
@@ -863,6 +913,16 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
   });
   
   // Google Maps embed - improved detection with verification levels
+  // Only check for Google Maps on contact-like pages (contact, locations, find-us, etc.)
+  // Other pages (homepage, about, etc.) shouldn't be penalized for not having a map
+  const pageUrl = pageData.url?.toLowerCase() || '';
+  const isContactPage = pageUrl.includes('contact') || 
+                        pageUrl.includes('location') || 
+                        pageUrl.includes('find-us') ||
+                        pageUrl.includes('directions') ||
+                        pageUrl.includes('visit-us') ||
+                        pageUrl.includes('where-to-find');
+  
   // Level 1: Confirmed Google Maps (iframe/embed with google.com/maps URL)
   const hasConfirmedGoogleMap = /<iframe[^>]*src=["'][^"']*(?:google\.com\/maps|maps\.google\.com|maps\.googleapis\.com)[^"']*["'][^>]*>/i.test(html);
   
@@ -883,11 +943,36 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
   const hasVerifiedMap = hasConfirmedGoogleMap || hasGoogleMapsApi;
   const hasAnyMapCode = hasVerifiedMap || hasMapMarker;
   
+  // Determine status and score based on page type
+  // Contact pages: penalize if no map found
+  // Other pages: info status only (don't penalize for missing map)
+  let mapStatus: 'pass' | 'warning' | 'fail' | 'info';
+  let mapScore: number;
+  
+  if (hasConfirmedGoogleMap) {
+    mapStatus = 'pass';
+    mapScore = 100;
+  } else if (hasGoogleMapsApi) {
+    mapStatus = 'pass';
+    mapScore = 90;
+  } else if (hasMapMarker) {
+    mapStatus = 'warning';
+    mapScore = 50;
+  } else if (isContactPage && hasLocalBusinessIndicators) {
+    // Only penalize contact pages for missing maps
+    mapStatus = 'warning';
+    mapScore = 60;
+  } else {
+    // Non-contact pages without maps get info status (no penalty)
+    mapStatus = 'info';
+    mapScore = 100; // Don't penalize non-contact pages
+  }
+  
   checks.push({
     id: 'google-map',
     name: 'Google Map',
-    status: hasConfirmedGoogleMap ? 'pass' : hasGoogleMapsApi ? 'pass' : hasMapMarker ? 'warning' : 'info',
-    score: hasConfirmedGoogleMap ? 100 : hasGoogleMapsApi ? 90 : hasMapMarker ? 50 : (hasLocalBusinessIndicators ? 60 : 80),
+    status: mapStatus,
+    score: mapScore,
     weight: 10,
     value: { 
       verificationLevel: mapVerificationLevel,
@@ -895,12 +980,13 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
       hasGoogleMapsApi,
       hasMapMarker,
       hasLocalBusinessIndicators,
+      isContactPage,
       note: hasMapMarker && !hasVerifiedMap 
         ? '⚠️ A div with "map" class/id exists but we cannot verify an actual Google Map is loading'
-        : !hasAnyMapCode && hasLocalBusinessIndicators
-          ? 'Local business detected - Google Maps embed recommended for visibility'
-          : !hasAnyMapCode
-            ? 'No map code detected on page'
+        : !hasAnyMapCode && isContactPage && hasLocalBusinessIndicators
+          ? 'Contact page detected - Google Maps embed recommended for visibility'
+          : !hasAnyMapCode && !isContactPage
+            ? 'ℹ️ Not a contact page - Google Maps check skipped'
             : undefined
     },
     message: hasConfirmedGoogleMap 
@@ -909,14 +995,14 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
         ? '✅ Google Maps API integration detected'
         : hasMapMarker 
           ? '⚠️ Map element found but NOT verified as Google Maps'
-          : hasLocalBusinessIndicators
-            ? 'No Google Maps embed found (recommended for local businesses)'
-            : 'No Google Maps embed detected',
+          : isContactPage && hasLocalBusinessIndicators
+            ? 'No Google Maps embed found on contact page'
+            : 'ℹ️ Google Maps not required on this page type',
     recommendation: !hasVerifiedMap && hasMapMarker 
       ? 'Verify your map element actually loads Google Maps, or add a proper Google Maps iframe embed'
-      : !hasVerifiedMap && hasLocalBusinessIndicators
-        ? 'Add a Google Maps embed to help local customers find your business location'
-        : undefined, // Don't recommend map if not a local business
+      : !hasVerifiedMap && isContactPage && hasLocalBusinessIndicators
+        ? 'Add a Google Maps embed to your contact page to help customers find your business'
+        : undefined, // Don't recommend map for non-contact pages
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1500,19 +1586,63 @@ function analyzeSocial(pageData: any): CategoryResult {
     recommendation: !hasTwitterCard ? 'Add Twitter Card meta tags for better social sharing' : undefined,
   });
   
-  // Social links
-  const socialPlatforms = ['facebook', 'twitter', 'linkedin', 'instagram', 'youtube'];
-  const foundSocial = socialPlatforms.filter(p => html.toLowerCase().includes(p)).length;
+  // Social links - improved detection with actual URL extraction
+  const socialPlatformsConfig = [
+    { name: 'Facebook', pattern: /facebook\.com\/[^"'\s<>]+/gi, icon: '📘' },
+    { name: 'Twitter/X', pattern: /(?:twitter\.com|x\.com)\/[^"'\s<>]+/gi, icon: '🐦' },
+    { name: 'LinkedIn', pattern: /linkedin\.com\/(?:company|in)\/[^"'\s<>]+/gi, icon: '💼' },
+    { name: 'Instagram', pattern: /instagram\.com\/[^"'\s<>]+/gi, icon: '📷' },
+    { name: 'YouTube', pattern: /youtube\.com\/(?:channel|c|user|@)[^"'\s<>]+/gi, icon: '📺' },
+    { name: 'Pinterest', pattern: /pinterest\.com\/[^"'\s<>]+/gi, icon: '📌' },
+    { name: 'TikTok', pattern: /tiktok\.com\/@[^"'\s<>]+/gi, icon: '🎵' },
+  ];
+  
+  const foundSocialLinks: { platform: string; url: string; icon: string }[] = [];
+  const missingSocialPlatforms: string[] = [];
+  const recommendedPlatforms = ['LinkedIn', 'YouTube', 'Twitter/X', 'Instagram', 'Facebook'];
+  
+  for (const platform of socialPlatformsConfig) {
+    const matches = html.match(platform.pattern);
+    if (matches && matches.length > 0) {
+      // Get unique URLs
+      const uniqueUrls = [...new Set(matches.map((m: string) => `https://${m}`))];
+      for (const url of uniqueUrls.slice(0, 2)) {
+        foundSocialLinks.push({ platform: platform.name, url: String(url), icon: platform.icon });
+      }
+    } else if (recommendedPlatforms.includes(platform.name)) {
+      missingSocialPlatforms.push(platform.name);
+    }
+  }
+  
+  const foundCount = foundSocialLinks.length;
+  const uniquePlatforms = [...new Set(foundSocialLinks.map(l => l.platform))];
+  
+  // Generate recommendations for missing platforms
+  const suggestedPlatforms = missingSocialPlatforms.slice(0, 3);
   
   checks.push({
     id: 'social-links',
     name: 'Social Media Links',
-    status: foundSocial >= 3 ? 'pass' : foundSocial >= 1 ? 'warning' : 'info',
-    score: Math.min(100, foundSocial * 25),
+    status: uniquePlatforms.length >= 3 ? 'pass' : uniquePlatforms.length >= 2 ? 'warning' : 'info',
+    score: Math.min(100, uniquePlatforms.length * 25),
     weight: 10,
-    value: { count: foundSocial },
-    message: `${foundSocial} social media platform links detected`,
-    recommendation: foundSocial < 2 ? 'Add links to your social media profiles' : undefined,
+    value: { 
+      count: uniquePlatforms.length,
+      foundLinks: foundSocialLinks.slice(0, 10),
+      platforms: uniquePlatforms,
+      missing: missingSocialPlatforms
+    },
+    message: uniquePlatforms.length > 0 
+      ? `${uniquePlatforms.length} social media platforms linked: ${uniquePlatforms.map(p => {
+          const link = foundSocialLinks.find(l => l.platform === p);
+          return link ? `${link.icon} ${p}` : p;
+        }).join(', ')}`
+      : 'No social media profile links detected',
+    recommendation: uniquePlatforms.length < 2 
+      ? `Add social media links to improve trust and engagement. Suggested: ${suggestedPlatforms.join(', ')}`
+      : uniquePlatforms.length < 4 && missingSocialPlatforms.length > 0
+        ? `Consider adding: ${suggestedPlatforms.slice(0, 2).join(', ')}`
+        : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1599,31 +1729,152 @@ function analyzeTechnology(pageData: any): CategoryResult {
 function analyzeLinks(pageData: any): CategoryResult {
   const checks: Check[] = [];
   const html = pageData.html;
+  const baseUrl = new URL(pageData.url);
   
-  // Extract all links
-  const allLinks = html.match(/href=["']([^"']+)["']/gi) || [];
-  const internalLinks = allLinks.filter((l: string) => l.includes(new URL(pageData.url).hostname) || l.startsWith('href="/')).length;
-  const externalLinks = allLinks.length - internalLinks;
+  // Extract all href values
+  const hrefMatches = html.match(/href=["']([^"']+)["']/gi) || [];
+  const hrefs = hrefMatches.map((h: string) => {
+    const match = h.match(/href=["']([^"']+)["']/i);
+    return match ? match[1] : '';
+  }).filter((h: string) => h);
+  
+  // Filter to get only page URLs (not images, assets, anchors, mailto, tel, javascript, system URLs)
+  const isPageUrl = (href: string): boolean => {
+    const hrefLower = href.toLowerCase();
+    
+    // Exclude non-page URLs
+    if (hrefLower.startsWith('#') || 
+        hrefLower.startsWith('mailto:') || 
+        hrefLower.startsWith('tel:') ||
+        hrefLower.startsWith('javascript:') ||
+        hrefLower.startsWith('data:')) {
+      return false;
+    }
+    
+    // Exclude WordPress and CMS system URLs (not actual pages)
+    const systemUrlPatterns = [
+      '/xmlrpc.php',
+      '/wp-json',
+      '/wp-admin',
+      '/wp-login',
+      '/wp-cron',
+      '/wp-content/',
+      '/wp-includes/',
+      '/feed/',
+      '/feed',
+      '/rss/',
+      '/rss',
+      '/atom/',
+      '/atom',
+      '/comments/feed',
+      '/trackback/',
+      '/embed/',
+      '/oembed/',
+      '/wp-sitemap',
+      '/sitemap.xml',
+      '/robots.txt',
+      '/.well-known/',
+      '/cdn-cgi/',
+      '/api/',
+      '/_next/',
+      '/_nuxt/',
+    ];
+    
+    for (const pattern of systemUrlPatterns) {
+      if (hrefLower.includes(pattern)) {
+        return false;
+      }
+    }
+    
+    // Exclude asset files (images, scripts, styles, fonts, etc.)
+    const assetExtensions = [
+      '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp', '.tiff',
+      '.js', '.css', '.scss', '.less',
+      '.woff', '.woff2', '.ttf', '.eot', '.otf',
+      '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+      '.zip', '.rar', '.tar', '.gz',
+      '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.wav', '.ogg',
+      '.xml', '.json', '.rss', '.atom',
+      '.php' // Exclude direct PHP file links (except index.php which is usually rewritten)
+    ];
+    
+    for (const ext of assetExtensions) {
+      // Skip .php check for URLs that don't look like direct PHP files
+      if (ext === '.php' && !hrefLower.match(/\/[^\/]+\.php(\?|$)/)) {
+        continue;
+      }
+      if (hrefLower.endsWith(ext) || hrefLower.includes(ext + '?')) {
+        return false;
+      }
+    }
+    
+    return true;
+  };
+  
+  // Get unique page URLs
+  const pageUrls = hrefs.filter(isPageUrl);
+  const uniquePageUrls = [...new Set(pageUrls)];
+  
+  // Separate internal and external links
+  const internalUrls: string[] = [];
+  const externalUrls: string[] = [];
+  
+  for (const href of uniquePageUrls) {
+    try {
+      const hrefStr = String(href);
+      let fullUrl: URL;
+      if (hrefStr.startsWith('/')) {
+        fullUrl = new URL(hrefStr, baseUrl.origin);
+      } else if (hrefStr.startsWith('http')) {
+        fullUrl = new URL(hrefStr);
+      } else {
+        fullUrl = new URL(hrefStr, pageData.url);
+      }
+      
+      if (fullUrl.hostname === baseUrl.hostname) {
+        internalUrls.push(fullUrl.pathname);
+      } else {
+        externalUrls.push(fullUrl.hostname);
+      }
+    } catch {
+      // Invalid URL, skip
+    }
+  }
+  
+  // Get unique counts
+  const uniqueInternalPages = [...new Set(internalUrls)];
+  const uniqueExternalDomains = [...new Set(externalUrls)];
+  
+  const internalCount = uniqueInternalPages.length;
+  const externalCount = uniqueExternalDomains.length;
   
   checks.push({
     id: 'internal-links',
     name: 'Internal Links',
-    status: internalLinks >= 5 ? 'pass' : internalLinks >= 2 ? 'warning' : 'fail',
-    score: internalLinks >= 10 ? 100 : internalLinks >= 5 ? 80 : internalLinks >= 2 ? 50 : 20,
+    status: internalCount >= 5 ? 'pass' : internalCount >= 2 ? 'warning' : 'fail',
+    score: internalCount >= 10 ? 100 : internalCount >= 5 ? 80 : internalCount >= 2 ? 50 : 20,
     weight: 15,
-    value: { count: internalLinks },
-    message: `Found ${internalLinks} internal links`,
-    recommendation: internalLinks < 5 ? 'Add more internal links for better navigation and SEO' : undefined,
+    value: { 
+      count: internalCount, 
+      uniquePages: uniqueInternalPages.slice(0, 10),
+      note: 'Counts unique internal page URLs only (excludes images, assets, anchors)'
+    },
+    message: `Found ${internalCount} unique internal page links`,
+    recommendation: internalCount < 5 ? 'Add more internal links for better navigation and SEO' : undefined,
   });
   
   checks.push({
     id: 'external-links',
     name: 'External Links',
-    status: externalLinks >= 1 && externalLinks <= 50 ? 'pass' : externalLinks > 50 ? 'warning' : 'info',
-    score: externalLinks >= 1 ? 80 : 60,
+    status: externalCount >= 1 && externalCount <= 50 ? 'pass' : externalCount > 50 ? 'warning' : 'info',
+    score: externalCount >= 1 ? 80 : 60,
     weight: 10,
-    value: { count: externalLinks },
-    message: `Found ${externalLinks} external links`,
+    value: { 
+      count: externalCount,
+      uniqueDomains: uniqueExternalDomains.slice(0, 10),
+      note: 'Counts unique external domains only (excludes images, assets)'
+    },
+    message: `Found ${externalCount} unique external links`,
   });
   
   // Broken link check (basic - just check for empty hrefs)
@@ -1744,7 +1995,7 @@ function analyzeUsability(pageData: any): CategoryResult {
 }
 
 // Technical SEO Analyzer - comprehensive technical checks
-function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResult {
+async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise<CategoryResult> {
   const checks: Check[] = [];
   const html = pageData.html;
   const url = pageData.url;
@@ -1775,46 +2026,172 @@ function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResul
     recommendation: isNoIndex ? 'Remove noindex directive if this page should appear in search results' : undefined,
   });
   
-  // 2. Sitemap Check
-  const hasSitemapLink = html.includes('sitemap') || html.includes('Sitemap');
+  // 2. Sitemap & Robots.txt Check - Actually fetch and verify both files
+  const baseUrl = new URL(url).origin;
+  let sitemapExists = false;
+  let sitemapUrl = '';
+  let sitemapError = '';
+  let robotsTxtExists = false;
+  let robotsTxtContent = '';
+  let robotsTxtHasSitemap = false;
+  
+  // Try to fetch robots.txt
+  try {
+    const robotsResponse = await fetch(`${baseUrl}/robots.txt`, { 
+      signal: AbortSignal.timeout(10000),
+      headers: { 'User-Agent': 'SEO-Audit-Bot/1.0' }
+    });
+    if (robotsResponse.ok) {
+      robotsTxtExists = true;
+      robotsTxtContent = await robotsResponse.text();
+      // Check if robots.txt references a sitemap
+      const sitemapMatch = robotsTxtContent.match(/Sitemap:\s*(.+)/i);
+      if (sitemapMatch) {
+        robotsTxtHasSitemap = true;
+        sitemapUrl = sitemapMatch[1].trim();
+      }
+    }
+  } catch (e) {
+    console.log(`[TechnicalSEO] Could not fetch robots.txt: ${e}`);
+  }
+  
+  // Try common sitemap locations
+  const sitemapLocations = [
+    sitemapUrl || `${baseUrl}/sitemap.xml`,
+    `${baseUrl}/sitemap_index.xml`,
+    `${baseUrl}/sitemap-index.xml`,
+    `${baseUrl}/wp-sitemap.xml`,
+  ];
+  
+  for (const sitemapLoc of sitemapLocations) {
+    if (!sitemapLoc) continue;
+    try {
+      const sitemapResponse = await fetch(sitemapLoc, { 
+        signal: AbortSignal.timeout(10000),
+        headers: { 'User-Agent': 'SEO-Audit-Bot/1.0' }
+      });
+      if (sitemapResponse.ok) {
+        const contentType = sitemapResponse.headers.get('content-type') || '';
+        const content = await sitemapResponse.text();
+        // Verify it's actually XML sitemap content
+        if (content.includes('<urlset') || content.includes('<sitemapindex') || contentType.includes('xml')) {
+          sitemapExists = true;
+          sitemapUrl = sitemapLoc;
+          break;
+        }
+      }
+    } catch (e) {
+      sitemapError = `Could not fetch ${sitemapLoc}`;
+    }
+  }
+  
+  // Determine status and score
+  let sitemapStatus: 'pass' | 'warning' | 'fail' | 'info' = 'fail';
+  let sitemapScore = 0;
+  let sitemapMessage = '';
+  
+  if (sitemapExists && robotsTxtExists && robotsTxtHasSitemap) {
+    sitemapStatus = 'pass';
+    sitemapScore = 100;
+    sitemapMessage = `✅ Sitemap found at ${sitemapUrl} and referenced in robots.txt`;
+  } else if (sitemapExists && robotsTxtExists) {
+    sitemapStatus = 'warning';
+    sitemapScore = 80;
+    sitemapMessage = `Sitemap found at ${sitemapUrl} but not referenced in robots.txt`;
+  } else if (sitemapExists) {
+    sitemapStatus = 'warning';
+    sitemapScore = 70;
+    sitemapMessage = `Sitemap found at ${sitemapUrl}, robots.txt not found`;
+  } else if (robotsTxtExists) {
+    sitemapStatus = 'warning';
+    sitemapScore = 50;
+    sitemapMessage = `robots.txt found but no sitemap detected`;
+  } else {
+    sitemapStatus = 'fail';
+    sitemapScore = 20;
+    sitemapMessage = `❌ Neither sitemap.xml nor robots.txt found`;
+  }
   
   checks.push({
     id: 'sitemap-reference',
     name: 'Sitemap & Robots.txt',
-    status: 'info',
-    score: 70,
+    status: sitemapStatus,
+    score: sitemapScore,
     weight: 10,
     value: { 
-      hasSitemapReference: hasSitemapLink,
-      recommendation: 'Verify sitemap.xml exists at /sitemap.xml'
+      sitemapExists,
+      sitemapUrl: sitemapUrl || 'Not found',
+      robotsTxtExists,
+      robotsTxtHasSitemap,
+      checkedLocations: sitemapLocations.filter(l => l),
     },
-    message: 'Sitemap should be present at /sitemap.xml and referenced in robots.txt',
-    recommendation: 'Ensure your sitemap.xml is properly configured and submitted to Google Search Console',
+    message: sitemapMessage,
+    recommendation: !sitemapExists 
+      ? 'Create a sitemap.xml and submit it to Google Search Console' 
+      : !robotsTxtHasSitemap 
+        ? 'Add "Sitemap: ' + sitemapUrl + '" to your robots.txt file'
+        : undefined,
   });
   
   // 3. Page Speed Indicators (basic checks)
+  // Adjusted thresholds for WordPress sites which typically have 30-50+ resources
   const scripts = (html.match(/<script[^>]*>/gi) || []).length;
   const stylesheets = (html.match(/<link[^>]*rel=["']stylesheet["']/gi) || []).length;
   const inlineStyles = (html.match(/<style[^>]*>/gi) || []).length;
   const totalResources = scripts + stylesheets;
   
-  const hasRenderBlocking = scripts > 5 || stylesheets > 3;
+  // Detect if it's a WordPress site (more lenient thresholds)
+  const isWordPress = html.includes('wp-content') || html.includes('wp-includes') || 
+                      html.includes('wordpress') || html.includes('wp-json');
+  
+  // WordPress sites commonly have 30-60 resources due to plugins, themes, etc.
+  // Non-WordPress sites typically have fewer resources
+  const passThreshold = isWordPress ? 40 : 15;
+  const warnThreshold = isWordPress ? 70 : 30;
+  
+  const hasRenderBlocking = scripts > 10 || stylesheets > 8;
+  
+  // Calculate score based on platform-adjusted thresholds
+  let resourceScore: number;
+  let resourceStatus: 'pass' | 'warning' | 'fail';
+  
+  if (totalResources <= passThreshold) {
+    resourceScore = 100;
+    resourceStatus = 'pass';
+  } else if (totalResources <= warnThreshold) {
+    resourceScore = 70;
+    resourceStatus = 'warning';
+  } else {
+    resourceScore = 40;
+    resourceStatus = 'fail';
+  }
+  
+  // Provide context-aware messaging
+  const platformNote = isWordPress 
+    ? `WordPress detected: Higher resource counts (30-50) are typical due to plugins/themes.`
+    : `Consider bundling resources if page speed is slow.`;
   
   checks.push({
     id: 'page-speed-indicators',
     name: 'Page Speed (Resource Count)',
-    status: totalResources <= 10 ? 'pass' : totalResources <= 20 ? 'warning' : 'fail',
-    score: totalResources <= 10 ? 100 : totalResources <= 20 ? 70 : 40,
+    status: resourceStatus,
+    score: resourceScore,
     weight: 12,
     value: { 
       scripts, 
       stylesheets, 
       inlineStyles,
       totalResources,
-      hasRenderBlocking
+      hasRenderBlocking,
+      isWordPress,
+      platformNote
     },
     message: `Found ${scripts} scripts, ${stylesheets} stylesheets (${totalResources} total resources)`,
-    recommendation: totalResources > 15 ? 'Reduce render-blocking resources for better page speed. Consider bundling CSS/JS files.' : undefined,
+    recommendation: totalResources > warnThreshold 
+      ? isWordPress 
+        ? 'Consider using a caching plugin (WP Rocket, W3 Total Cache) and minifying CSS/JS. Disable unused plugin scripts.'
+        : 'Reduce render-blocking resources. Consider bundling CSS/JS files and using async/defer for scripts.'
+      : undefined,
   });
   
   // 4. Mobile Friendliness - COMPREHENSIVE checks
@@ -1895,30 +2272,52 @@ function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResul
   const hasXFrameOptions = pageData.headers?.['x-frame-options'];
   const hasXContentType = pageData.headers?.['x-content-type-options'];
   
+  // Detect WordPress for context-aware recommendations
+  const isWPSite = html.includes('wp-content') || html.includes('wp-includes');
+  
   // Count security headers present
   const securityHeadersPresent = [hasHSTS, hasCSP, hasXFrameOptions, hasXContentType].filter(Boolean).length;
-  const securityScore = (isHttps ? 50 : 0) + (hasHSTS ? 15 : 0) + (hasCSP ? 15 : 0) + (hasXFrameOptions ? 10 : 0) + (hasXContentType ? 10 : 0);
+  
+  // Adjusted scoring: HTTPS is the most critical (60 points), headers are secondary
+  // Many hosting providers don't allow header configuration, so be more lenient
+  const securityScore = (isHttps ? 60 : 0) + (hasHSTS ? 10 : 0) + (hasCSP ? 10 : 0) + (hasXFrameOptions ? 10 : 0) + (hasXContentType ? 10 : 0);
   
   // Build missing headers list with recommendations
   const missingHeaders: string[] = [];
   const headerRecommendations: string[] = [];
   if (!hasHSTS) {
     missingHeaders.push('Strict-Transport-Security');
-    headerRecommendations.push('HSTS: Add "Strict-Transport-Security: max-age=31536000; includeSubDomains"');
+    headerRecommendations.push(isWPSite 
+      ? 'HSTS: Use a security plugin (Wordfence, iThemes Security) or add to .htaccess'
+      : 'HSTS: Add "Strict-Transport-Security: max-age=31536000; includeSubDomains"');
   }
   if (!hasXFrameOptions) {
     missingHeaders.push('X-Frame-Options');
-    headerRecommendations.push('X-Frame-Options: Add "X-Frame-Options: DENY" or "SAMEORIGIN"');
+    headerRecommendations.push(isWPSite
+      ? 'X-Frame-Options: Use a security plugin or add to .htaccess'
+      : 'X-Frame-Options: Add "X-Frame-Options: SAMEORIGIN"');
   }
   if (!hasXContentType) {
     missingHeaders.push('X-Content-Type-Options');
-    headerRecommendations.push('X-Content-Type-Options: Add "X-Content-Type-Options: nosniff"');
+    headerRecommendations.push(isWPSite
+      ? 'X-Content-Type-Options: Use a security plugin or add to .htaccess'
+      : 'X-Content-Type-Options: Add "X-Content-Type-Options: nosniff"');
   }
+  
+  // Determine status - be more lenient if HTTPS is enabled
+  // HTTPS is the critical factor; headers are nice-to-have for most sites
+  const securityStatus: 'pass' | 'warning' | 'fail' = !isHttps 
+    ? 'fail' 
+    : securityHeadersPresent >= 2 
+      ? 'pass' 
+      : 'warning';
+  
+  const presentHeaders = [hasHSTS && 'HSTS', hasCSP && 'CSP', hasXFrameOptions && 'X-Frame-Options', hasXContentType && 'X-Content-Type'].filter(Boolean);
   
   checks.push({
     id: 'https-security',
     name: 'HTTPS & Security Headers',
-    status: !isHttps ? 'fail' : securityHeadersPresent >= 3 ? 'pass' : securityHeadersPresent >= 1 ? 'warning' : 'warning',
+    status: securityStatus,
     score: securityScore,
     weight: 12,
     value: { 
@@ -1929,17 +2328,24 @@ function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResul
       hasXContentType: !!hasXContentType,
       securityHeadersPresent,
       missingHeaders,
-      recommendations: headerRecommendations
+      recommendations: headerRecommendations,
+      note: isHttps && securityHeadersPresent < 4 
+        ? 'HTTPS is enabled (most important). Security headers are optional but recommended for enhanced protection.'
+        : undefined
     },
     message: !isHttps 
       ? '❌ HTTPS not enabled - critical security issue'
       : securityHeadersPresent === 4
-        ? '✅ HTTPS enabled with all recommended security headers'
-        : `HTTPS enabled. Security headers: ${[hasHSTS && 'HSTS', hasCSP && 'CSP', hasXFrameOptions && 'X-Frame-Options', hasXContentType && 'X-Content-Type'].filter(Boolean).join(', ') || 'none detected'}`,
+        ? '✅ HTTPS enabled with all security headers'
+        : securityHeadersPresent >= 2
+          ? `✅ HTTPS enabled with ${securityHeadersPresent}/4 security headers (${presentHeaders.join(', ')})`
+          : `HTTPS enabled. ${presentHeaders.length > 0 ? `Headers: ${presentHeaders.join(', ')}` : 'Consider adding security headers'}`,
     recommendation: !isHttps 
       ? 'Enable HTTPS immediately for security and SEO benefits' 
-      : missingHeaders.length > 0 
-        ? `Add missing security headers: ${missingHeaders.join(', ')}`
+      : missingHeaders.length > 0 && securityHeadersPresent < 2
+        ? isWPSite
+          ? 'Install a security plugin (Wordfence, Sucuri, iThemes) to add security headers easily'
+          : `Consider adding security headers: ${missingHeaders.slice(0, 2).join(', ')}`
         : undefined,
   });
   
@@ -2137,7 +2543,7 @@ export const smartAuditTask = task({
     maxTimeoutInMs: 30000,
   },
   run: async (payload: SmartAuditPayload): Promise<SmartAuditOutput> => {
-    const { baseUrl, selectedUrls, crawlData } = payload;
+    const { baseUrl, selectedUrls, crawlData, sectionSelections } = payload;
     
     // Normalize URLs to prevent duplicates (trailing slashes, http/https, case sensitivity)
     const normalizeUrl = (urlStr: string): string => {
@@ -2207,15 +2613,22 @@ export const smartAuditTask = task({
     const selectPagesForSection = (section: string): string[] => {
       switch (section) {
         case 'performance':
-          // Homepage + 1 Product/Service Page + 1 RANDOM page (to catch edge cases)
+          // Homepage + All Service Pages + Product Pages (comprehensive performance audit)
+          // PageSpeed analysis is valuable for all major pages, not just homepage
           const perfPages: string[] = [];
           if (homePage) perfPages.push(homePage.url);
-          const perfPage = productPages[0] || servicePages[0] || blogPages[0];
-          if (perfPage && !perfPages.includes(perfPage.url)) perfPages.push(perfPage.url);
-          // Add a random page to catch potential issues on unexpected pages
-          const randomPerfPage = getRandomPages(allPages, 1, perfPages);
-          perfPages.push(...randomPerfPage);
-          return perfPages.length > 0 ? perfPages : [homePage?.url || allPages[0]?.url].filter(Boolean);
+          // Add all service pages (critical for conversion)
+          servicePages.forEach(p => {
+            if (!perfPages.includes(p.url)) perfPages.push(p.url);
+          });
+          // Add product pages
+          productPages.forEach(p => {
+            if (!perfPages.includes(p.url)) perfPages.push(p.url);
+          });
+          // Add about page (often visited)
+          if (aboutPage && !perfPages.includes(aboutPage.url)) perfPages.push(aboutPage.url);
+          // Limit to 6 pages max for performance (PageSpeed API has rate limits)
+          return perfPages.length > 0 ? perfPages.slice(0, 6) : [homePage?.url || allPages[0]?.url].filter(Boolean);
 
         case 'localSeo':
           // Homepage + Contact Us (footer is part of these pages)
@@ -2318,10 +2731,25 @@ export const smartAuditTask = task({
 
     // Log sampling strategy for transparency
     console.log('[Smart Audit] Sampling strategy: Strategic pages + random sampling to catch edge cases');
+    console.log('[Smart Audit] Section selections from frontend:', sectionSelections);
 
-    // Apply the Auto-Selection Router to each section
+    // Apply section selections from frontend if provided, otherwise use Auto-Selection Router
     Object.keys(auditMapping).forEach(section => {
-      (auditMapping as any)[section] = selectPagesForSection(section);
+      // Check if frontend provided selections for this section
+      if (sectionSelections && sectionSelections[section] && sectionSelections[section].length > 0) {
+        // Normalize the frontend URLs and filter to only include selected pages
+        const normalizedSectionUrls = sectionSelections[section]
+          .map(normalizeUrl)
+          .filter(url => normalizedUrls.includes(url));
+        (auditMapping as any)[section] = normalizedSectionUrls.length > 0 
+          ? normalizedSectionUrls 
+          : selectPagesForSection(section);
+        console.log(`[Smart Audit] Section ${section}: Using frontend selection (${normalizedSectionUrls.length} pages)`);
+      } else {
+        // Fall back to auto-selection router
+        (auditMapping as any)[section] = selectPagesForSection(section);
+        console.log(`[Smart Audit] Section ${section}: Using auto-selection (${(auditMapping as any)[section].length} pages)`);
+      }
     });
 
     console.log('[Smart Audit] Page classifications:', pageClassifications);
@@ -2393,7 +2821,7 @@ export const smartAuditTask = task({
         }
         if (sectionsToRun.includes('technicalSeo')) {
           try {
-            results.technicalSeo = analyzeTechnicalSEO(pageData);
+            results.technicalSeo = await analyzeTechnicalSEO(pageData);
             console.log(`[Smart Audit] TechnicalSEO analyzed for ${url}: score=${results.technicalSeo?.score}`);
           } catch (techSeoError) {
             console.error(`[Smart Audit] Error analyzing technicalSeo for ${url}:`, techSeoError);
@@ -2456,7 +2884,7 @@ export const smartAuditTask = task({
             case 'usability': fallbackResult = analyzeUsability(pageResult.pageData); break;
             case 'technicalSeo': 
               try {
-                fallbackResult = analyzeTechnicalSEO(pageResult.pageData);
+                fallbackResult = await analyzeTechnicalSEO(pageResult.pageData);
               } catch (e) {
                 console.error('[Smart Audit] Error in technicalSeo fallback:', e);
                 fallbackResult = { score: 50, grade: 'D', message: 'Technical SEO analysis error', checks: [] };
@@ -2472,26 +2900,72 @@ export const smartAuditTask = task({
       // Calculate average score
       const avgScore = Math.round(sectionResults.reduce((sum, r) => sum + r.score, 0) / sectionResults.length);
       
-      // Merge checks with source page information
+      // Merge checks with source page information AND per-page findings
       const mergedChecks: Check[] = [];
-      const checkMap = new Map<string, Check & { sourcePages: string[] }>();
+      const checkMap = new Map<string, Check & { 
+        sourcePages: string[]; 
+        perPageFindings: Array<{
+          url: string;
+          pathname: string;
+          status: string;
+          score: number;
+          value: any;
+          message: string;
+        }>;
+      }>();
       
       sectionResults.forEach((result, idx) => {
         const pageUrl = sourcePages[idx];
+        const pathname = new URL(pageUrl).pathname || '/';
+        
         result.checks.forEach(check => {
           const existing = checkMap.get(check.id);
+          const pageFinding = {
+            url: pageUrl,
+            pathname,
+            status: check.status,
+            score: check.score,
+            value: check.value,
+            message: check.message,
+          };
+          
           if (!existing) {
-            checkMap.set(check.id, { ...check, sourcePages: [pageUrl] });
+            checkMap.set(check.id, { 
+              ...check, 
+              sourcePages: [pageUrl],
+              perPageFindings: [pageFinding],
+            });
           } else {
-            // Merge: worst status wins
-            if (check.status === 'fail' || existing.status === 'fail') {
-              existing.status = 'fail';
-            } else if (check.status === 'warning' || existing.status === 'warning') {
-              existing.status = 'warning';
+            // Special handling for checks where "best status wins" (site-wide features)
+            // Google Maps, Social Links, etc. - if found on ANY page, site has it
+            const bestStatusWinsChecks = ['google-map', 'social-links', 'sitemap-robots'];
+            
+            if (bestStatusWinsChecks.includes(check.id)) {
+              // Best status wins - if ANY page has pass, the site passes
+              if (check.status === 'pass' || existing.status === 'pass') {
+                existing.status = 'pass';
+                existing.score = Math.max(existing.score, check.score);
+              } else if (check.status === 'warning' || existing.status === 'warning') {
+                existing.status = 'warning';
+                existing.score = Math.max(existing.score, check.score);
+              }
+              // Update message to reflect it was found
+              if (check.status === 'pass' && existing.status === 'pass') {
+                existing.message = check.message; // Use the passing message
+              }
+            } else {
+              // Default: worst status wins for most checks
+              if (check.status === 'fail' || existing.status === 'fail') {
+                existing.status = 'fail';
+              } else if (check.status === 'warning' || existing.status === 'warning') {
+                existing.status = 'warning';
+              }
+              // Average the scores
+              existing.score = Math.round((existing.score + check.score) / 2);
             }
+            
             existing.sourcePages.push(pageUrl);
-            // Average the scores
-            existing.score = Math.round((existing.score + check.score) / 2);
+            existing.perPageFindings.push(pageFinding);
           }
         });
       });

@@ -154,7 +154,13 @@ export function PDFPreviewModal({ isOpen, onClose, auditData }: PDFPreviewModalP
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `seo-audit-${domain}.pdf`;
+      // Sanitize domain for filename: remove protocol, www, and special chars
+      const sanitizedDomain = domain
+        .replace(/^(https?:\/\/)?(www\.)?/i, '')
+        .replace(/[^a-zA-Z0-9.-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      a.download = `seo-audit-${sanitizedDomain || 'report'}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

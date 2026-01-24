@@ -9,6 +9,15 @@ import { KeywordConsistencyTable } from "./keyword-consistency-table";
 import { HeaderHierarchy } from "./header-hierarchy";
 import { useViewMode, TECHNICAL_CHECKS } from "./view-mode-toggle";
 
+interface PerPageFinding {
+  url: string;
+  pathname: string;
+  status: string;
+  score: number;
+  value: Record<string, unknown>;
+  message: string;
+}
+
 interface CheckItemProps {
   id: string;
   name: string;
@@ -17,11 +26,13 @@ interface CheckItemProps {
   value?: Record<string, unknown>;
   forceShow?: boolean;
   sourcePages?: string[];
+  perPageFindings?: PerPageFinding[];
 }
 
-export function CheckItem({ id, name, status, message, value, forceShow, sourcePages }: CheckItemProps) {
+export function CheckItem({ id, name, status, message, value, forceShow, sourcePages, perPageFindings }: CheckItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
+  const [showPerPageDetails, setShowPerPageDetails] = useState(false);
   const { viewMode } = useViewMode();
   
   // Hide technical checks in simple mode (unless they have issues)
@@ -273,7 +284,90 @@ export function CheckItem({ id, name, status, message, value, forceShow, sourceP
                 return null;
               })}
             </div>
-            {sourcePages && sourcePages.length > 0 && (
+            {/* Per-Page Findings Section */}
+            {perPageFindings && perPageFindings.length > 1 && (
+              <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowPerPageDetails(!showPerPageDetails);
+                  }}
+                  className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                >
+                  {showPerPageDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  <Globe className="w-3 h-3" />
+                  View findings for each page ({perPageFindings.length} pages)
+                </button>
+                
+                {showPerPageDetails && (
+                  <div className="mt-3 space-y-2 max-h-[400px] overflow-y-auto">
+                    {perPageFindings.map((finding, idx) => {
+                      const statusColors = {
+                        pass: "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800",
+                        warning: "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800",
+                        fail: "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800",
+                        info: "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800",
+                      };
+                      const statusIcons = {
+                        pass: <Check className="w-3 h-3 text-green-600" />,
+                        warning: <AlertTriangle className="w-3 h-3 text-amber-600" />,
+                        fail: <X className="w-3 h-3 text-red-600" />,
+                        info: <Info className="w-3 h-3 text-blue-600" />,
+                      };
+                      
+                      return (
+                        <div 
+                          key={idx} 
+                          className={cn(
+                            "p-3 rounded-lg border text-xs",
+                            statusColors[finding.status as keyof typeof statusColors] || statusColors.info
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <a 
+                              href={finding.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="font-medium text-slate-700 dark:text-slate-300 hover:text-blue-600 flex items-center gap-1"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              {finding.pathname}
+                            </a>
+                            <span className="flex items-center gap-1">
+                              {statusIcons[finding.status as keyof typeof statusIcons]}
+                              <span className="font-medium">{finding.score}/100</span>
+                            </span>
+                          </div>
+                          <p className="text-slate-600 dark:text-slate-400 mb-2">{finding.message}</p>
+                          {finding.value && Object.keys(finding.value).length > 0 && (
+                            <div className="grid grid-cols-2 gap-1 mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                              {Object.entries(finding.value).slice(0, 6).map(([key, val]) => {
+                                if (val === null || val === undefined || key === 'recommendation' || key === 'htmlSnippet') return null;
+                                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                                return (
+                                  <div key={key} className="flex items-center justify-between">
+                                    <span className="text-slate-500 dark:text-slate-500 truncate">{formattedKey}:</span>
+                                    <span className="font-medium text-slate-700 dark:text-slate-300 ml-1">
+                                      {typeof val === 'boolean' ? (val ? '✓' : '✗') : 
+                                       typeof val === 'number' ? val : 
+                                       typeof val === 'string' ? (val.length > 30 ? val.substring(0, 30) + '...' : val) : 
+                                       JSON.stringify(val).substring(0, 30)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Detected on pages (for single page or when per-page not available) */}
+            {sourcePages && sourcePages.length > 0 && (!perPageFindings || perPageFindings.length <= 1) && (
               <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
                 <span className="text-xs font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1">
                   <Globe className="w-3 h-3" />

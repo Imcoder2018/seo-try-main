@@ -151,7 +151,7 @@ export function AuditForm() {
   const [auditProgress, setAuditProgress] = useState(0);
   const [auditStatus, setAuditStatus] = useState("");
 
-  const handleRunAudit = async (useFrontend: boolean = false) => {
+  const handleRunAudit = async (useFrontend: boolean = false, sectionSelections?: Record<string, string[]>) => {
     if (!crawlResult || selectedUrls.length === 0) {
       setError("Please select at least one page to audit");
       return;
@@ -160,6 +160,8 @@ export function AuditForm() {
     setIsRunningAudit(true);
     setAuditProgress(0);
     setAuditStatus(useFrontend ? "Starting frontend audit..." : "Starting smart audit...");
+    
+    console.log("[Audit] Section selections received:", sectionSelections);
     
     try {
       // Use frontend processing if toggle is enabled
@@ -232,7 +234,8 @@ export function AuditForm() {
         body: JSON.stringify({
           url: crawlResult.baseUrl,
           selectedUrls,
-          crawlData: crawlResult
+          crawlData: crawlResult,
+          sectionSelections: sectionSelections // Pass section-specific page selections
         }),
       });
 

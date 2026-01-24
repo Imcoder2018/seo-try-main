@@ -671,16 +671,16 @@ export default function ReportPage({
 // Sample size explanations for each audit section
 const getSampleSizeExplanation = (sectionId: string): string => {
   const explanations: Record<string, string> = {
-    'performance': 'We audit the Homepage for speed as it represents your server\'s baseline performance.',
-    'technology': 'We audit the Homepage as it represents your site\'s technical foundation.',
+    'performance': 'We audit Homepage, Service Pages, and Product Pages using Google PageSpeed Insights API for comprehensive Core Web Vitals analysis.',
+    'technology': 'We audit the Homepage and Contact page as they represent your site\'s technical foundation.',
     'technical-seo': 'We analyze all pages for indexing, sitemaps, page speed indicators, mobile-friendliness, security, broken links, URL structure, canonical tags, and redirects.',
     'local-seo': 'We check the Header, Footer, and Contact page where contact info is critical.',
     'seo': 'We analyze content pages (excluding category/tag pages) to assess your SEO efforts.',
     'content': 'We analyze blog and content pages for depth and structure.',
     'links': 'We analyze all pages for internal and external link patterns.',
-    'usability': 'We analyze all pages for accessibility and user experience.',
+    'usability': 'We analyze Homepage and Contact page for accessibility and user experience.',
     'social': 'We analyze the Homepage for social media meta tags.',
-    'eeat': 'We analyze content pages for expertise and authority signals.',
+    'eeat': 'We analyze About and content pages for expertise and authority signals.',
   };
   return explanations[sectionId] || '';
 };
@@ -698,7 +698,22 @@ interface CategorySectionWithFixProps {
 }
 
 function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSizeExplanation, fixAction, showGoogleSearchConsole }: CategorySectionWithFixProps) {
-  const checks = data.checks as Array<{ id: string; name: string; status: string; message: string; value?: Record<string, unknown>; sourcePages?: string[] }>;
+  const checks = data.checks as Array<{ 
+    id: string; 
+    name: string; 
+    status: string; 
+    message: string; 
+    value?: Record<string, unknown>; 
+    sourcePages?: string[];
+    perPageFindings?: Array<{
+      url: string;
+      pathname: string;
+      status: string;
+      score: number;
+      value: Record<string, unknown>;
+      message: string;
+    }>;
+  }>;
   const sourcePages = (data as any).sourcePages || [];
   const [showSourcePages, setShowSourcePages] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false); // Default collapsed
@@ -823,6 +838,7 @@ function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSi
                     message={check.message}
                     value={check.value}
                     sourcePages={check.sourcePages}
+                    perPageFindings={check.perPageFindings}
                   />
                   {!isPassed && wpConnected && fix && (
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-80 group-hover:opacity-100 transition-opacity">

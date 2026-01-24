@@ -34,19 +34,39 @@ interface CrawlResult {
   topLinkedPages: TopLinkedPage[];
 }
 
+interface SectionPageSelections {
+  [sectionId: string]: string[];
+}
+
 interface PageSelectorProps {
   crawlResult: CrawlResult;
-  onSelectionChange: (selectedUrls: string[]) => void;
-  onRunAudit: (useFrontend: boolean) => void;
+  onSelectionChange: (selectedUrls: string[], sectionSelections?: SectionPageSelections) => void;
+  onRunAudit: (useFrontend: boolean, sectionSelections?: SectionPageSelections) => void;
   isRunningAudit: boolean;
   auditProgress?: number;
   auditStatus?: string;
 }
 
+// Audit section configurations
+const AUDIT_SECTIONS = [
+  { id: 'performance', label: '⚡ Performance', description: 'PageSpeed & Core Web Vitals', defaultTypes: ['home', 'service', 'product'] },
+  { id: 'seo', label: '🔍 On-Page SEO', description: 'Title, Meta, Headings, Keywords', defaultTypes: ['service', 'product', 'blog'] },
+  { id: 'technicalSeo', label: '🔧 Technical SEO', description: 'Sitemap, Robots, Indexing', defaultTypes: ['home', 'blog', 'about'] },
+  { id: 'localSeo', label: '📍 Local SEO', description: 'NAP, Schema, Google Maps', defaultTypes: ['home', 'contact'] },
+  { id: 'content', label: '📝 Content Quality', description: 'Word Count, Structure', defaultTypes: ['blog', 'service'] },
+  { id: 'usability', label: '👥 Usability', description: 'Mobile, Forms, Accessibility', defaultTypes: ['home', 'contact'] },
+  { id: 'links', label: '🔗 Links', description: 'Internal & External Links', defaultTypes: ['home', 'service', 'about'] },
+  { id: 'social', label: '📱 Social', description: 'Open Graph, Twitter Cards', defaultTypes: ['home', 'blog'] },
+  { id: 'eeat', label: '🏆 E-E-A-T', description: 'Expertise & Authority', defaultTypes: ['about', 'blog'] },
+];
+
 export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRunningAudit, auditProgress = 0, auditStatus = "" }: PageSelectorProps) {
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["core", "blog", "product", "category", "top-linked"]));
   const [useFrontendProcessing, setUseFrontendProcessing] = useState(false);
+  const [showSectionConfig, setShowSectionConfig] = useState(true); // Show by default so users can configure sections
+  const [sectionPageSelections, setSectionPageSelections] = useState<Record<string, Set<string>>>({});
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const onSelectionChangeRef = useRef(onSelectionChange);
   
@@ -85,7 +105,105 @@ export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRun
 
     setSelectedUrls(autoSelected);
     onSelectionChangeRef.current(Array.from(autoSelected));
+    
+    // Initialize section page selections based on default types for each section
+    const initialSectionSelections: Record<string, Set<string>> = {};
+    const autoSelectedArray = Array.from(autoSelected);
+    
+    // Helper to get URLs matching default types
+    const getUrlsForTypes = (types: string[]): string[] => {
+      const urls: string[] = [];
+      types.forEach(type => {
+        if (type === 'home') {
+          // Home page - base URL or /
+          autoSelectedArray.filter(u => {
+            try {
+              const pathname = new URL(u).pathname;
+              return pathname === '/' || pathname === '';
+            } catch { return false; }
+          }).forEach(u => urls.push(u));
+        } else if (type === 'contact') {
+          autoSelectedArray.filter(u => u.toLowerCase().includes('contact')).forEach(u => urls.push(u));
+        } else if (type === 'about') {
+          autoSelectedArray.filter(u => u.toLowerCase().includes('about')).forEach(u => urls.push(u));
+        } else if (type === 'service') {
+          crawlResult.urlGroups.service.filter(u => autoSelected.has(u)).forEach(u => urls.push(u));
+        } else if (type === 'product') {
+          crawlResult.urlGroups.product.filter(u => autoSelected.has(u)).forEach(u => urls.push(u));
+        } else if (type === 'blog') {
+          crawlResult.urlGroups.blog.filter(u => autoSelected.has(u)).forEach(u => urls.push(u));
+        } else if (type === 'category') {
+          crawlResult.urlGroups.category.filter(u => autoSelected.has(u)).forEach(u => urls.push(u));
+        }
+      });
+      return [...new Set(urls)]; // Return unique URLs
+    };
+    
+    AUDIT_SECTIONS.forEach(section => {
+      const sectionUrls = getUrlsForTypes(section.defaultTypes);
+      // If no URLs match the defaults, use a small sample from all selected
+      initialSectionSelections[section.id] = new Set(
+        sectionUrls.length > 0 ? sectionUrls : autoSelectedArray.slice(0, 3)
+      );
+    });
+    setSectionPageSelections(initialSectionSelections);
   }, [crawlResult]);
+
+  // Update section selections when main selection changes - only filter out deselected URLs
+  useEffect(() => {
+    if (selectedUrls.size > 0) {
+      setSectionPageSelections(prev => {
+        const updated: Record<string, Set<string>> = {};
+        AUDIT_SECTIONS.forEach(section => {
+          // Keep existing section selections that are still in main selection
+          const existing = prev[section.id] || new Set();
+          const filtered = new Set(Array.from(existing).filter(url => selectedUrls.has(url)));
+          // If section has no pages after filtering, keep it empty (user cleared it)
+          // Don't auto-fill with all pages
+          updated[section.id] = filtered;
+        });
+        return updated;
+      });
+    }
+  }, [selectedUrls]);
+
+  const toggleSectionPage = (sectionId: string, url: string) => {
+    setSectionPageSelections(prev => {
+      const sectionSet = new Set(prev[sectionId] || []);
+      if (sectionSet.has(url)) {
+        sectionSet.delete(url);
+      } else {
+        sectionSet.add(url);
+      }
+      return { ...prev, [sectionId]: sectionSet };
+    });
+  };
+
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId);
+      } else {
+        newSet.add(sectionId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllForSection = (sectionId: string) => {
+    setSectionPageSelections(prev => ({
+      ...prev,
+      [sectionId]: new Set(selectedUrls)
+    }));
+  };
+
+  const clearSectionSelection = (sectionId: string) => {
+    setSectionPageSelections(prev => ({
+      ...prev,
+      [sectionId]: new Set()
+    }));
+  };
 
   const toggleGroup = (groupName: string) => {
     setExpandedGroups(prev => {
@@ -311,6 +429,110 @@ export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRun
         })}
       </div>
 
+      {/* Per-Section Page Configuration */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <button
+          onClick={() => setShowSectionConfig(!showSectionConfig)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          type="button"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-lg">⚙️</span>
+            <div className="text-left">
+              <div className="font-medium text-gray-900">Customize Pages per Audit Section</div>
+              <div className="text-sm text-gray-600">Configure which pages to analyze for each report section</div>
+            </div>
+          </div>
+          {showSectionConfig ? (
+            <ChevronDown className="w-5 h-5 text-gray-500" />
+          ) : (
+            <ChevronRight className="w-5 h-5 text-gray-500" />
+          )}
+        </button>
+
+        {showSectionConfig && (
+          <div className="border-t border-gray-200 divide-y divide-gray-100">
+            {AUDIT_SECTIONS.map(section => {
+              const sectionPages = sectionPageSelections[section.id] || new Set();
+              const isExpanded = expandedSections.has(section.id);
+              const selectedCount = sectionPages.size;
+
+              return (
+                <div key={section.id} className="bg-gray-50">
+                  {/* Section Header */}
+                  <div className="px-6 py-3 flex items-center justify-between">
+                    <button
+                      onClick={() => toggleSection(section.id)}
+                      className="flex items-center gap-3 flex-1 text-left"
+                      type="button"
+                    >
+                      <span className="text-sm">{section.label}</span>
+                      <span className="text-xs text-gray-500">({section.description})</span>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600 bg-white px-2 py-1 rounded border">
+                        {selectedCount}/{selectedUrls.size} pages
+                      </span>
+                      <button
+                        onClick={() => selectAllForSection(section.id)}
+                        className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                        type="button"
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => clearSectionSelection(section.id)}
+                        className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        onClick={() => toggleSection(section.id)}
+                        type="button"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-gray-500" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Section Pages */}
+                  {isExpanded && (
+                    <div className="px-6 pb-3">
+                      <div className="flex flex-wrap gap-2">
+                        {Array.from(selectedUrls).map(url => {
+                          const isSelected = sectionPages.has(url);
+                          const pathname = new URL(url).pathname || '/';
+                          return (
+                            <button
+                              key={url}
+                              onClick={() => toggleSectionPage(section.id, url)}
+                              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                                isSelected
+                                  ? 'bg-blue-100 border-blue-300 text-blue-800'
+                                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'
+                              }`}
+                              type="button"
+                              title={url}
+                            >
+                              {isSelected ? '✓ ' : ''}{pathname}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Run Audit Button */}
       <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 shadow-lg">
         {/* Processing Mode Toggle */}
@@ -371,7 +593,14 @@ export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRun
           </div>
         )}
         <button
-          onClick={() => onRunAudit(useFrontendProcessing)}
+          onClick={() => {
+            // Convert Set selections to arrays for the callback
+            const sectionSelectionsArray: SectionPageSelections = {};
+            Object.entries(sectionPageSelections).forEach(([key, value]) => {
+              sectionSelectionsArray[key] = Array.from(value);
+            });
+            onRunAudit(useFrontendProcessing, sectionSelectionsArray);
+          }}
           disabled={selectedUrls.size === 0 || isRunningAudit}
           className={`w-full px-6 py-3 font-semibold rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors ${
             useFrontendProcessing

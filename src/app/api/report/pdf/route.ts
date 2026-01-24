@@ -21,6 +21,7 @@ interface AuditData {
   contentScore?: number;
   eeatScore?: number;
   technologyScore?: number;
+  technicalSeoScore?: number; // Add Technical SEO score
   passedChecks?: number;
   warningChecks?: number;
   failedChecks?: number;
@@ -138,6 +139,80 @@ function getPriorityLabel(priority: string): string {
     case "medium": return "MEDIUM";
     default: return "LOW";
   }
+}
+
+// Strip emojis and unicode characters that jsPDF can't render
+function stripEmojis(text: string): string {
+  if (!text) return text;
+  // Remove emojis, symbols, and other non-ASCII characters that jsPDF can't render
+  return text
+    .replace(/[\u{1F600}-\u{1F64F}]/gu, '') // Emoticons
+    .replace(/[\u{1F300}-\u{1F5FF}]/gu, '') // Misc Symbols and Pictographs
+    .replace(/[\u{1F680}-\u{1F6FF}]/gu, '') // Transport and Map
+    .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '') // Flags
+    .replace(/[\u{2600}-\u{26FF}]/gu, '')   // Misc symbols
+    .replace(/[\u{2700}-\u{27BF}]/gu, '')   // Dingbats
+    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')   // Variation Selectors
+    .replace(/[\u{1F900}-\u{1F9FF}]/gu, '') // Supplemental Symbols
+    .replace(/[\u{1FA00}-\u{1FA6F}]/gu, '') // Chess Symbols
+    .replace(/[\u{1FA70}-\u{1FAFF}]/gu, '') // Symbols Extended-A
+    .replace(/[\u{231A}-\u{231B}]/gu, '')   // Watch, Hourglass
+    .replace(/[\u{23E9}-\u{23F3}]/gu, '')   // Various symbols
+    .replace(/[\u{23F8}-\u{23FA}]/gu, '')   // Various symbols
+    .replace(/[\u{25AA}-\u{25AB}]/gu, '')   // Squares
+    .replace(/[\u{25B6}]/gu, '')            // Play button
+    .replace(/[\u{25C0}]/gu, '')            // Reverse button
+    .replace(/[\u{25FB}-\u{25FE}]/gu, '')   // Squares
+    .replace(/[\u{2614}-\u{2615}]/gu, '')   // Umbrella, Hot beverage
+    .replace(/[\u{2648}-\u{2653}]/gu, '')   // Zodiac
+    .replace(/[\u{267F}]/gu, '')            // Wheelchair
+    .replace(/[\u{2693}]/gu, '')            // Anchor
+    .replace(/[\u{26A1}]/gu, '')            // High voltage
+    .replace(/[\u{26AA}-\u{26AB}]/gu, '')   // Circles
+    .replace(/[\u{26BD}-\u{26BE}]/gu, '')   // Soccer, Baseball
+    .replace(/[\u{26C4}-\u{26C5}]/gu, '')   // Snowman, Sun
+    .replace(/[\u{26CE}]/gu, '')            // Ophiuchus
+    .replace(/[\u{26D4}]/gu, '')            // No entry
+    .replace(/[\u{26EA}]/gu, '')            // Church
+    .replace(/[\u{26F2}-\u{26F3}]/gu, '')   // Fountain, Golf
+    .replace(/[\u{26F5}]/gu, '')            // Sailboat
+    .replace(/[\u{26FA}]/gu, '')            // Tent
+    .replace(/[\u{26FD}]/gu, '')            // Fuel pump
+    .replace(/[\u{2702}]/gu, '')            // Scissors
+    .replace(/[\u{2705}]/gu, '')            // Check mark
+    .replace(/[\u{2708}-\u{270D}]/gu, '')   // Airplane to Writing hand
+    .replace(/[\u{270F}]/gu, '')            // Pencil
+    .replace(/[\u{2712}]/gu, '')            // Black nib
+    .replace(/[\u{2714}]/gu, '')            // Check mark
+    .replace(/[\u{2716}]/gu, '')            // X mark
+    .replace(/[\u{271D}]/gu, '')            // Latin cross
+    .replace(/[\u{2721}]/gu, '')            // Star of David
+    .replace(/[\u{2728}]/gu, '')            // Sparkles
+    .replace(/[\u{2733}-\u{2734}]/gu, '')   // Eight spoked asterisk
+    .replace(/[\u{2744}]/gu, '')            // Snowflake
+    .replace(/[\u{2747}]/gu, '')            // Sparkle
+    .replace(/[\u{274C}]/gu, '')            // Cross mark
+    .replace(/[\u{274E}]/gu, '')            // Cross mark
+    .replace(/[\u{2753}-\u{2755}]/gu, '')   // Question marks
+    .replace(/[\u{2757}]/gu, '')            // Exclamation mark
+    .replace(/[\u{2763}-\u{2764}]/gu, '')   // Heart exclamation, Heart
+    .replace(/[\u{2795}-\u{2797}]/gu, '')   // Plus, Minus, Divide
+    .replace(/[\u{27A1}]/gu, '')            // Right arrow
+    .replace(/[\u{27B0}]/gu, '')            // Curly loop
+    .replace(/[\u{27BF}]/gu, '')            // Double curly loop
+    .replace(/[\u{2934}-\u{2935}]/gu, '')   // Arrows
+    .replace(/[\u{2B05}-\u{2B07}]/gu, '')   // Arrows
+    .replace(/[\u{2B1B}-\u{2B1C}]/gu, '')   // Squares
+    .replace(/[\u{2B50}]/gu, '')            // Star
+    .replace(/[\u{2B55}]/gu, '')            // Circle
+    .replace(/[\u{3030}]/gu, '')            // Wavy dash
+    .replace(/[\u{303D}]/gu, '')            // Part alternation mark
+    .replace(/[\u{3297}]/gu, '')            // Circled Ideograph Congratulation
+    .replace(/[\u{3299}]/gu, '')            // Circled Ideograph Secret
+    .replace(/[\u{00A9}\u{00AE}]/gu, '')    // Copyright, Registered
+    .replace(/[\u{2122}]/gu, '')            // Trademark
+    .replace(/\s+/g, ' ')                   // Normalize whitespace
+    .trim();
 }
 
 // ============================================================================
@@ -436,16 +511,17 @@ class PDFReportV2 {
     const catText = rec.category.length > 10 ? rec.category.substring(0, 10) + "..." : rec.category;
     this.doc.text(catText.toUpperCase(), MARGIN + 63.5, this.yPos + 11.5, { align: "center" });
     
-    // Title
+    // Title - strip emojis to prevent rendering issues
     this.doc.setFontSize(11);
     this.doc.setTextColor(...COLORS.textPrimary);
     this.doc.setFont("helvetica", "bold");
-    const titleLines = this.doc.splitTextToSize(rec.title, CONTENT_WIDTH - 20);
+    const cleanTitle = stripEmojis(rec.title);
+    const titleLines = this.doc.splitTextToSize(cleanTitle, CONTENT_WIDTH - 20);
     this.doc.text(titleLines[0], MARGIN + 8, this.yPos + 26);
     
-    // Description (Why it matters)
+    // Description (Why it matters) - strip emojis
     if (rec.description || rec.impact) {
-      const desc = rec.description || rec.impact || "";
+      const desc = stripEmojis(rec.description || rec.impact || "");
       this.doc.setFontSize(8);
       this.doc.setTextColor(...COLORS.textSecondary);
       this.doc.setFont("helvetica", "italic");
@@ -453,12 +529,13 @@ class PDFReportV2 {
       this.doc.text(descLines.slice(0, 2), MARGIN + 8, this.yPos + 35);
     }
     
-    // How to fix
+    // How to fix - strip emojis
     if (rec.howToFix) {
       this.doc.setFontSize(8);
       this.doc.setTextColor(...COLORS.textPrimary);
       this.doc.setFont("helvetica", "normal");
-      const fixLines = this.doc.splitTextToSize(`Fix: ${rec.howToFix}`, CONTENT_WIDTH - 20);
+      const cleanFix = stripEmojis(rec.howToFix);
+      const fixLines = this.doc.splitTextToSize(`Fix: ${cleanFix}`, CONTENT_WIDTH - 20);
       this.doc.text(fixLines.slice(0, 2), MARGIN + 8, this.yPos + 50);
     }
     
@@ -531,54 +608,63 @@ class PDFReportV2 {
     this.doc.setFillColor(...COLORS.primary);
     this.doc.rect(0, 0, this.pageWidth, 4, "F");
     
-    // Hero Section - Center Aligned
-    let y = 45;
+    // Hero Section - Center Aligned (adjusted spacing to prevent cropping)
+    let y = 35;
     
     // Main Title
-    this.doc.setFontSize(32);
+    this.doc.setFontSize(28);
     this.doc.setTextColor(...COLORS.textPrimary);
     this.doc.setFont("helvetica", "bold");
     this.doc.text("SEO Health Report", this.pageWidth / 2, y, { align: "center" });
     
-    y += 15;
+    y += 12;
     
     // Subtitle
-    this.doc.setFontSize(14);
+    this.doc.setFontSize(12);
     this.doc.setTextColor(...COLORS.textSecondary);
     this.doc.setFont("helvetica", "normal");
     this.doc.text("Comprehensive Website Analysis", this.pageWidth / 2, y, { align: "center" });
     
-    y += 25;
+    y += 18;
+    
+    // Website label
+    this.doc.setFontSize(9);
+    this.doc.setTextColor(...COLORS.textMuted);
+    this.doc.text("Website", this.pageWidth / 2, y, { align: "center" });
+    
+    y += 8;
     
     // Domain box with border
     this.doc.setFillColor(...COLORS.borderLight);
     this.doc.setDrawColor(...COLORS.border);
-    this.doc.roundedRect(40, y, this.pageWidth - 80, 20, 4, 4, "FD");
+    this.doc.roundedRect(40, y, this.pageWidth - 80, 18, 4, 4, "FD");
     
-    this.doc.setFontSize(12);
+    this.doc.setFontSize(11);
     this.doc.setTextColor(...COLORS.primary);
     this.doc.setFont("helvetica", "bold");
-    this.doc.text(this.domain, this.pageWidth / 2, y + 13, { align: "center" });
+    // Sanitize domain for display
+    const displayDomain = stripEmojis(this.domain);
+    this.doc.text(displayDomain, this.pageWidth / 2, y + 12, { align: "center" });
     
-    y += 40;
+    y += 30;
     
     // Grade Stamp (elegant circle design)
-    this.drawGradeStamp(this.pageWidth / 2, y + 25, this.grade, this.overallScore);
+    this.drawGradeStamp(this.pageWidth / 2, y + 20, this.grade, this.overallScore);
     
-    y += 65;
+    y += 55;
     
-    // Health Gauge (semi-circle speedometer)
-    this.drawHealthGauge(this.pageWidth / 2, y + 30, 40, this.overallScore);
+    // Health Gauge (semi-circle speedometer) - slightly smaller
+    this.drawHealthGauge(this.pageWidth / 2, y + 25, 35, this.overallScore);
     
-    y += 70;
+    y += 60;
     
     // Score label
-    this.doc.setFontSize(12);
+    this.doc.setFontSize(11);
     this.doc.setTextColor(...getScoreColor(this.overallScore));
     this.doc.setFont("helvetica", "bold");
     this.doc.text(getScoreLabel(this.overallScore), this.pageWidth / 2, y, { align: "center" });
     
-    y += 25;
+    y += 20;
     
     // Metadata Grid (3 columns with vertical dividers)
     const metaY = y;
@@ -589,10 +675,11 @@ class PDFReportV2 {
     this.doc.setFillColor(...COLORS.borderLight);
     this.doc.roundedRect(startX, metaY, this.pageWidth - 80, 35, 4, 4, "F");
     
+    // Metadata items - no emojis (jsPDF can't render them)
     const metaItems = [
-      { icon: "📅", label: "Date", value: this.createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
-      { icon: "📄", label: "Pages Crawled", value: this.auditData.pagesScanned ? String(this.auditData.pagesScanned) : "N/A" },
-      { icon: "🔍", label: "Crawl Type", value: this.auditData.crawlType || "Quick Scan" },
+      { label: "Date", value: this.createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
+      { label: "Pages Crawled", value: this.auditData.pagesScanned ? String(this.auditData.pagesScanned) : "N/A" },
+      { label: "Crawl Type", value: this.auditData.crawlType || "Quick Scan" },
     ];
     
     metaItems.forEach((item, i) => {
@@ -669,11 +756,12 @@ class PDFReportV2 {
         this.doc.setFont("helvetica", "bold");
         this.doc.text(String(i + 1), MARGIN + 12, this.yPos + 14.5, { align: "center" });
         
-        // Title
+        // Title - strip emojis
         this.doc.setFontSize(10);
         this.doc.setTextColor(...COLORS.textPrimary);
         this.doc.setFont("helvetica", "bold");
-        const titleText = this.doc.splitTextToSize(rec.title, CONTENT_WIDTH - 35);
+        const cleanTitle = stripEmojis(rec.title);
+        const titleText = this.doc.splitTextToSize(cleanTitle, CONTENT_WIDTH - 35);
         this.doc.text(titleText[0], MARGIN + 25, this.yPos + 14);
         
         this.yPos += 26;
@@ -682,7 +770,8 @@ class PDFReportV2 {
       this.doc.setFontSize(10);
       this.doc.setTextColor(...COLORS.success);
       this.doc.setFont("helvetica", "normal");
-      this.doc.text("✓ No critical issues found! Your site is performing well.", MARGIN, this.yPos + 10);
+      // No emoji - jsPDF can't render them
+      this.doc.text("No critical issues found! Your site is performing well.", MARGIN, this.yPos + 10);
       this.yPos += 20;
     }
     
@@ -724,27 +813,33 @@ class PDFReportV2 {
     
     this.drawSectionTitle("Performance by Category");
     
-    // Build categories array
-    const categories = [
-      { name: "On-Page SEO", score: this.auditData.seoScore ?? 0 },
-      { name: "Links", score: this.auditData.linksScore ?? 0 },
-      { name: "Usability", score: this.auditData.usabilityScore ?? 0 },
-      { name: "Performance", score: this.auditData.performanceScore ?? 0 },
-      { name: "Social", score: this.auditData.socialScore ?? 0 },
-    ];
+    // Build categories array - include all major categories
+    const categories: { name: string; score: number }[] = [];
     
     if (this.auditData.localSeoScore !== undefined && this.auditData.localSeoScore !== null) {
-      categories.unshift({ name: "Local SEO", score: this.auditData.localSeoScore });
+      categories.push({ name: "Local SEO", score: this.auditData.localSeoScore });
     }
+    categories.push({ name: "On-Page SEO", score: this.auditData.seoScore ?? 0 });
+    
+    // Add Technical SEO score
+    if (this.auditData.technicalSeoScore !== undefined && this.auditData.technicalSeoScore !== null) {
+      categories.push({ name: "Technical SEO", score: this.auditData.technicalSeoScore });
+    }
+    
+    categories.push({ name: "Usability", score: this.auditData.usabilityScore ?? 0 });
+    
     if (this.auditData.contentScore !== undefined && this.auditData.contentScore !== null) {
       categories.push({ name: "Content", score: this.auditData.contentScore });
     }
+    
+    categories.push({ name: "Performance", score: this.auditData.performanceScore ?? 0 });
+    
     if (this.auditData.eeatScore !== undefined && this.auditData.eeatScore !== null) {
       categories.push({ name: "E-E-A-T", score: this.auditData.eeatScore });
     }
-    if (this.auditData.technologyScore !== undefined && this.auditData.technologyScore !== null) {
-      categories.push({ name: "Technology", score: this.auditData.technologyScore });
-    }
+    
+    categories.push({ name: "Links", score: this.auditData.linksScore ?? 0 });
+    categories.push({ name: "Social", score: this.auditData.socialScore ?? 0 });
     
     // 2x3 Grid of Scorecards
     const cardWidth = (CONTENT_WIDTH - 10) / 3; // 3 cards per row with gaps

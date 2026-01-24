@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { url, selectedUrls, crawlData, auditId } = body;
+    const { url, selectedUrls, crawlData, auditId, sectionSelections } = body;
 
     if (!url) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
             crawlData,
             auditId: finalAuditId,
             userId: user.id,
+            sectionSelections: sectionSelections || undefined, // Pass section-specific page selections
           }
         );
 
