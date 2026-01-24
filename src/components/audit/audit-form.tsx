@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Loader2, Globe, FileSearch, CheckCircle, XCircle } from "lucide-react";
 import { PageSelector } from "./page-selector";
+import { runFrontendSmartAudit, type SmartAuditOutput, type FrontendAuditProgress } from "@/lib/frontend-smart-audit";
 
 interface CrawlResult {
   baseUrl: string;
@@ -150,7 +151,7 @@ export function AuditForm() {
   const [auditProgress, setAuditProgress] = useState(0);
   const [auditStatus, setAuditStatus] = useState("");
 
-  const handleRunAudit = async () => {
+  const handleRunAudit = async (useFrontend: boolean = false) => {
     if (!crawlResult || selectedUrls.length === 0) {
       setError("Please select at least one page to audit");
       return;
@@ -158,9 +159,73 @@ export function AuditForm() {
 
     setIsRunningAudit(true);
     setAuditProgress(0);
-    setAuditStatus("Starting smart audit...");
+    setAuditStatus(useFrontend ? "Starting frontend audit..." : "Starting smart audit...");
     
     try {
+      // Use frontend processing if toggle is enabled
+      if (useFrontend) {
+        console.log("[Frontend Audit] Starting frontend audit for", selectedUrls.length, "pages");
+        
+        const result = await runFrontendSmartAudit(
+          crawlResult.baseUrl,
+          selectedUrls,
+          crawlResult,
+          (progress: FrontendAuditProgress) => {
+            setAuditProgress(progress.progress);
+            setAuditStatus(progress.label);
+          }
+        );
+        
+        console.log("[Frontend Audit] Audit completed with score:", result.overallScore);
+        
+        // Generate a unique ID for this audit
+        const auditId = `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const domain = new URL(crawlResult.baseUrl).hostname;
+        
+        // Transform frontend audit output to match the expected format for results page
+        const transformedResult = {
+          id: auditId,
+          domain: domain,
+          url: crawlResult.baseUrl,
+          status: "COMPLETED",
+          overallScore: result.overallScore,
+          overallGrade: result.overallGrade,
+          localSeoScore: result.localSeo?.score ?? null,
+          seoScore: result.seo?.score ?? null,
+          linksScore: result.links?.score ?? null,
+          usabilityScore: result.usability?.score ?? null,
+          performanceScore: result.performance?.score ?? null,
+          socialScore: result.social?.score ?? null,
+          contentScore: result.content?.score ?? null,
+          eeatScore: result.eeat?.score ?? null,
+          technicalSeoScore: result.technicalSeo?.score ?? null,
+          localSeoResults: result.localSeo,
+          seoResults: result.seo,
+          linksResults: result.links,
+          usabilityResults: result.usability,
+          performanceResults: result.performance,
+          socialResults: result.social,
+          technologyResults: result.technology,
+          technicalSeoResults: result.technicalSeo,
+          contentResults: result.content,
+          eeatResults: result.eeat,
+          recommendations: result.recommendations,
+          createdAt: new Date().toISOString(),
+          pageClassifications: result.pageClassifications,
+          auditMapping: result.auditMapping,
+          pagesAnalyzed: result.pagesAnalyzed,
+          pagesFailed: result.pagesFailed,
+        };
+        
+        // Store the transformed result in sessionStorage
+        sessionStorage.setItem(`audit_${auditId}`, JSON.stringify(transformedResult));
+        
+        // Navigate to results page
+        window.location.href = `/${domain}?id=${auditId}`;
+        return;
+      }
+      
+      // Use Trigger.dev backend processing
       const auditResponse = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

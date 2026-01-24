@@ -311,14 +311,40 @@ function analyzeSEO(pageData: any): CategoryResult {
     recommendation: h1Count === 0 ? 'Add exactly one H1 tag' : h1Count > 1 ? 'Use only one H1 tag per page' : h2Count === 0 ? 'Add H2 subheadings to structure content' : h3Count === 0 ? 'Consider adding H3 tags for better content hierarchy' : undefined,
   });
   
-  // 4. Keyword Placement Analysis (check if title keywords appear in H1, meta, content)
+  // 4. Keyword Placement Analysis with STEMMING support
+  // Basic stemming function to handle word variations (consulting/consultant, services/service, etc.)
+  const stemWord = (word: string): string => {
+    word = word.toLowerCase();
+    // Common suffix removals for basic stemming
+    const suffixes = ['ing', 'tion', 'ment', 'ness', 'able', 'ible', 'ful', 'less', 'ous', 'ive', 'ant', 'ent', 'er', 'or', 'ist', 'ly', 'ed', 'es', 's'];
+    for (const suffix of suffixes) {
+      if (word.length > suffix.length + 3 && word.endsWith(suffix)) {
+        return word.slice(0, -suffix.length);
+      }
+    }
+    return word;
+  };
+  
+  // Check if two words match (exact or stemmed)
+  const wordsMatch = (word1: string, word2: string): boolean => {
+    const w1 = word1.toLowerCase();
+    const w2 = word2.toLowerCase();
+    // Exact match
+    if (w1 === w2) return true;
+    // Stemmed match
+    if (stemWord(w1) === stemWord(w2)) return true;
+    // One contains the other (for compound words)
+    if (w1.length > 4 && w2.length > 4 && (w1.includes(w2) || w2.includes(w1))) return true;
+    return false;
+  };
+  
   const titleWords = title.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
   const h1Words = h1Text.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
   const metaWords = metaDesc.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
   
-  // Find common keywords between title and H1
-  const titleH1Match = titleWords.filter((w: string) => h1Words.includes(w)).length;
-  const titleMetaMatch = titleWords.filter((w: string) => metaWords.includes(w)).length;
+  // Find common keywords between title and H1 (with stemming)
+  const titleH1Match = titleWords.filter((tw: string) => h1Words.some((hw: string) => wordsMatch(tw, hw))).length;
+  const titleMetaMatch = titleWords.filter((tw: string) => metaWords.some((mw: string) => wordsMatch(tw, mw))).length;
   const keywordConsistency = titleWords.length > 0 ? Math.round(((titleH1Match + titleMetaMatch) / (titleWords.length * 2)) * 100) : 0;
   
   checks.push({
@@ -331,12 +357,13 @@ function analyzeSEO(pageData: any): CategoryResult {
       titleKeywords: titleWords.slice(0, 5),
       titleH1Match,
       titleMetaMatch,
-      consistency: keywordConsistency + '%'
+      consistency: keywordConsistency + '%',
+      note: 'Uses stemming to match word variations (e.g., consulting/consultant)'
     },
     message: keywordConsistency >= 50 
-      ? `Good keyword consistency: ${keywordConsistency}% match between title, H1, and meta`
+      ? `Good keyword consistency: ${keywordConsistency}% match between title, H1, and meta (with stemming)`
       : `Low keyword consistency (${keywordConsistency}%): Align keywords across title, H1, and meta description`,
-    recommendation: keywordConsistency < 50 ? 'Use your primary keyword in the title, H1, and meta description for better relevance' : undefined,
+    recommendation: keywordConsistency < 50 ? 'Use your primary keyword (or variations) in the title, H1, and meta description for better relevance' : undefined,
   });
   
   // 5. URL Optimization
@@ -403,32 +430,82 @@ function analyzeSEO(pageData: any): CategoryResult {
   
   checks.push({
     id: 'content-duplication',
-    name: 'Content Duplication',
+    name: 'Content Duplication (Within Page)',
     status: duplicationRatio >= 90 ? 'pass' : duplicationRatio >= 70 ? 'warning' : 'fail',
     score: duplicationRatio,
     weight: 6,
-    value: { totalParagraphs: paragraphs.length, uniqueParagraphs: uniqueParagraphs.size, duplicationRatio },
+    value: { 
+      totalParagraphs: paragraphs.length, 
+      uniqueParagraphs: uniqueParagraphs.size, 
+      duplicationRatio,
+      scope: 'within-page-only',
+      limitations: [
+        'Does NOT check for duplicate content across other pages on your site (cannibalization)',
+        'Does NOT check for plagiarism from external websites',
+        'For cross-page duplication, use Google Search Console or Screaming Frog',
+        'For plagiarism checks, use Copyscape or similar tools'
+      ]
+    },
     message: duplicationRatio >= 90 
-      ? `Content appears unique (${duplicationRatio}% unique paragraphs)`
-      : `Possible duplicate content detected (${duplicationRatio}% unique)`,
-    recommendation: duplicationRatio < 90 ? 'Review and remove or rewrite duplicate content blocks' : undefined,
+      ? `Content appears unique within this page (${duplicationRatio}% unique paragraphs). Note: Cross-page duplication not checked.`
+      : `Possible duplicate content detected within page (${duplicationRatio}% unique)`,
+    recommendation: duplicationRatio < 90 
+      ? 'Review and remove or rewrite duplicate content blocks. Also check for cross-page duplication using Google Search Console.'
+      : undefined,
   });
   
-  // 9. Thin Content Detection
-  const isThinContent = wordCount < 300;
-  const contentScore = wordCount >= 1000 ? 100 : wordCount >= 500 ? 85 : wordCount >= 300 ? 70 : wordCount >= 100 ? 40 : 10;
+  // 9. Thin Content Detection - IMPROVED to exclude nav/header/footer/sidebar
+  // Extract only main content area, excluding common non-content sections
+  let mainContentHtml = html;
+  
+  // Remove common non-content sections by tag
+  mainContentHtml = mainContentHtml
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+    .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '');
+  
+  // Remove elements with common navigation/footer class names
+  mainContentHtml = mainContentHtml
+    .replace(/<[^>]*class=["'][^"']*(?:nav|menu|sidebar|footer|header|breadcrumb|widget)[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/gi, '');
+  
+  // Extract text from main content
+  const mainContentText = mainContentHtml
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const mainContentWordCount = mainContentText.split(/\s+/).filter((w: string) => w.length > 2).length;
+  
+  // Compare with total word count to show the difference
+  const totalWordCount = wordCount;
+  const boilerplateWords = totalWordCount - mainContentWordCount;
+  const boilerplatePercent = totalWordCount > 0 ? Math.round((boilerplateWords / totalWordCount) * 100) : 0;
+  
+  const isThinContent = mainContentWordCount < 300;
+  const contentScore = mainContentWordCount >= 1000 ? 100 : mainContentWordCount >= 500 ? 85 : mainContentWordCount >= 300 ? 70 : mainContentWordCount >= 100 ? 40 : 10;
   
   checks.push({
     id: 'thin-content',
     name: 'Thin Content Detection',
-    status: wordCount >= 300 ? 'pass' : wordCount >= 100 ? 'warning' : 'fail',
+    status: mainContentWordCount >= 300 ? 'pass' : mainContentWordCount >= 100 ? 'warning' : 'fail',
     score: contentScore,
     weight: 8,
-    value: { wordCount, isThinContent, recommended: '300+ words for informational pages' },
+    value: { 
+      mainContentWordCount,
+      totalWordCount,
+      boilerplateWords,
+      boilerplatePercent: boilerplatePercent + '%',
+      isThinContent, 
+      recommended: '300+ words for informational pages',
+      note: 'Word count excludes nav, header, footer, sidebar, and common boilerplate'
+    },
     message: isThinContent 
-      ? `Thin content: Only ${wordCount} words (recommended: 300+)`
-      : `Good content length: ${wordCount} words`,
-    recommendation: isThinContent ? 'Expand content to at least 300 words for better SEO performance' : undefined,
+      ? `Thin content: Only ${mainContentWordCount} main content words (${boilerplatePercent}% was nav/footer/boilerplate)`
+      : `Good content length: ${mainContentWordCount} main content words`,
+    recommendation: isThinContent ? 'Expand main content to at least 300 words for better SEO performance' : undefined,
   });
   
   // 10. Canonical URL
@@ -461,15 +538,16 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
   const html = pageData.html;
   
   // NAP (Name, Address, Phone)
-  // First check for tel: links
+  // First check for tel: links (most reliable)
   const telLinkMatch = html.match(/tel:\s*([+0-9().\s-]+)/i);
   let phoneMatch: RegExpMatchArray | null = null;
   
   if (telLinkMatch) {
     phoneMatch = [telLinkMatch[1]];
   } else {
-    // Fallback to text regex, but exclude date patterns (YYYY-MM-DD, YYYY/MM/DD, etc.)
-    const phoneRegex = /(?!(?:19|20)\d{2}[-\/.]\d{2}[-\/.]\d{2})(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/;
+    // International phone regex - supports multiple formats:
+    // +1-234-567-8901, +44 20 7946 0958, (123) 456-7890, 123.456.7890, etc.
+    const phoneRegex = /(?!(?:19|20)\d{2}[-\/.]\d{2}[-\/.]\d{2})(\+?[1-9]\d{0,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9})/;
     const matches = html.match(phoneRegex);
     phoneMatch = matches;
   }
@@ -486,9 +564,26 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
     recommendation: !hasPhone ? 'Add a visible phone number for local SEO' : undefined,
   });
   
-  // Address detection
-  const addressPattern = /\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|place|pl)[\s,]+[\w\s]+,?\s*(?:[A-Z]{2})?\s*\d{5}(?:-\d{4})?/i;
-  const hasAddress = addressPattern.test(html);
+  // IMPROVED Address detection - supports international formats
+  // US addresses: 123 Main Street, City, ST 12345
+  // UK addresses: 10 Downing Street, London SW1A 2AA
+  // Generic: Number + Street name + City/Region
+  const addressPatterns = [
+    // US format with ZIP
+    /\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|place|pl|highway|hwy|parkway|pkwy|circle|cir)[\s,]+[\w\s]+,?\s*(?:[A-Z]{2})?\s*\d{5}(?:-\d{4})?/i,
+    // UK format with postcode
+    /\d+[\w\s,]+[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}/i,
+    // Generic international - number + words + comma + more words
+    /\d+[\w\s]{5,50},[\w\s]{3,30}(?:,[\w\s]{2,30})?/i,
+    // Address in structured data
+    /"streetAddress"\s*:\s*"[^"]+"/i,
+    /"addressLocality"\s*:\s*"[^"]+"/i,
+    // Common address keywords
+    /(?:address|location|headquarters|office)[:\s]+\d+[\w\s,.-]+/i,
+  ];
+  
+  const hasAddress = addressPatterns.some(pattern => pattern.test(html));
+  const addressInSchema = /"streetAddress"|"addressLocality"|"postalCode"/i.test(html);
   
   checks.push({
     id: 'address',
@@ -501,43 +596,101 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
     recommendation: !hasAddress ? 'Add LocalBusiness schema with address data for Google Maps integration' : undefined,
   });
   
-  // Schema.org LocalBusiness
+  // Schema.org LocalBusiness - with JSON-LD validation
   const hasLocalBusinessSchema = html.includes('LocalBusiness') || html.includes('Organization');
+  
+  // Actually validate JSON-LD syntax
+  let schemaValid = false;
+  let schemaError: string | null = null;
+  let schemaData: any = null;
+  
+  const jsonLdMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  if (jsonLdMatches && jsonLdMatches.length > 0) {
+    for (const match of jsonLdMatches) {
+      const jsonContent = match.replace(/<script[^>]*>/, '').replace(/<\/script>/i, '').trim();
+      try {
+        const parsed = JSON.parse(jsonContent);
+        schemaValid = true;
+        // Check if it contains LocalBusiness or Organization
+        const schemaType = parsed['@type'] || (Array.isArray(parsed['@graph']) ? parsed['@graph'].map((g: any) => g['@type']).join(', ') : '');
+        if (schemaType.includes('LocalBusiness') || schemaType.includes('Organization')) {
+          schemaData = parsed;
+        }
+      } catch (e) {
+        schemaError = e instanceof Error ? e.message : 'Invalid JSON';
+        schemaValid = false;
+      }
+    }
+  }
+  
+  const schemaScore = schemaData ? 100 : (schemaValid && hasLocalBusinessSchema) ? 80 : hasLocalBusinessSchema ? 50 : 0;
   
   checks.push({
     id: 'local-schema',
     name: 'Local Business Schema',
-    status: hasLocalBusinessSchema ? 'pass' : 'fail',
-    score: hasLocalBusinessSchema ? 100 : 0,
+    status: schemaData ? 'pass' : hasLocalBusinessSchema ? 'warning' : 'fail',
+    score: schemaScore,
     weight: 20,
-    value: { hasSchema: hasLocalBusinessSchema },
-    message: hasLocalBusinessSchema ? 'LocalBusiness or Organization schema found' : 'No local business schema markup',
-    recommendation: !hasLocalBusinessSchema ? 'Add LocalBusiness schema markup for rich results' : undefined,
+    value: { 
+      hasSchema: hasLocalBusinessSchema,
+      isValidJson: schemaValid,
+      jsonError: schemaError,
+      schemaType: schemaData?.['@type'] || null
+    },
+    message: schemaData 
+      ? `Valid LocalBusiness/Organization JSON-LD schema found` 
+      : schemaValid && hasLocalBusinessSchema 
+        ? 'Schema markup found but may not be LocalBusiness type'
+        : schemaError 
+          ? `JSON-LD found but invalid: ${schemaError}`
+          : 'No local business schema markup',
+    recommendation: !schemaData ? 'Add valid LocalBusiness JSON-LD schema markup for rich results' : undefined,
   });
   
-  // Google Maps embed - broaden detection to include iframe, shortened URLs, lazy-loaded data attributes, and map markers
-  const hasMapIframe = html.includes('google.com/maps') || 
-                       html.includes('maps.google.com') || 
-                       html.includes('maps.googleapis.com') ||
-                       html.includes('data-maps-api') ||
-                       html.includes('maps/embed') ||
-                       html.includes('maps?q=') ||
-                       html.includes('maps/place/');
+  // Google Maps embed - improved detection with verification levels
+  // Level 1: Confirmed Google Maps (iframe/embed with google.com/maps URL)
+  const hasConfirmedGoogleMap = /<iframe[^>]*src=["'][^"']*(?:google\.com\/maps|maps\.google\.com|maps\.googleapis\.com)[^"']*["'][^>]*>/i.test(html);
   
-  // Check for map markers in HTML (div IDs, classes, aria-labels)
-  const hasMapMarker = /class=["'][^"']*map[^"']*["']|id=["'][^"']*map[^"']*["']|aria-label=["'][^"']*map[^"']*["']/i.test(html);
+  // Level 2: Google Maps API script loaded
+  const hasGoogleMapsApi = html.includes('maps.googleapis.com/maps/api') || 
+                           html.includes('maps/embed') ||
+                           html.includes('maps?q=') ||
+                           html.includes('maps/place/');
   
-  const hasMap = hasMapIframe || hasMapMarker;
+  // Level 3: Generic map element (unverified - could be any map or just a div named "map")
+  const hasMapMarker = /class=["'][^"']*\bmap\b[^"']*["']|id=["'][^"']*\bmap\b[^"']*["']/i.test(html);
+  
+  // Determine verification level
+  const mapVerificationLevel = hasConfirmedGoogleMap ? 'confirmed' : hasGoogleMapsApi ? 'likely' : hasMapMarker ? 'unverified' : 'none';
+  const hasVerifiedMap = hasConfirmedGoogleMap || hasGoogleMapsApi;
   
   checks.push({
     id: 'google-map',
     name: 'Google Map',
-    status: hasMapIframe ? 'pass' : hasMapMarker ? 'warning' : 'info',
-    score: hasMapIframe ? 100 : hasMapMarker ? 70 : 50,
+    status: hasConfirmedGoogleMap ? 'pass' : hasGoogleMapsApi ? 'pass' : hasMapMarker ? 'warning' : 'info',
+    score: hasConfirmedGoogleMap ? 100 : hasGoogleMapsApi ? 90 : hasMapMarker ? 40 : 50,
     weight: 10,
-    value: { hasMap, hasMapIframe, hasMapMarker },
-    message: hasMapIframe ? 'Google Maps embed detected' : hasMapMarker ? 'Map element detected but not verified' : 'No Google Maps embed found',
-    recommendation: !hasMap ? 'Consider adding a Google Maps embed for local visitors' : hasMapMarker ? 'Map element detected - verify it displays correctly' : undefined,
+    value: { 
+      verificationLevel: mapVerificationLevel,
+      hasConfirmedGoogleMap, 
+      hasGoogleMapsApi,
+      hasMapMarker,
+      note: hasMapMarker && !hasVerifiedMap 
+        ? '⚠️ A div with "map" class/id exists but we cannot verify an actual Google Map is loading'
+        : undefined
+    },
+    message: hasConfirmedGoogleMap 
+      ? 'Google Maps iframe embed confirmed' 
+      : hasGoogleMapsApi 
+        ? 'Google Maps API integration detected'
+        : hasMapMarker 
+          ? '⚠️ Map element found but NOT verified as Google Maps - could be placeholder div'
+          : 'No Google Maps embed found',
+    recommendation: !hasVerifiedMap && hasMapMarker 
+      ? 'Verify your map element actually loads Google Maps, or add a proper Google Maps embed'
+      : !hasVerifiedMap && !hasMapMarker
+        ? 'Consider adding a Google Maps embed for local visitors'
+        : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -696,18 +849,38 @@ function analyzeContent(pageData: any, pageType: PageType = 'other'): CategoryRe
 function analyzePerformance(pageData: any): CategoryResult {
   const checks: Check[] = [];
   
-  // Response time
+  // Response time - with clear disclaimer about what this measures
   const responseTime = pageData.responseTime;
   
   checks.push({
     id: 'response-time',
-    name: 'Server Response Time',
+    name: 'Server Response Time (TTFB Proxy)',
     status: responseTime < 500 ? 'pass' : responseTime < 1500 ? 'warning' : 'fail',
     score: responseTime < 200 ? 100 : responseTime < 500 ? 85 : responseTime < 1000 ? 60 : responseTime < 2000 ? 40 : 20,
-    weight: 20,
-    value: { responseTime },
-    message: `Server responded in ${responseTime}ms`,
-    recommendation: responseTime >= 1000 ? 'Improve server response time (aim for <500ms)' : undefined,
+    weight: 15, // Reduced weight since this is a proxy metric
+    value: { 
+      responseTime,
+      disclaimer: 'This measures time to download HTML from our server, not real user experience',
+      whatItMeasures: 'Server response time (similar to TTFB)',
+      whatItDoesNotMeasure: 'Actual render time, JavaScript execution, LCP, FCP, or CLS',
+      recommendation: 'For accurate Core Web Vitals, use Google PageSpeed Insights API'
+    },
+    message: `Server responded in ${responseTime}ms (⚠️ server-side measurement only, not real user experience)`,
+    recommendation: responseTime >= 1000 ? 'Improve server response time (aim for <500ms). Note: This does NOT measure actual page render time or Core Web Vitals.' : undefined,
+  });
+  
+  // Add a disclaimer check about performance measurement limitations
+  checks.push({
+    id: 'performance-disclaimer',
+    name: 'Performance Measurement Note',
+    status: 'info',
+    score: 100,
+    weight: 5,
+    value: {
+      note: 'Server-side measurements only',
+      forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY for real Core Web Vitals (LCP, FID, CLS)'
+    },
+    message: 'ℹ️ Performance metrics here are server-side proxies. For real Core Web Vitals (LCP, FCP, CLS, TBT), configure Google PageSpeed API.',
   });
   
   // Page size
@@ -1173,33 +1346,75 @@ function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): CategoryResul
     recommendation: totalResources > 15 ? 'Reduce render-blocking resources for better page speed. Consider bundling CSS/JS files.' : undefined,
   });
   
-  // 4. Mobile Friendliness
+  // 4. Mobile Friendliness - COMPREHENSIVE checks
   const viewportMetaFull = html.match(/<meta[^>]*name=["']viewport["'][^>]*>/i);
-  const viewportMeta = html.match(/<meta[^>]*name=["']viewport["'][^>]*content=["']([^"']*)["\']/i);
+  const viewportMeta = html.match(/<meta[^>]*name=["']viewport["'][^>]*content=["']([^"']*)["']/i);
   const hasProperViewport = viewportMeta && viewportMeta[1].includes('width=device-width');
   const touchIconMatch = html.match(/<link[^>]*rel=["']apple-touch-icon["'][^>]*>/i);
   const hasTouchIcons = !!touchIconMatch;
   const hasResponsiveImages = html.includes('srcset') || html.includes('sizes=');
   
-  const mobileScore = (hasProperViewport ? 40 : 0) + (hasTouchIcons ? 20 : 0) + (hasResponsiveImages ? 40 : 0);
+  // Additional mobile checks
+  // Check for fixed-width elements that could cause horizontal overflow
+  const hasFixedWidthElements = /width:\s*\d{4,}px|min-width:\s*\d{4,}px/i.test(html);
+  
+  // Check for small font sizes that are hard to read on mobile
+  const hasSmallFonts = /font-size:\s*[0-9]px|font-size:\s*1[0-1]px/i.test(html);
+  
+  // Check for tap targets that might be too small (buttons/links with very small dimensions)
+  const hasSmallTapTargets = /(?:width|height):\s*(?:[0-9]|1[0-9]|2[0-9])px.*(?:button|btn|click|tap)/i.test(html);
+  
+  // Check for responsive CSS indicators
+  const hasMediaQueries = /@media[^{]*\(.*(?:max-width|min-width)/i.test(html);
+  const hasFlexbox = /display:\s*flex/i.test(html);
+  const hasGrid = /display:\s*grid/i.test(html);
+  const hasResponsiveCSS = hasMediaQueries || hasFlexbox || hasGrid;
+  
+  // Calculate mobile score with more factors
+  let mobileScore = 0;
+  mobileScore += hasProperViewport ? 30 : 0;
+  mobileScore += hasTouchIcons ? 10 : 0;
+  mobileScore += hasResponsiveImages ? 20 : 0;
+  mobileScore += hasResponsiveCSS ? 20 : 0;
+  mobileScore += !hasFixedWidthElements ? 10 : 0;
+  mobileScore += !hasSmallFonts ? 5 : 0;
+  mobileScore += !hasSmallTapTargets ? 5 : 0;
+  
+  // Collect issues
+  const mobileIssues: string[] = [];
+  if (!hasProperViewport) mobileIssues.push('Missing viewport meta tag');
+  if (hasFixedWidthElements) mobileIssues.push('Fixed-width elements detected (may cause horizontal scroll)');
+  if (hasSmallFonts) mobileIssues.push('Small font sizes detected (may be hard to read)');
+  if (hasSmallTapTargets) mobileIssues.push('Small tap targets detected');
+  if (!hasResponsiveCSS) mobileIssues.push('No responsive CSS patterns detected');
   
   checks.push({
     id: 'mobile-friendliness',
     name: 'Mobile Friendliness',
-    status: mobileScore >= 80 ? 'pass' : mobileScore >= 40 ? 'warning' : 'fail',
+    status: mobileScore >= 80 ? 'pass' : mobileScore >= 50 ? 'warning' : 'fail',
     score: mobileScore,
     weight: 12,
     value: { 
       hasProperViewport, 
       hasTouchIcons,
       hasResponsiveImages,
+      hasResponsiveCSS,
+      hasFixedWidthElements,
+      hasSmallFonts,
+      hasSmallTapTargets,
+      issues: mobileIssues,
       viewportContent: viewportMeta?.[1] || 'Not set',
-      htmlSnippet: viewportMetaFull?.[0] || 'No viewport meta tag found'
+      htmlSnippet: viewportMetaFull?.[0] || 'No viewport meta tag found',
+      note: 'This checks HTML/CSS patterns. For definitive mobile testing, use Google Mobile-Friendly Test API.'
     },
-    message: hasProperViewport 
-      ? `Mobile-friendly: viewport set${hasResponsiveImages ? ', responsive images detected' : ''}`
-      : 'Missing proper viewport meta tag for mobile devices',
-    recommendation: !hasProperViewport ? 'Add viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">' : undefined,
+    message: mobileIssues.length === 0
+      ? `Mobile-friendly: viewport set${hasResponsiveImages ? ', responsive images' : ''}${hasResponsiveCSS ? ', responsive CSS' : ''}`
+      : `Mobile issues detected: ${mobileIssues.slice(0, 2).join(', ')}${mobileIssues.length > 2 ? '...' : ''}`,
+    recommendation: !hasProperViewport 
+      ? 'Add viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">'
+      : mobileIssues.length > 0 
+        ? `Fix mobile issues: ${mobileIssues.join('; ')}. Consider using Google Mobile-Friendly Test for comprehensive analysis.`
+        : undefined,
   });
   
   // 5. HTTPS & Security
@@ -1488,15 +1703,26 @@ export const smartAuditTask = task({
       usability: [],
     };
 
+    // Helper: Get random pages from a list (for sampling)
+    const getRandomPages = (pages: PageClassification[], count: number, exclude: string[] = []): string[] => {
+      const available = pages.filter(p => !exclude.includes(p.url));
+      const shuffled = [...available].sort(() => Math.random() - 0.5);
+      return shuffled.slice(0, count).map(p => p.url);
+    };
+
     // Auto-Selection Router: Smart page selection for each audit section
+    // IMPROVED: Now includes random sampling to catch edge cases
     const selectPagesForSection = (section: string): string[] => {
       switch (section) {
         case 'performance':
-          // Homepage + 1 Product/Service Page
+          // Homepage + 1 Product/Service Page + 1 RANDOM page (to catch edge cases)
           const perfPages: string[] = [];
           if (homePage) perfPages.push(homePage.url);
           const perfPage = productPages[0] || servicePages[0] || blogPages[0];
           if (perfPage && !perfPages.includes(perfPage.url)) perfPages.push(perfPage.url);
+          // Add a random page to catch potential issues on unexpected pages
+          const randomPerfPage = getRandomPages(allPages, 1, perfPages);
+          perfPages.push(...randomPerfPage);
           return perfPages.length > 0 ? perfPages : [homePage?.url || allPages[0]?.url].filter(Boolean);
 
         case 'localSeo':
@@ -1570,17 +1796,36 @@ export const smartAuditTask = task({
           return socialPages.length > 0 ? socialPages : [allPages[0]?.url].filter(Boolean);
 
         case 'links':
-          // All pages (link structure analysis)
-          return allPages.slice(0, 5).map(p => p.url);
+          // Strategic pages + random sampling for comprehensive coverage
+          const linkPages: string[] = [];
+          if (homePage) linkPages.push(homePage.url);
+          // Add product/service pages (likely to have internal linking issues)
+          productPages.slice(0, 2).forEach(p => linkPages.push(p.url));
+          // Add random pages to catch issues on unexpected pages
+          const randomLinkPages = getRandomPages(allPages, 2, linkPages);
+          linkPages.push(...randomLinkPages);
+          return linkPages.slice(0, 5);
 
         case 'technicalSeo':
-          // All pages for comprehensive technical analysis
-          return allPages.slice(0, 5).map(p => p.url);
+          // Strategic pages + random sampling for comprehensive technical analysis
+          // Critical: Random sampling helps catch pages with broken canonicals, noindex issues, etc.
+          const techSeoPages: string[] = [];
+          if (homePage) techSeoPages.push(homePage.url);
+          // Add one of each major page type if available
+          if (productPages[0]) techSeoPages.push(productPages[0].url);
+          if (blogPages[0]) techSeoPages.push(blogPages[0].url);
+          // Add 2 RANDOM pages to catch edge cases (e.g., broken canonicals on obscure pages)
+          const randomTechPages = getRandomPages(allPages, 2, techSeoPages);
+          techSeoPages.push(...randomTechPages);
+          return techSeoPages.slice(0, 5);
 
         default:
           return [homePage?.url || allPages[0]?.url].filter(Boolean);
       }
     };
+
+    // Log sampling strategy for transparency
+    console.log('[Smart Audit] Sampling strategy: Strategic pages + random sampling to catch edge cases');
 
     // Apply the Auto-Selection Router to each section
     Object.keys(auditMapping).forEach(section => {

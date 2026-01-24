@@ -57,13 +57,32 @@ export const performanceTask = task({
 
     checks.push({
       id: "serverResponse",
-      name: "Server Response Time",
+      name: "Server Response Time (TTFB Proxy)",
       status: loadTime < 600 ? "pass" : loadTime < 1500 ? "warning" : "fail",
       score: loadTime < 600 ? 100 : loadTime < 1500 ? 70 : 40,
-      weight: 15,
-      value: { responseTime: loadTime },
-      message: `Server response time: ${(loadTime / 1000).toFixed(2)}s`,
-      recommendation: loadTime >= 1500 ? "Improve server response time" : undefined,
+      weight: 12, // Reduced weight since this is a proxy metric
+      value: { 
+        responseTime: loadTime,
+        disclaimer: 'This measures time to download HTML from our server, not real user experience',
+        whatItMeasures: 'Server response time (similar to TTFB)',
+        whatItDoesNotMeasure: 'Actual render time, JavaScript execution, LCP, FCP, or CLS'
+      },
+      message: `Server response time: ${(loadTime / 1000).toFixed(2)}s (⚠️ server-side measurement only)`,
+      recommendation: loadTime >= 1500 ? "Improve server response time. Note: This does NOT measure actual page render time or Core Web Vitals." : undefined,
+    });
+    
+    // Add disclaimer check about performance measurement limitations
+    checks.push({
+      id: "performanceDisclaimer",
+      name: "Performance Measurement Note",
+      status: "info",
+      score: 100,
+      weight: 5,
+      value: {
+        note: 'Server-side measurements only',
+        forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY for real Core Web Vitals (LCP, FID, CLS)'
+      },
+      message: 'ℹ️ Basic metrics are server-side proxies. For real Core Web Vitals, PageSpeed Insights API is used below (if configured).',
     });
 
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);

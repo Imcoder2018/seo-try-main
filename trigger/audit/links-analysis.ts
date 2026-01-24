@@ -1,13 +1,90 @@
-import { task } from "@trigger.dev/sdk";
+import { task, metadata } from "@trigger.dev/sdk";
 import * as cheerio from "cheerio";
 import { calculateGrade } from "../../src/lib/utils";
 import { calculateCategoryScore, getCategoryMessage, type CheckResult } from "../../src/lib/scoring";
+
+// Interface for link validation result
+interface LinkValidationResult {
+  url: string;
+  status: number | null;
+  isWorking: boolean;
+  error?: string;
+  redirectUrl?: string;
+}
 
 async function fetchHtml(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOAuditBot/1.0)" },
   });
   return response.text();
+}
+
+// Validate a single link using HEAD request (faster than GET)
+async function validateLink(linkUrl: string, baseUrl: string): Promise<LinkValidationResult> {
+  try {
+    // Resolve relative URLs
+    const absoluteUrl = new URL(linkUrl, baseUrl).toString();
+    
+    // Skip non-HTTP URLs
+    if (!absoluteUrl.startsWith('http://') && !absoluteUrl.startsWith('https://')) {
+      return { url: linkUrl, status: null, isWorking: true }; // mailto:, tel:, etc.
+    }
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    const response = await fetch(absoluteUrl, {
+      method: 'HEAD',
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (compatible; SEOAuditBot/1.0; Link Checker)",
+        "Accept": "*/*"
+      },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    const isWorking = response.status >= 200 && response.status < 400;
+    
+    return {
+      url: linkUrl,
+      status: response.status,
+      isWorking,
+      redirectUrl: response.url !== absoluteUrl ? response.url : undefined,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Timeout or abort = potentially slow server, not necessarily broken
+    if (errorMessage.includes('abort') || errorMessage.includes('timeout')) {
+      return { url: linkUrl, status: null, isWorking: true, error: 'Timeout (server slow)' };
+    }
+    
+    return {
+      url: linkUrl,
+      status: null,
+      isWorking: false,
+      error: errorMessage,
+    };
+  }
+}
+
+// Batch validate links with concurrency control
+async function validateLinks(links: string[], baseUrl: string, maxConcurrent: number = 5, maxLinks: number = 20): Promise<LinkValidationResult[]> {
+  const results: LinkValidationResult[] = [];
+  const linksToCheck = links.slice(0, maxLinks); // Limit number of links to check
+  
+  // Process in batches
+  for (let i = 0; i < linksToCheck.length; i += maxConcurrent) {
+    const batch = linksToCheck.slice(i, i + maxConcurrent);
+    const batchResults = await Promise.all(
+      batch.map(link => validateLink(link, baseUrl))
+    );
+    results.push(...batchResults);
+  }
+  
+  return results;
 }
 
 export const linksAnalysisTask = task({
@@ -113,12 +190,57 @@ export const linksAnalysisTask = task({
         : "Some URLs may not be user-friendly.",
     });
 
+    // ACTUAL BROKEN LINK DETECTION - HTTP HEAD requests
+    metadata.set("status", { progress: 30, label: "Checking links for broken URLs..." } as any);
+    
+    const allLinksToValidate = [...internalLinks, ...externalLinks].filter(
+      href => !href.startsWith('#') && !href.startsWith('javascript:') && 
+              !href.startsWith('mailto:') && !href.startsWith('tel:')
+    );
+    
+    const linkValidationResults = await validateLinks(allLinksToValidate, url, 5, 30);
+    const brokenLinks = linkValidationResults.filter(r => !r.isWorking);
+    const workingLinks = linkValidationResults.filter(r => r.isWorking);
+    const brokenLinkUrls = brokenLinks.map(r => r.url);
+    const brokenLinkDetails = brokenLinks.map(r => ({
+      url: r.url,
+      status: r.status,
+      error: r.error
+    }));
+    
+    const brokenLinkPercent = allLinksToValidate.length > 0 
+      ? (brokenLinks.length / linkValidationResults.length) * 100 
+      : 0;
+    
+    checks.push({
+      id: "brokenLinks",
+      name: "Broken Links (HTTP Verified)",
+      status: brokenLinks.length === 0 ? "pass" : brokenLinks.length <= 2 ? "warning" : "fail",
+      score: brokenLinks.length === 0 ? 100 : Math.max(0, 100 - brokenLinks.length * 15),
+      weight: 20,
+      value: {
+        totalChecked: linkValidationResults.length,
+        working: workingLinks.length,
+        broken: brokenLinks.length,
+        brokenPercent: brokenLinkPercent.toFixed(1),
+        brokenUrls: brokenLinkUrls.slice(0, 10), // Show first 10
+        brokenDetails: brokenLinkDetails.slice(0, 5), // Detailed info for first 5
+        note: `Checked ${linkValidationResults.length} of ${allLinksToValidate.length} links via HTTP HEAD requests`
+      },
+      message: brokenLinks.length === 0
+        ? `All ${linkValidationResults.length} checked links are working (HTTP verified)`
+        : `Found ${brokenLinks.length} broken links out of ${linkValidationResults.length} checked (${brokenLinkPercent.toFixed(1)}% broken)`,
+      recommendation: brokenLinks.length > 0 
+        ? `Fix broken links: ${brokenLinkUrls.slice(0, 3).join(', ')}${brokenLinkUrls.length > 3 ? '...' : ''}`
+        : undefined,
+    });
+
     checks.push({
       id: "backlinks",
       name: "Backlink Profile",
       status: "info",
       score: 50,
-      weight: 30,
+      weight: 20,
       value: { note: "Requires external API for full analysis" },
       message: "Full backlink analysis requires integration with Moz/Ahrefs API.",
       recommendation: "Execute a Link Building Strategy",

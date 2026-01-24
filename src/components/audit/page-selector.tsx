@@ -37,7 +37,7 @@ interface CrawlResult {
 interface PageSelectorProps {
   crawlResult: CrawlResult;
   onSelectionChange: (selectedUrls: string[]) => void;
-  onRunAudit: () => void;
+  onRunAudit: (useFrontend: boolean) => void;
   isRunningAudit: boolean;
   auditProgress?: number;
   auditStatus?: string;
@@ -46,6 +46,7 @@ interface PageSelectorProps {
 export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRunningAudit, auditProgress = 0, auditStatus = "" }: PageSelectorProps) {
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["core", "blog", "product", "category", "top-linked"]));
+  const [useFrontendProcessing, setUseFrontendProcessing] = useState(false);
   const initializedRef = useRef(false);
   const onSelectionChangeRef = useRef(onSelectionChange);
   
@@ -312,32 +313,81 @@ export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRun
 
       {/* Run Audit Button */}
       <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 shadow-lg">
+        {/* Processing Mode Toggle */}
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <span className="text-sm font-medium text-gray-700">Processing Mode</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {useFrontendProcessing 
+                  ? "Process in browser (faster, no server queues)" 
+                  : "Process via Trigger.dev (default, background processing)"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUseFrontendProcessing(!useFrontendProcessing)}
+              disabled={isRunningAudit}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                useFrontendProcessing ? 'bg-green-500' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  useFrontendProcessing ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className={`text-xs px-2 py-0.5 rounded ${!useFrontendProcessing ? 'bg-blue-100 text-blue-700 font-medium' : 'bg-gray-100 text-gray-500'}`}>
+              🔧 Trigger.dev
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded ${useFrontendProcessing ? 'bg-green-100 text-green-700 font-medium' : 'bg-gray-100 text-gray-500'}`}>
+              🌐 Frontend
+            </span>
+          </div>
+        </div>
+
         {isRunningAudit && (
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">{auditStatus || "Analyzing pages..."}</span>
+              <span className="text-sm font-medium text-gray-700">
+                {useFrontendProcessing ? '🌐 ' : '🔧 '}
+                {auditStatus || "Analyzing pages..."}
+              </span>
               <span className="text-sm font-medium text-blue-600">{auditProgress}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2.5">
               <div 
-                className="bg-gradient-to-r from-blue-500 to-purple-600 h-2.5 rounded-full transition-all duration-500"
+                className={`h-2.5 rounded-full transition-all duration-500 ${
+                  useFrontendProcessing 
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
+                    : 'bg-gradient-to-r from-blue-500 to-purple-600'
+                }`}
                 style={{ width: `${auditProgress}%` }}
               />
             </div>
           </div>
         )}
         <button
-          onClick={onRunAudit}
+          onClick={() => onRunAudit(useFrontendProcessing)}
           disabled={selectedUrls.size === 0 || isRunningAudit}
-          className="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          className={`w-full px-6 py-3 font-semibold rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors ${
+            useFrontendProcessing
+              ? 'bg-green-600 text-white hover:bg-green-700'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
         >
           {isRunningAudit ? (
             <span className="flex items-center justify-center gap-2">
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Smart Audit Running on {totalSelected} Pages...
+              {useFrontendProcessing ? '🌐 Frontend' : '🔧 Trigger.dev'} Audit Running on {totalSelected} Pages...
             </span>
           ) : (
-            `Run SEO Audit on ${totalSelected} Selected Pages`
+            <span>
+              {useFrontendProcessing ? '🌐 Run Frontend Audit' : '🔧 Run Trigger.dev Audit'} on {totalSelected} Pages
+            </span>
           )}
         </button>
       </div>

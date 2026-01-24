@@ -53,44 +53,33 @@ export const pageSpeedTask = task({
     });
 
     if (!apiKey) {
-      // Return mock data if no API key
-      console.log("No PageSpeed API key configured, returning estimated values");
+      // Return clearly labeled unavailable data when no API key
+      console.warn("⚠️ No GOOGLE_PAGESPEED_API_KEY configured - PageSpeed data unavailable");
       
       metadata.set("status", {
         progress: 100,
-        label: "PageSpeed analysis complete (estimated)",
+        label: "⚠️ PageSpeed API key not configured - data unavailable",
       });
 
       return {
         url,
         strategy,
-        score: 75,
+        score: 0, // Score 0 indicates unavailable, not "good"
         coreWebVitals: {
-          lcp: 2500,
-          fid: 100,
-          cls: 0.1,
-          fcp: 1800,
-          ttfb: 600,
-          si: 3500,
-          tbt: 200,
+          lcp: 0,
+          fid: 0,
+          cls: 0,
+          fcp: 0,
+          ttfb: 0,
+          si: 0,
+          tbt: 0,
         },
-        opportunities: [
-          {
-            id: "render-blocking-resources",
-            title: "Eliminate render-blocking resources",
-            description: "Resources are blocking the first paint of your page.",
-            score: 0.5,
-            savings: "Potential savings of 500ms",
-          },
-        ],
-        diagnostics: [
-          {
-            id: "dom-size",
-            title: "Avoid an excessive DOM size",
-            description: "A large DOM will increase memory usage and produce costly style recalculations.",
-            score: 0.7,
-          },
-        ],
+        opportunities: [],
+        diagnostics: [],
+        error: "⚠️ PAGESPEED DATA UNAVAILABLE: No Google PageSpeed API key configured. " +
+               "Set GOOGLE_PAGESPEED_API_KEY environment variable to get real Core Web Vitals data. " +
+               "Without this, performance metrics cannot be accurately measured. " +
+               "Get a free API key at: https://developers.google.com/speed/docs/insights/v5/get-started",
       };
     }
 
