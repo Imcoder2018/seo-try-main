@@ -1,88 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Volume2, Download, Loader2, Play, Pause, Sparkles } from "lucide-react";
+import { Volume2, Download, Loader2, Play, Pause, Sparkles, Eye } from "lucide-react";
+import { PDFPreviewModal } from "./pdf-preview-modal";
 
 interface ReportActionsProps {
   auditData: Record<string, unknown>;
 }
 
 export function ReportActions({ auditData }: ReportActionsProps) {
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
-
-  // Compute check counts from audit data
-  const computeCheckCounts = () => {
-    const data = auditData as Record<string, unknown>;
-    let passed = 0, warnings = 0, failed = 0;
-    
-    // Count from category results if available
-    const categories = ['localSeo', 'seo', 'links', 'usability', 'performance', 'social', 'content', 'eeat', 'technology'];
-    categories.forEach(cat => {
-      const catData = data[cat] as { checks?: Array<{ status?: string }> } | undefined;
-      if (catData?.checks) {
-        catData.checks.forEach((check: { status?: string }) => {
-          if (check.status === 'passed' || check.status === 'good') passed++;
-          else if (check.status === 'warning' || check.status === 'moderate') warnings++;
-          else if (check.status === 'failed' || check.status === 'poor' || check.status === 'error') failed++;
-        });
-      }
-    });
-    
-    // Fallback: estimate from scores if no check data
-    if (passed === 0 && warnings === 0 && failed === 0) {
-      const score = (data.overallScore as number) || 50;
-      passed = Math.round(score / 10);
-      warnings = Math.round((100 - score) / 20);
-      failed = Math.round((100 - score) / 15);
-    }
-    
-    return { passed, warnings, failed };
-  };
-
-  const handleDownloadPdf = async () => {
-    setPdfLoading(true);
-    try {
-      const counts = computeCheckCounts();
-      const enrichedData = {
-        ...auditData,
-        passedChecks: counts.passed,
-        warningChecks: counts.warnings,
-        failedChecks: counts.failed,
-      };
-      
-      const response = await fetch("/api/report/pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auditData: enrichedData }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("PDF API error:", response.status, errorText);
-        throw new Error(`Failed to generate PDF (${response.status}): ${errorText}`);
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `seo-audit-${(auditData as { domain?: string }).domain || "report"}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("PDF download error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      alert(`Failed to generate PDF: ${errorMessage}. Please try again.`);
-    } finally {
-      setPdfLoading(false);
-    }
-  };
 
   const handleGenerateVoice = async () => {
     setVoiceLoading(true);
@@ -153,18 +84,13 @@ export function ReportActions({ auditData }: ReportActionsProps) {
         </div>
         
         <div className="flex flex-wrap gap-4">
-          {/* PDF Download */}
+          {/* PDF Report - Opens Preview Modal */}
           <button
-            onClick={handleDownloadPdf}
-            disabled={pdfLoading}
-            className="inline-flex items-center gap-2.5 px-5 py-3 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl hover:from-red-700 hover:to-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-500/20 hover:shadow-xl hover:shadow-red-500/30 font-medium"
+            onClick={() => setShowPdfModal(true)}
+            className="inline-flex items-center gap-2.5 px-5 py-3 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl hover:from-red-700 hover:to-rose-700 transition-all shadow-lg shadow-red-500/20 hover:shadow-xl hover:shadow-red-500/30 font-medium"
           >
-            {pdfLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <FileText className="h-5 w-5" />
-            )}
-            {pdfLoading ? "Generating PDF..." : "Download PDF Report"}
+            <Eye className="h-5 w-5" />
+            Generate PDF Report
           </button>
 
           {/* Voice Summary */}
@@ -210,6 +136,13 @@ export function ReportActions({ auditData }: ReportActionsProps) {
           Download a branded PDF report or listen to an AI-generated voice summary of your audit results.
         </p>
       </div>
+
+      {/* PDF Preview Modal */}
+      <PDFPreviewModal
+        isOpen={showPdfModal}
+        onClose={() => setShowPdfModal(false)}
+        auditData={auditData}
+      />
     </div>
   );
 }
