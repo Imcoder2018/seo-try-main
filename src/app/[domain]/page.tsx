@@ -77,8 +77,10 @@ interface Audit {
 }
 
 // Map check IDs to WordPress fix actions
+// NOTE: Only includes actions that CAN be fixed remotely via the WordPress plugin
+// Actions marked ❌ in docs/WORDPRESS-AUTOFIX-FEATURES.md are excluded
 const checkToFixAction: Record<string, { action: string; label: string }> = {
-  // SEO Basics
+  // SEO Basics - All fixable ✅
   "meta-description": { action: "fix_meta", label: "Generate Meta" },
   "metaDescription": { action: "fix_meta", label: "Generate Meta" },
   "title-tag": { action: "fix_meta", label: "Generate Meta" },
@@ -96,25 +98,25 @@ const checkToFixAction: Record<string, { action: string; label: string }> = {
   "robots-txt": { action: "fix_robots", label: "Optimize Robots.txt" },
   "robotsTxt": { action: "fix_robots", label: "Optimize Robots.txt" },
   
-  // Technical SEO
+  // Technical SEO - Fixable items only
   "indexing-status": { action: "fix_indexing", label: "Fix Indexing" },
-  "page-speed-indicators": { action: "fix_performance", label: "Optimize Speed" },
-  "mobile-friendliness": { action: "fix_mobile", label: "Fix Mobile" },
+  "page-speed-indicators": { action: "fix_cwv", label: "Optimize Speed" },
+  // ❌ "mobile-friendliness" - Requires theme/CSS changes, cannot fix remotely
   "https-security": { action: "fix_security", label: "Enable Security" },
-  "broken-links": { action: "fix_links", label: "Fix Links" },
-  "url-structure": { action: "fix_urls", label: "Fix URLs" },
+  "broken-links": { action: "fix_links", label: "Scan Links" },
+  // ❌ "url-structure" - Requires permalink structure changes, cannot fix remotely
   "canonical-tag": { action: "fix_canonical", label: "Add Canonical" },
   "canonical-url": { action: "fix_canonical", label: "Add Canonical" },
   "redirect-issues": { action: "fix_redirects", label: "Fix Redirects" },
   "core-web-vitals-indicators": { action: "fix_cwv", label: "Optimize CWV" },
   
-  // On-Page SEO Enhanced
+  // On-Page SEO Enhanced - Fixable items only
   "heading-structure": { action: "fix_headings", label: "Fix Headings" },
-  "keyword-placement": { action: "fix_keywords", label: "Optimize Keywords" },
-  "url-optimization": { action: "fix_urls", label: "Optimize URL" },
-  "internal-linking": { action: "fix_internal_links", label: "Add Internal Links" },
-  "content-duplication": { action: "fix_content", label: "Fix Duplicate Content" },
-  "thin-content": { action: "fix_content", label: "Expand Content" },
+  // ❌ "keyword-placement" - Requires content rewriting, cannot fix remotely
+  // ❌ "url-optimization" - Requires permalink changes, cannot fix remotely
+  "internal-linking": { action: "fix_internal_links", label: "Get Suggestions" },
+  // ❌ "content-duplication" - Requires human content decisions, cannot fix remotely
+  // ❌ "thin-content" - Requires human content creation, cannot fix remotely
   
   // Performance
   "lazy-loading": { action: "fix_lazy_loading", label: "Enable Lazy Loading" },

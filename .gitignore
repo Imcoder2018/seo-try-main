@@ -44,4 +44,7 @@ prisma/*.db-journal
 # Trigger.dev
 .trigger
 
+# Remotion video project (separate from main app)
+# seo-autofix-remotion/
+
 .vercel

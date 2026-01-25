@@ -1,58 +1,97 @@
 # WordPress Auto-Fix Features for SEO Audit Plugin
 
-This document lists all auto-fix buttons available in the SEO audit report page that need to be implemented in the WordPress plugin.
+This document lists all auto-fix buttons available in the SEO audit report page and their implementation status in the WordPress plugin.
 
 ## Overview
 
 The auto-fix system connects the SEO audit report to a WordPress plugin that can automatically fix detected issues. Each fix action is triggered via the `AutoFixButton` component which calls the WordPress REST API.
 
+**Legend:**
+- ✅ **Remote Fix** = Can be fixed automatically via API
+- ⚠️ **Partial Fix** = Partially fixable, some manual work needed
+- ❌ **Manual Only** = Cannot be fixed remotely, requires manual intervention
+
 ---
 
-## Auto-Fix Actions Table
+## Auto-Fix Actions Table (with Remote Fix Status)
 
-| # | Action ID | Button Label | Check IDs | Category | Description |
-|---|-----------|--------------|-----------|----------|-------------|
-| 1 | `fix_meta` | Generate Meta | `meta-description`, `metaDescription`, `title-tag`, `title` | SEO Basics | Generate/optimize meta title and description tags |
-| 2 | `fix_alt_text` | Fix Alt Text | `image-alt`, `imageAlt`, `image-alt-tags` | SEO Basics | Add missing alt text to images |
-| 3 | `fix_og_tags` | Enable OG Tags | `og-tags`, `openGraph`, `open-graph`, `twitter-card` | SEO Basics | Add Open Graph and Twitter Card meta tags |
-| 4 | `fix_sitemap` | Generate Sitemap | `xml-sitemap`, `xmlSitemap`, `sitemap-reference` | SEO Basics | Generate XML sitemap and add reference to robots.txt |
-| 5 | `fix_robots` | Optimize Robots.txt | `robots-txt`, `robotsTxt` | SEO Basics | Create/optimize robots.txt file |
-| 6 | `fix_indexing` | Fix Indexing | `indexing-status` | Technical SEO | Fix indexing issues (remove noindex if needed) |
-| 7 | `fix_performance` | Optimize Speed | `page-speed-indicators` | Technical SEO | Apply performance optimizations |
-| 8 | `fix_mobile` | Fix Mobile | `mobile-friendliness` | Technical SEO | Fix mobile responsiveness issues |
-| 9 | `fix_security` | Enable Security | `https-security`, `security-headers`, `securityHeaders`, `hsts` | Technical SEO / Security | Add security headers, enable HSTS |
-| 10 | `fix_links` | Fix Links | `broken-links` | Technical SEO | Fix or remove broken links |
-| 11 | `fix_urls` | Fix URLs | `url-structure`, `url-optimization` | Technical SEO | Optimize URL structure |
-| 12 | `fix_canonical` | Add Canonical | `canonical-tag`, `canonical-url` | Technical SEO | Add canonical URL tags |
-| 13 | `fix_redirects` | Fix Redirects | `redirect-issues` | Technical SEO | Fix redirect chains/loops |
-| 14 | `fix_cwv` | Optimize CWV | `core-web-vitals-indicators` | Technical SEO | Optimize Core Web Vitals |
-| 15 | `fix_headings` | Fix Headings | `heading-structure` | On-Page SEO | Fix H1-H6 heading structure |
-| 16 | `fix_keywords` | Optimize Keywords | `keyword-placement` | On-Page SEO | Optimize keyword placement |
-| 17 | `fix_internal_links` | Add Internal Links | `internal-linking` | On-Page SEO | Add relevant internal links |
-| 18 | `fix_content` | Fix Content | `content-duplication`, `thin-content` | On-Page SEO | Fix duplicate/thin content issues |
-| 19 | `fix_lazy_loading` | Enable Lazy Loading | `lazy-loading`, `imageLazyLoading` | Performance | Enable lazy loading for images |
-| 20 | `fix_compress` | Compress Images | `image-compression` | Performance | Compress images to reduce file size |
-| 21 | `fix_resource_hints` | Add Resource Hints | `resourceHints`, `preconnect` | Performance | Add preconnect/prefetch hints |
-| 22 | `fix_js_optimization` | Optimize JS | `jsOptimization`, `deferJs` | Performance | Defer/optimize JavaScript loading |
-| 23 | `fix_css_optimization` | Optimize CSS | `cssOptimization` | Performance | Optimize CSS delivery |
-| 24 | `fix_preload` | Preload LCP Image | `lcpImage` | Performance | Preload LCP (Largest Contentful Paint) image |
-| 25 | `fix_schema` | Add Schema | `schema-markup`, `schemaMarkup` | Schema & Structured Data | Add general schema markup |
-| 26 | `fix_local_schema` | Add Local Schema | `local-business-schema`, `localBusinessSchema` | Schema & Structured Data | Add LocalBusiness schema |
-| 27 | `fix_faq_schema` | Add FAQ Schema | `faqSchema` | Schema & Structured Data | Add FAQ schema markup |
-| 28 | `fix_breadcrumbs` | Add Breadcrumbs | `breadcrumbSchema` | Schema & Structured Data | Add breadcrumb schema |
-| 29 | `fix_contact_info` | Add Contact Info | `contactPage`, `clickToCall`, `phoneNumber`, `physicalAddress` | Local SEO | Add/fix contact information |
-| 30 | `fix_business_hours` | Add Hours | `businessHours` | Local SEO | Add business hours information |
-| 31 | `fix_map_embed` | Add Map | `googleMap` | Local SEO | Embed Google Map |
-| 32 | `fix_service_areas` | Add Service Areas | `serviceAreas` | Local SEO | Add service area information |
-| 33 | `fix_testimonials` | Add Reviews | `reviews`, `testimonials` | Trust & E-E-A-T | Add reviews/testimonials section |
-| 34 | `fix_author_info` | Add Author Info | `authorInfo` | Trust & E-E-A-T | Add author information to posts |
-| 35 | `fix_trust_badges` | Add Trust Badges | `trustBadges` | Trust & E-E-A-T | Add trust badges/certifications |
-| 36 | `fix_review_schema` | Add Review Schema | `reviewSchema` | Trust & E-E-A-T | Add review schema markup |
-| 37 | `fix_skip_link` | Add Skip Link | `skipLink` | Accessibility | Add skip to content link |
-| 38 | `fix_focus_styles` | Add Focus Styles | `focusIndicators` | Accessibility | Add visible focus indicators |
-| 39 | `fix_link_warnings` | Add Link Warnings | `linkWarnings` | Accessibility | Add warnings for external/download links |
-| 40 | `fix_analytics` | Add Analytics | `analytics` | Advanced | Set up Google Analytics |
-| 41 | `fix_llms_txt` | Generate llms.txt | `llmsTxt` | Advanced | Generate llms.txt for AI crawlers |
+| # | Action ID | Button Label | Remote Fix | API Endpoint | Category | Notes |
+|---|-----------|--------------|------------|--------------|----------|-------|
+| 1 | `fix_meta` | Generate Meta | ✅ | `/fix/meta-descriptions` | SEO Basics | Auto-generates from content |
+| 2 | `fix_alt_text` | Fix Alt Text | ✅ | `/fix/alt-text` | SEO Basics | Generates from filename or AI |
+| 3 | `fix_og_tags` | Enable OG Tags | ✅ | `/fix/og-tags` | SEO Basics | Enables OG + Twitter cards |
+| 4 | `fix_sitemap` | Generate Sitemap | ✅ | `/fix/sitemap` | SEO Basics | Generates & pings search engines |
+| 5 | `fix_robots` | Optimize Robots.txt | ✅ | `/fix/robots` | SEO Basics | Creates optimized robots.txt |
+| 6 | `fix_indexing` | Fix Indexing | ✅ | `/fix/indexing` | Technical SEO | Removes noindex, submits to IndexNow |
+| 7 | `fix_performance` | Optimize Speed | ⚠️ | `/fix/cwv` | Technical SEO | Enables optimizations, theme changes needed |
+| 8 | `fix_mobile` | Fix Mobile | ❌ | - | Technical SEO | Requires theme/CSS changes |
+| 9 | `fix_security` | Enable Security | ✅ | `/fix/security-headers` | Security | Adds security headers via PHP |
+| 10 | `fix_links` | Fix Links | ⚠️ | `/audit/issues` | Technical SEO | Detects issues, manual removal needed |
+| 11 | `fix_urls` | Fix URLs | ❌ | - | Technical SEO | Requires permalink structure changes |
+| 12 | `fix_canonical` | Add Canonical | ✅ | `/fix/canonical` | Technical SEO | Adds canonical tags to all posts |
+| 13 | `fix_redirects` | Fix Redirects | ✅ | `/redirects` | Technical SEO | Creates/manages redirects |
+| 14 | `fix_cwv` | Optimize CWV | ✅ | `/fix/cwv` | Technical SEO | Lazy load, defer JS, resource hints |
+| 15 | `fix_headings` | Fix Headings | ⚠️ | `/fix/headings` | On-Page SEO | Converts H1→H2, detects issues |
+| 16 | `fix_keywords` | Optimize Keywords | ❌ | - | On-Page SEO | Requires content rewriting |
+| 17 | `fix_internal_links` | Add Internal Links | ⚠️ | `/fix/internal-links` | On-Page SEO | Suggests links, manual insertion |
+| 18 | `fix_content` | Fix Content | ❌ | - | On-Page SEO | Requires human content creation |
+| 19 | `fix_lazy_loading` | Enable Lazy Loading | ✅ | `/fix/lazy-loading` | Performance | Native WordPress lazy loading |
+| 20 | `fix_compress` | Compress Images | ✅ | `/fix/compress-images` | Performance | Compresses existing images |
+| 21 | `fix_resource_hints` | Add Resource Hints | ✅ | `/fix/resource-hints` | Performance | Preconnect, prefetch, preload |
+| 22 | `fix_js_optimization` | Optimize JS | ✅ | `/fix/js-optimization` | Performance | Defer scripts, remove jQuery migrate |
+| 23 | `fix_css_optimization` | Optimize CSS | ✅ | `/fix/css-optimization` | Performance | Critical CSS, defer non-critical |
+| 24 | `fix_preload` | Preload LCP Image | ✅ | `/fix/preload` | Performance | Preloads specified resources |
+| 25 | `fix_schema` | Add Schema | ✅ | `/fix/schema` | Schema | Enables Organization/Website schema |
+| 26 | `fix_local_schema` | Add Local Schema | ✅ | `/fix/local-schema` | Schema | LocalBusiness structured data |
+| 27 | `fix_faq_schema` | Add FAQ Schema | ✅ | `/fix/faq-schema` | Schema | FAQ page schema from content |
+| 28 | `fix_breadcrumbs` | Add Breadcrumbs | ✅ | `/fix/breadcrumbs` | Schema | Breadcrumb schema output |
+| 29 | `fix_contact_info` | Add Contact Info | ⚠️ | `/fix/contact-info` | Local SEO | Requires business data input |
+| 30 | `fix_business_hours` | Add Hours | ⚠️ | `/fix/business-hours` | Local SEO | Requires hours data input |
+| 31 | `fix_map_embed` | Add Map | ⚠️ | `/fix/map-embed` | Local SEO | Requires coordinates/API key |
+| 32 | `fix_service_areas` | Add Service Areas | ⚠️ | `/fix/service-areas` | Local SEO | Requires location data |
+| 33 | `fix_testimonials` | Add Reviews | ⚠️ | `/fix/testimonials` | Trust & E-E-A-T | Creates shortcode, needs content |
+| 34 | `fix_author_info` | Add Author Info | ✅ | `/fix/author-info` | Trust & E-E-A-T | Enables author box on posts |
+| 35 | `fix_trust_badges` | Add Trust Badges | ⚠️ | `/fix/trust-badges` | Trust & E-E-A-T | Creates shortcode, needs images |
+| 36 | `fix_review_schema` | Add Review Schema | ✅ | `/fix/review-schema` | Trust & E-E-A-T | Outputs review schema |
+| 37 | `fix_skip_link` | Add Skip Link | ✅ | `/fix/skip-link` | Accessibility | Adds skip to content link |
+| 38 | `fix_focus_styles` | Add Focus Styles | ✅ | `/fix/focus-styles` | Accessibility | Adds CSS focus indicators |
+| 39 | `fix_link_warnings` | Add Link Warnings | ✅ | `/fix/link-warnings` | Accessibility | External link indicators |
+| 40 | `fix_analytics` | Add Analytics | ⚠️ | `/fix/analytics` | Advanced | Requires GA4/GTM ID input |
+| 41 | `fix_llms_txt` | Generate llms.txt | ✅ | `/fix/llms-txt` | Advanced | Auto-generates from site content |
+
+---
+
+## Remote Fix Summary
+
+### ✅ Fully Automatable (26 actions)
+These can be fixed with one click from the SaaS dashboard:
+- `fix_meta`, `fix_alt_text`, `fix_og_tags`, `fix_sitemap`, `fix_robots`
+- `fix_indexing`, `fix_security`, `fix_canonical`, `fix_redirects`, `fix_cwv`
+- `fix_lazy_loading`, `fix_compress`, `fix_resource_hints`, `fix_js_optimization`
+- `fix_css_optimization`, `fix_preload`, `fix_schema`, `fix_local_schema`
+- `fix_faq_schema`, `fix_breadcrumbs`, `fix_author_info`, `fix_review_schema`
+- `fix_skip_link`, `fix_focus_styles`, `fix_link_warnings`, `fix_llms_txt`
+
+### ⚠️ Partial Fix (11 actions)
+These can be initiated remotely but need additional data or manual review:
+- `fix_performance` - Enables settings, but theme changes may be needed
+- `fix_links` - Detects broken links, manual removal/update required
+- `fix_headings` - Converts H1→H2, but some issues need manual fix
+- `fix_internal_links` - Provides suggestions, manual insertion needed
+- `fix_contact_info` - Needs business phone/email/address
+- `fix_business_hours` - Needs actual business hours
+- `fix_map_embed` - Needs coordinates or Google Maps API key
+- `fix_service_areas` - Needs location list
+- `fix_testimonials` - Creates shortcode, needs testimonial content
+- `fix_trust_badges` - Creates shortcode, needs badge images
+- `fix_analytics` - Needs GA4 or GTM ID
+
+### ❌ Cannot Fix Remotely (4 actions) - REMOVE FROM FRONTEND
+These require manual intervention and should NOT show auto-fix buttons:
+- `fix_mobile` - Requires theme/CSS responsive design changes
+- `fix_urls` - Requires WordPress permalink structure changes
+- `fix_keywords` - Requires human content rewriting
+- `fix_content` - Requires human content creation/expansion
 
 ---
 

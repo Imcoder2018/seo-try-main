@@ -520,6 +520,43 @@ function seo_autofix_register_rest_routes() {
         'callback' => 'seo_autofix_api_apply_social_fixes',
         'permission_callback' => 'seo_autofix_api_permission',
     ));
+    
+    // ==================== ADDITIONAL FIX ENDPOINTS ====================
+    
+    // Fix: Indexing issues (remove noindex, submit to search engines)
+    register_rest_route($namespace, '/fix/indexing', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_fix_indexing',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    // Fix: Canonical URLs
+    register_rest_route($namespace, '/fix/canonical', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_fix_canonical',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    // Fix: Internal linking suggestions
+    register_rest_route($namespace, '/fix/internal-links', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_fix_internal_links',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    // Fix: Heading structure
+    register_rest_route($namespace, '/fix/headings', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_fix_headings',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
+    
+    // Fix: Core Web Vitals optimizations
+    register_rest_route($namespace, '/fix/cwv', array(
+        'methods' => 'POST',
+        'callback' => 'seo_autofix_api_fix_cwv',
+        'permission_callback' => 'seo_autofix_api_permission',
+    ));
 }
 
 function seo_autofix_api_permission($request) {
@@ -3869,5 +3906,358 @@ function seo_autofix_api_apply_social_fixes($request) {
             'enable_twitter_cards' => !empty($settings['enable_twitter_cards']),
             'default_og_image' => $settings['default_og_image'] ?? '',
         )
+    ), 200);
+}
+
+// ==================== FIX INDEXING ====================
+function seo_autofix_api_fix_indexing($request) {
+    global $wpdb;
+    $settings = get_option('seo_autofix_settings', array());
+    $fixes_applied = array();
+    
+    // 1. Remove noindex from posts/pages that shouldn't have it
+    $noindex_posts = $wpdb->get_results("
+        SELECT p.ID, p.post_title, pm.meta_value 
+        FROM {$wpdb->posts} p 
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
+        WHERE p.post_status = 'publish' 
+        AND p.post_type IN ('post', 'page')
+        AND pm.meta_key IN ('_yoast_wpseo_meta-robots-noindex', 'rank_math_robots', '_seo_autofix_noindex')
+        AND pm.meta_value LIKE '%noindex%'
+    ");
+    
+    $removed_noindex = 0;
+    foreach ($noindex_posts as $post) {
+        // Remove Yoast noindex
+        delete_post_meta($post->ID, '_yoast_wpseo_meta-robots-noindex');
+        // Remove Rank Math noindex (more complex - stored as array)
+        $rm_robots = get_post_meta($post->ID, 'rank_math_robots', true);
+        if (is_array($rm_robots) && in_array('noindex', $rm_robots)) {
+            $rm_robots = array_diff($rm_robots, array('noindex'));
+            update_post_meta($post->ID, 'rank_math_robots', $rm_robots);
+        }
+        // Remove our own noindex
+        delete_post_meta($post->ID, '_seo_autofix_noindex');
+        $removed_noindex++;
+    }
+    
+    if ($removed_noindex > 0) {
+        $fixes_applied[] = "Removed noindex from $removed_noindex posts/pages";
+    }
+    
+    // 2. Ensure blog is not set to discourage search engines
+    $blog_public = get_option('blog_public');
+    if ($blog_public == '0') {
+        update_option('blog_public', '1');
+        $fixes_applied[] = 'Enabled search engine visibility in WordPress settings';
+    }
+    
+    // 3. Submit sitemap to search engines
+    if (!empty($settings['enable_sitemap'])) {
+        $sitemap_url = home_url('/sitemap.xml');
+        wp_remote_get('https://www.google.com/ping?sitemap=' . urlencode($sitemap_url), array('timeout' => 10, 'blocking' => false));
+        wp_remote_get('https://www.bing.com/ping?sitemap=' . urlencode($sitemap_url), array('timeout' => 10, 'blocking' => false));
+        $fixes_applied[] = 'Pinged search engines with sitemap';
+    }
+    
+    // 4. Submit to IndexNow if configured
+    if (!empty($settings['indexnow_api_key'])) {
+        $recent_posts = get_posts(array('numberposts' => 10, 'post_status' => 'publish'));
+        $urls = array_map('get_permalink', $recent_posts);
+        $host = wp_parse_url(home_url(), PHP_URL_HOST);
+        
+        wp_remote_post('https://api.indexnow.org/indexnow', array(
+            'timeout' => 10,
+            'headers' => array('Content-Type' => 'application/json'),
+            'body' => json_encode(array(
+                'host' => $host,
+                'key' => $settings['indexnow_api_key'],
+                'urlList' => $urls
+            ))
+        ));
+        $fixes_applied[] = 'Submitted ' . count($urls) . ' URLs to IndexNow';
+    }
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'message' => 'Indexing issues fixed',
+        'fixes_applied' => $fixes_applied,
+        'noindex_removed' => $removed_noindex,
+        'blog_public' => get_option('blog_public')
+    ), 200);
+}
+
+// ==================== FIX CANONICAL ====================
+function seo_autofix_api_fix_canonical($request) {
+    global $wpdb;
+    $settings = get_option('seo_autofix_settings', array());
+    
+    // Enable canonical tag output
+    $settings['enable_canonical'] = true;
+    update_option('seo_autofix_settings', $settings);
+    
+    // Get posts without canonical URLs set
+    $posts = $wpdb->get_results("
+        SELECT p.ID, p.post_name, p.guid
+        FROM {$wpdb->posts} p
+        LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_seo_autofix_canonical'
+        WHERE p.post_status = 'publish' 
+        AND p.post_type IN ('post', 'page')
+        AND (pm.meta_value IS NULL OR pm.meta_value = '')
+        LIMIT 100
+    ");
+    
+    $fixed = 0;
+    foreach ($posts as $post) {
+        $canonical = get_permalink($post->ID);
+        update_post_meta($post->ID, '_seo_autofix_canonical', $canonical);
+        $fixed++;
+    }
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'message' => "Canonical URLs configured for $fixed posts",
+        'canonical_enabled' => true,
+        'posts_fixed' => $fixed
+    ), 200);
+}
+
+// ==================== FIX INTERNAL LINKS ====================
+function seo_autofix_api_fix_internal_links($request) {
+    global $wpdb;
+    $limit = min(20, intval($request->get_param('limit') ?: 10));
+    
+    // Get all published posts
+    $all_posts = $wpdb->get_results("
+        SELECT ID, post_title, post_name, post_content 
+        FROM {$wpdb->posts} 
+        WHERE post_status = 'publish' 
+        AND post_type IN ('post', 'page')
+    ");
+    
+    // Build keyword map
+    $keyword_map = array();
+    foreach ($all_posts as $post) {
+        $keywords = array_filter(explode(' ', strtolower($post->post_title)));
+        $keywords = array_filter($keywords, function($k) { return strlen($k) > 3; });
+        foreach ($keywords as $keyword) {
+            if (!isset($keyword_map[$keyword])) {
+                $keyword_map[$keyword] = array();
+            }
+            $keyword_map[$keyword][] = array(
+                'id' => $post->ID,
+                'title' => $post->post_title,
+                'url' => get_permalink($post->ID)
+            );
+        }
+    }
+    
+    $suggestions = array();
+    $posts_analyzed = 0;
+    
+    // Find internal linking opportunities
+    foreach ($all_posts as $post) {
+        if ($posts_analyzed >= $limit) break;
+        
+        $content_lower = strtolower(strip_tags($post->post_content));
+        $current_links = array();
+        preg_match_all('/href=["\']([^"\']+)["\']/', $post->post_content, $matches);
+        if (!empty($matches[1])) {
+            $current_links = $matches[1];
+        }
+        
+        $post_suggestions = array();
+        
+        foreach ($keyword_map as $keyword => $targets) {
+            // Skip if keyword is too common or is in current post title
+            if (count($targets) > 5) continue;
+            if (stripos($post->post_title, $keyword) !== false) continue;
+            
+            // Check if keyword exists in content but isn't linked
+            if (stripos($content_lower, $keyword) !== false) {
+                foreach ($targets as $target) {
+                    // Don't suggest linking to self
+                    if ($target['id'] == $post->ID) continue;
+                    
+                    // Check if already linked
+                    $already_linked = false;
+                    foreach ($current_links as $link) {
+                        if (strpos($link, $target['url']) !== false) {
+                            $already_linked = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$already_linked) {
+                        $post_suggestions[] = array(
+                            'keyword' => $keyword,
+                            'target_post_id' => $target['id'],
+                            'target_title' => $target['title'],
+                            'target_url' => $target['url']
+                        );
+                    }
+                }
+            }
+        }
+        
+        if (!empty($post_suggestions)) {
+            $suggestions[] = array(
+                'post_id' => $post->ID,
+                'post_title' => $post->post_title,
+                'edit_url' => admin_url('post.php?post=' . $post->ID . '&action=edit'),
+                'suggestions' => array_slice($post_suggestions, 0, 5)
+            );
+        }
+        
+        $posts_analyzed++;
+    }
+    
+    // Store suggestions for later retrieval
+    update_option('seo_autofix_link_suggestions', $suggestions);
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'message' => 'Internal linking analysis complete',
+        'posts_analyzed' => $posts_analyzed,
+        'suggestions_count' => count($suggestions),
+        'suggestions' => array_slice($suggestions, 0, 10),
+        'note' => 'Internal links require manual review. Suggestions stored in WordPress admin.'
+    ), 200);
+}
+
+// ==================== FIX HEADINGS ====================
+function seo_autofix_api_fix_headings($request) {
+    global $wpdb;
+    $limit = min(50, intval($request->get_param('limit') ?: 20));
+    
+    // Get posts with heading issues
+    $posts = $wpdb->get_results($wpdb->prepare("
+        SELECT ID, post_title, post_content
+        FROM {$wpdb->posts}
+        WHERE post_status = 'publish'
+        AND post_type IN ('post', 'page')
+        AND post_content != ''
+        LIMIT %d
+    ", $limit));
+    
+    $issues_found = array();
+    $fixed = 0;
+    
+    foreach ($posts as $post) {
+        $content = $post->post_content;
+        $has_issues = false;
+        $post_issues = array();
+        
+        // Check for H1 in content (should only be in title)
+        if (preg_match('/<h1[^>]*>/i', $content)) {
+            $post_issues[] = 'Multiple H1 tags (H1 should only be page title)';
+            $has_issues = true;
+            
+            // Auto-fix: Convert H1 to H2 in content
+            $new_content = preg_replace('/<h1([^>]*)>/i', '<h2$1>', $content);
+            $new_content = preg_replace('/<\/h1>/i', '</h2>', $new_content);
+            
+            if ($new_content !== $content) {
+                wp_update_post(array(
+                    'ID' => $post->ID,
+                    'post_content' => $new_content
+                ));
+                $fixed++;
+            }
+        }
+        
+        // Check for skipped heading levels (e.g., H2 then H4)
+        preg_match_all('/<h([2-6])[^>]*>/i', $content, $matches);
+        if (!empty($matches[1])) {
+            $levels = array_map('intval', $matches[1]);
+            for ($i = 1; $i < count($levels); $i++) {
+                if ($levels[$i] - $levels[$i-1] > 1) {
+                    $post_issues[] = "Skipped heading level: H{$levels[$i-1]} to H{$levels[$i]}";
+                    $has_issues = true;
+                }
+            }
+        }
+        
+        if ($has_issues) {
+            $issues_found[] = array(
+                'post_id' => $post->ID,
+                'post_title' => $post->post_title,
+                'edit_url' => admin_url('post.php?post=' . $post->ID . '&action=edit'),
+                'issues' => $post_issues
+            );
+        }
+    }
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'message' => "Analyzed $limit posts for heading issues",
+        'h1_converted_to_h2' => $fixed,
+        'posts_with_issues' => count($issues_found),
+        'issues' => array_slice($issues_found, 0, 20),
+        'note' => 'Some heading issues require manual content restructuring'
+    ), 200);
+}
+
+// ==================== FIX CORE WEB VITALS ====================
+function seo_autofix_api_fix_cwv($request) {
+    $settings = get_option('seo_autofix_settings', array());
+    $fixes_applied = array();
+    
+    // 1. Enable lazy loading
+    $settings['enable_lazy_loading'] = true;
+    $fixes_applied[] = 'Lazy loading enabled for images';
+    
+    // 2. Enable resource hints
+    $settings['enable_resource_hints'] = true;
+    
+    // Auto-detect common external domains to preconnect
+    $preconnect_domains = array(
+        'https://fonts.googleapis.com',
+        'https://fonts.gstatic.com',
+    );
+    
+    // Add Google Analytics if detected
+    if (!empty($settings['ga4_id']) || !empty($settings['gtm_id'])) {
+        $preconnect_domains[] = 'https://www.googletagmanager.com';
+        $preconnect_domains[] = 'https://www.google-analytics.com';
+    }
+    
+    $settings['preconnect_domains'] = $preconnect_domains;
+    $fixes_applied[] = 'Resource hints configured (' . count($preconnect_domains) . ' domains)';
+    
+    // 3. Defer JavaScript
+    $settings['defer_js'] = true;
+    $settings['defer_exclude'] = array('jquery', 'jquery-core');
+    $fixes_applied[] = 'JavaScript defer enabled';
+    
+    // 4. Remove jQuery Migrate
+    $settings['remove_jquery_migrate'] = true;
+    $fixes_applied[] = 'jQuery Migrate removal enabled';
+    
+    // 5. Enable image compression for future uploads
+    $settings['enable_image_compression'] = true;
+    $settings['compression_quality'] = $settings['compression_quality'] ?? 82;
+    $fixes_applied[] = 'Image compression enabled (quality: ' . $settings['compression_quality'] . ')';
+    
+    // 6. Enable WebP conversion if supported
+    if (function_exists('imagewebp')) {
+        $settings['enable_webp_conversion'] = true;
+        $fixes_applied[] = 'WebP conversion enabled';
+    }
+    
+    update_option('seo_autofix_settings', $settings);
+    
+    return new WP_REST_Response(array(
+        'success' => true,
+        'message' => 'Core Web Vitals optimizations applied',
+        'fixes_applied' => $fixes_applied,
+        'settings_updated' => array(
+            'lazy_loading' => true,
+            'resource_hints' => true,
+            'defer_js' => true,
+            'image_compression' => true,
+            'webp_support' => function_exists('imagewebp')
+        ),
+        'note' => 'Some CWV improvements require theme/server-level changes'
     ), 200);
 }
