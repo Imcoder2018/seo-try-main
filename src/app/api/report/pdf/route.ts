@@ -377,9 +377,9 @@ class PDFReportV2 {
   // Draw traffic light indicator
   private drawTrafficLight(x: number, y: number, count: number, label: string, type: "passed" | "warning" | "error") {
     const colors = {
-      passed: { bg: COLORS.successLight, text: COLORS.success, icon: "✓" },
+      passed: { bg: COLORS.successLight, text: COLORS.success, icon: "OK" },
       warning: { bg: COLORS.warningLight, text: COLORS.warning, icon: "!" },
-      error: { bg: COLORS.errorLight, text: COLORS.error, icon: "✗" },
+      error: { bg: COLORS.errorLight, text: COLORS.error, icon: "X" },
     };
     const c = colors[type];
     
@@ -391,7 +391,7 @@ class PDFReportV2 {
     this.doc.setFillColor(...c.text);
     this.doc.circle(x + 25, y + 14, 8, "F");
     this.doc.setTextColor(...COLORS.white);
-    this.doc.setFontSize(12);
+    this.doc.setFontSize(type === "passed" ? 8 : 12);
     this.doc.setFont("helvetica", "bold");
     this.doc.text(c.icon, x + 25, y + 18, { align: "center" });
     
@@ -452,8 +452,10 @@ class PDFReportV2 {
 
   // Draw category scorecard
   private drawScorecard(x: number, y: number, width: number, name: string, score: number, icon?: string) {
-    const [r, g, b] = getScoreColor(score);
-    const [br, bg, bb] = getScoreBgColor(score);
+    // Cap score at 100
+    const cappedScore = Math.min(100, Math.max(0, score));
+    const [r, g, b] = getScoreColor(cappedScore);
+    const [br, bg, bb] = getScoreBgColor(cappedScore);
     
     // Card background
     this.doc.setFillColor(...COLORS.white);
@@ -467,7 +469,7 @@ class PDFReportV2 {
     this.doc.setFontSize(14);
     this.doc.setTextColor(r, g, b);
     this.doc.setFont("helvetica", "bold");
-    this.doc.text(String(score), x + width / 2, y + 24, { align: "center" });
+    this.doc.text(String(cappedScore), x + width / 2, y + 24, { align: "center" });
     
     // Category name
     this.doc.setFontSize(8);

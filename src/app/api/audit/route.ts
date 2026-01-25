@@ -275,6 +275,16 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      // Handle SuperJSON wrapper - Trigger.dev wraps output in { json: data, meta: ... }
+      const data = results?.json ?? results;
+      
+      // Debug: Log the structure of results to understand what we're getting
+      console.log(`[Audit Poll] Raw results keys:`, results ? Object.keys(results) : 'null');
+      console.log(`[Audit Poll] Using data from:`, results?.json ? 'results.json (SuperJSON)' : 'results directly');
+      console.log(`[Audit Poll] overallScore:`, data?.overallScore);
+      console.log(`[Audit Poll] localSeo score:`, data?.localSeo?.score);
+      console.log(`[Audit Poll] Data sample:`, JSON.stringify(data).substring(0, 500));
+
       // Persist results into Prisma (if audit exists and belongs to current user)
       if (auditId) {
         try {
@@ -283,8 +293,10 @@ export async function GET(request: NextRequest) {
             select: { id: true },
           });
 
+          console.log(`[Audit Poll] Found existing audit: ${existing?.id}`);
+
           if (existing) {
-            const recs = (results.recommendations || []).map((rec: any) => ({
+            const recs = (data.recommendations || []).map((rec: any) => ({
               auditId,
               title: rec.title,
               description: rec.description ?? null,
@@ -293,79 +305,90 @@ export async function GET(request: NextRequest) {
               checkId: rec.checkId,
             }));
 
-            await prisma.$transaction(async (tx) => {
-              await tx.audit.update({
-                where: { id: auditId },
-                data: {
-                  status: "COMPLETED",
-                  overallScore: results.overallScore,
-                  overallGrade: results.overallGrade,
-                  localSeoScore: results.localSeo?.score,
-                  seoScore: results.seo?.score,
-                  linksScore: results.links?.score,
-                  usabilityScore: results.usability?.score,
-                  performanceScore: results.performance?.score,
-                  socialScore: results.social?.score,
-                  contentScore: results.content?.score,
-                  eeatScore: results.eeat?.score,
-                  technicalSeoScore: results.technicalSeo?.score,
-                  localSeoResults: results.localSeo as any,
-                  seoResults: results.seo as any,
-                  linksResults: results.links as any,
-                  usabilityResults: results.usability as any,
-                  performanceResults: results.performance as any,
-                  socialResults: results.social as any,
-                  technologyResults: results.technology as any,
-                  contentResults: results.content as any,
-                  eeatResults: results.eeat as any,
-                  technicalSeoResults: results.technicalSeo as any,
-                  completedAt: new Date(),
-                },
-              });
+            // Extract categories from data (smart-audit may return data in 'categories' object or at root)
+            const cats = data.categories || {};
+            
+            // Helper to cap scores at 100
+            const capScore = (score: number | undefined | null) => 
+              score != null ? Math.min(100, Math.max(0, score)) : null;
 
-              await tx.recommendation.deleteMany({ where: { auditId } });
-
-              if (recs.length > 0) {
-                await tx.recommendation.createMany({ data: recs });
-              }
+            // Use longer timeout for large data, or run without transaction
+            await prisma.audit.update({
+              where: { id: auditId },
+              data: {
+                status: "COMPLETED",
+                overallScore: capScore(data.overallScore),
+                overallGrade: data.overallGrade,
+                localSeoScore: capScore(cats.localSeo?.score ?? data.localSeo?.score),
+                seoScore: capScore(cats.seo?.score ?? data.seo?.score),
+                linksScore: capScore(cats.links?.score ?? data.links?.score),
+                usabilityScore: capScore(cats.usability?.score ?? data.usability?.score),
+                performanceScore: capScore(cats.performance?.score ?? data.performance?.score),
+                socialScore: capScore(cats.social?.score ?? data.social?.score),
+                contentScore: capScore(cats.content?.score ?? data.content?.score),
+                eeatScore: capScore(cats.eeat?.score ?? data.eeat?.score),
+                technicalSeoScore: capScore(cats.technicalSeo?.score ?? data.technicalSeo?.score),
+                localSeoResults: (cats.localSeo || data.localSeo) as any,
+                seoResults: (cats.seo || data.seo) as any,
+                linksResults: (cats.links || data.links) as any,
+                usabilityResults: (cats.usability || data.usability) as any,
+                performanceResults: (cats.performance || data.performance) as any,
+                socialResults: (cats.social || data.social) as any,
+                technologyResults: (cats.technology || data.technology) as any,
+                contentResults: (cats.content || data.content) as any,
+                eeatResults: (cats.eeat || data.eeat) as any,
+                technicalSeoResults: (cats.technicalSeo || data.technicalSeo) as any,
+                completedAt: new Date(),
+              },
             });
+            
+            console.log(`[Audit Poll] Updated audit ${auditId} with scores: seo=${cats.seo?.score ?? data.seo?.score}, links=${cats.links?.score ?? data.links?.score}, overall=${data.overallScore}`);
+
+            await prisma.recommendation.deleteMany({ where: { auditId } });
+
+            if (recs.length > 0) {
+              await prisma.recommendation.createMany({ data: recs });
+            }
           }
         } catch (dbError) {
           console.error("[Audit Poll] Failed to persist audit:", dbError);
         }
       }
 
+      // Extract categories for response (smart-audit may return data in 'categories' object or at root)
+      const resCats = data.categories || {};
+      
       return NextResponse.json({
         status: "COMPLETED",
         output: {
           id: auditId || `audit_${runId}`,
           status: "COMPLETED",
-          overallScore: results.overallScore,
-          overallGrade: results.overallGrade,
-          localSeoScore: results.localSeo?.score,
-          localSeoResults: results.localSeo,
-          seoScore: results.seo?.score,
-          seoResults: results.seo,
-          linksScore: results.links?.score,
-          linksResults: results.links,
-          usabilityScore: results.usability?.score,
-          usabilityResults: results.usability,
-          performanceScore: results.performance?.score,
-          performanceResults: results.performance,
-          socialScore: results.social?.score,
-          socialResults: results.social,
-          technologyResults: results.technology,
-          contentScore: results.content?.score,
-          contentResults: results.content,
-          eeatScore: results.eeat?.score,
-          eeatResults: results.eeat,
-          technicalSeoScore: results.technicalSeo?.score,
-          technicalSeoResults: results.technicalSeo,
-          recommendations: results.recommendations,
-          pageClassifications: results.pageClassifications,
-          auditMapping: results.auditMapping,
-          pagesAnalyzed: results.pagesAnalyzed,
-          pagesFailed: results.pagesFailed,
+          overallScore: data.overallScore,
+          overallGrade: data.overallGrade,
+          localSeoScore: resCats.localSeo?.score ?? data.localSeo?.score,
+          localSeoResults: resCats.localSeo || data.localSeo,
+          seoScore: resCats.seo?.score ?? data.seo?.score,
+          seoResults: resCats.seo || data.seo,
+          linksScore: resCats.links?.score ?? data.links?.score,
+          linksResults: resCats.links || data.links,
+          usabilityScore: resCats.usability?.score ?? data.usability?.score,
+          usabilityResults: resCats.usability || data.usability,
+          performanceScore: resCats.performance?.score ?? data.performance?.score,
+          performanceResults: resCats.performance || data.performance,
+          socialScore: resCats.social?.score ?? data.social?.score,
+          socialResults: resCats.social || data.social,
+          technologyResults: resCats.technology || data.technology,
+          contentScore: resCats.content?.score ?? data.content?.score,
+          contentResults: resCats.content || data.content,
+          eeatScore: resCats.eeat?.score ?? data.eeat?.score,
+          eeatResults: resCats.eeat || data.eeat,
+          technicalSeoScore: resCats.technicalSeo?.score ?? data.technicalSeo?.score,
+          technicalSeoResults: resCats.technicalSeo || data.technicalSeo,
+          recommendations: data.recommendations,
+          pageClassifications: data.pageClassifications,
+          auditMapping: data.auditMapping,
+          pagesAnalyzed: data.pagesAnalyzed,
+          pagesFailed: data.pagesFailed,
           createdAt: new Date().toISOString(),
         },
         metadata: run.metadata,

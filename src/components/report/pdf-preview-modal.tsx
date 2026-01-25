@@ -131,8 +131,17 @@ export function PDFPreviewModal({ isOpen, onClose, auditData }: PDFPreviewModalP
         linkAnalysis: sections.find(s => s.id === "linkAnalysis")?.enabled,
       };
       
+      // Map audit data fields to PDF expected fields
+      const data = auditData as Record<string, unknown>;
+      const pagesScanned = data.pagesAnalyzed || data.pagesScanned;
+      const crawlType = data.pageClassifications ? "Deep Crawl" : (data.crawlType as string) || "Quick Scan";
+      
       const enrichedData = {
         ...auditData,
+        // Ensure domain is set properly (not "Website")
+        domain: domain !== "Website" ? domain : (data.url ? new URL(data.url as string).hostname : "Website"),
+        pagesScanned: pagesScanned,
+        crawlType: crawlType,
         passedChecks: counts.passed,
         warningChecks: counts.warnings,
         failedChecks: counts.failed,
