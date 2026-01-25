@@ -71,8 +71,56 @@ export function PDFPreviewModal({ isOpen, onClose, auditData }: PDFPreviewModalP
     },
   ]);
 
+  // Extract domain from multiple possible sources to ensure it's available on first load
+  const extractDomain = (): string => {
+    const data = auditData as Record<string, unknown>;
+    
+    // Try direct domain field first
+    if (data.domain && typeof data.domain === 'string' && data.domain !== 'Website') {
+      return data.domain;
+    }
+    
+    // Try to extract from url field
+    if (data.url && typeof data.url === 'string') {
+      try {
+        return new URL(data.url).hostname;
+      } catch {}
+    }
+    
+    // Try to extract from baseUrl field (used in crawl data)
+    if (data.baseUrl && typeof data.baseUrl === 'string') {
+      try {
+        return new URL(data.baseUrl).hostname;
+      } catch {}
+    }
+    
+    // Try to extract from pageClassifications (deep crawl data)
+    if (data.pageClassifications && Array.isArray(data.pageClassifications) && data.pageClassifications.length > 0) {
+      const firstPage = data.pageClassifications[0] as { url?: string };
+      if (firstPage?.url) {
+        try {
+          return new URL(firstPage.url).hostname;
+        } catch {}
+      }
+    }
+    
+    // Try to extract from auditMapping pages
+    if (data.auditMapping) {
+      const mapping = data.auditMapping as Record<string, string[]>;
+      for (const section of Object.values(mapping)) {
+        if (Array.isArray(section) && section.length > 0 && typeof section[0] === 'string') {
+          try {
+            return new URL(section[0]).hostname;
+          } catch {}
+        }
+      }
+    }
+    
+    return "Website";
+  };
+  
   // Extract data for preview
-  const domain = (auditData as { domain?: string }).domain || "Website";
+  const domain = extractDomain();
   const overallScore = (auditData as { overallScore?: number }).overallScore ?? 0;
   const grade = overallScore >= 90 ? "A+" : overallScore >= 80 ? "A" : overallScore >= 70 ? "B" : overallScore >= 60 ? "C" : overallScore >= 50 ? "D" : "F";
 

@@ -2631,11 +2631,13 @@ export const smartAuditTask = task({
           return perfPages.length > 0 ? perfPages.slice(0, 6) : [homePage?.url || allPages[0]?.url].filter(Boolean);
 
         case 'localSeo':
-          // Homepage + Contact Us (footer is part of these pages)
+          // Only Contact Us page by default (local SEO info like address, phone, map is on contact page)
+          // Do NOT include homepage - local SEO checks are most relevant on contact page
           const localPages: string[] = [];
-          if (homePage) localPages.push(homePage.url);
-          if (contactPage && !localPages.includes(contactPage.url)) localPages.push(contactPage.url);
-          return localPages.length > 0 ? localPages : [homePage?.url || allPages[0]?.url].filter(Boolean);
+          if (contactPage) localPages.push(contactPage.url);
+          // Only fallback to homepage if no contact page exists
+          if (localPages.length === 0 && homePage) localPages.push(homePage.url);
+          return localPages.length > 0 ? localPages : [allPages[0]?.url].filter(Boolean);
 
         case 'seo':
           // Service Pages + Product Pages + Blog Posts (Money Pages)
@@ -2701,28 +2703,44 @@ export const smartAuditTask = task({
           return socialPages.length > 0 ? socialPages : [allPages[0]?.url].filter(Boolean);
 
         case 'links':
-          // Strategic pages + random sampling for comprehensive coverage
+          // Same as SEO section: Service + Product + Blog pages (content pages, excluding category/tag)
+          // Links analysis is most valuable on content pages where internal linking matters
           const linkPages: string[] = [];
-          if (homePage) linkPages.push(homePage.url);
-          // Add product/service pages (likely to have internal linking issues)
-          productPages.slice(0, 2).forEach(p => linkPages.push(p.url));
-          // Add random pages to catch issues on unexpected pages
-          const randomLinkPages = getRandomPages(allPages, 2, linkPages);
-          linkPages.push(...randomLinkPages);
-          return linkPages.slice(0, 5);
+          servicePages.forEach(p => linkPages.push(p.url));
+          productPages.forEach(p => linkPages.push(p.url));
+          blogPages.forEach(p => linkPages.push(p.url));
+          // Add other content pages if not enough (exclude category/tag/archive/legal)
+          if (linkPages.length < 3) {
+            const otherLinkPages = allPages.filter(p => 
+              !linkPages.includes(p.url) && 
+              p.type !== 'category' && 
+              p.type !== 'tag' && 
+              p.type !== 'archive' &&
+              p.type !== 'legal'
+            );
+            otherLinkPages.slice(0, 5 - linkPages.length).forEach(p => linkPages.push(p.url));
+          }
+          return linkPages.slice(0, 7);
 
         case 'technicalSeo':
-          // Strategic pages + random sampling for comprehensive technical analysis
-          // Critical: Random sampling helps catch pages with broken canonicals, noindex issues, etc.
+          // Same as SEO section: Service + Product + Blog pages (content pages, excluding category/tag)
+          // Technical SEO checks (canonicals, indexing, structured data) are most relevant on content pages
           const techSeoPages: string[] = [];
-          if (homePage) techSeoPages.push(homePage.url);
-          // Add one of each major page type if available
-          if (productPages[0]) techSeoPages.push(productPages[0].url);
-          if (blogPages[0]) techSeoPages.push(blogPages[0].url);
-          // Add 2 RANDOM pages to catch edge cases (e.g., broken canonicals on obscure pages)
-          const randomTechPages = getRandomPages(allPages, 2, techSeoPages);
-          techSeoPages.push(...randomTechPages);
-          return techSeoPages.slice(0, 5);
+          servicePages.forEach(p => techSeoPages.push(p.url));
+          productPages.forEach(p => techSeoPages.push(p.url));
+          blogPages.forEach(p => techSeoPages.push(p.url));
+          // Add other content pages if not enough (exclude category/tag/archive/legal)
+          if (techSeoPages.length < 3) {
+            const otherTechPages = allPages.filter(p => 
+              !techSeoPages.includes(p.url) && 
+              p.type !== 'category' && 
+              p.type !== 'tag' && 
+              p.type !== 'archive' &&
+              p.type !== 'legal'
+            );
+            otherTechPages.slice(0, 5 - techSeoPages.length).forEach(p => techSeoPages.push(p.url));
+          }
+          return techSeoPages.slice(0, 7);
 
         default:
           return [homePage?.url || allPages[0]?.url].filter(Boolean);
@@ -2735,20 +2753,25 @@ export const smartAuditTask = task({
 
     // Apply section selections from frontend if provided, otherwise use Auto-Selection Router
     Object.keys(auditMapping).forEach(section => {
+      // Get default pages for this section
+      const defaultPages = selectPagesForSection(section);
+      
       // Check if frontend provided selections for this section
       if (sectionSelections && sectionSelections[section] && sectionSelections[section].length > 0) {
-        // Normalize the frontend URLs and filter to only include selected pages
+        // Normalize the frontend URLs and filter to only include valid selected pages
         const normalizedSectionUrls = sectionSelections[section]
           .map(normalizeUrl)
           .filter(url => normalizedUrls.includes(url));
-        (auditMapping as any)[section] = normalizedSectionUrls.length > 0 
-          ? normalizedSectionUrls 
-          : selectPagesForSection(section);
-        console.log(`[Smart Audit] Section ${section}: Using frontend selection (${normalizedSectionUrls.length} pages)`);
+        
+        // MERGE: Use user selections AND add any extra pages user selected
+        // This ensures user-selected pages are always included
+        const mergedPages = [...new Set([...defaultPages, ...normalizedSectionUrls])];
+        (auditMapping as any)[section] = mergedPages;
+        console.log(`[Smart Audit] Section ${section}: Merged ${defaultPages.length} default + ${normalizedSectionUrls.length} user-selected = ${mergedPages.length} pages`);
       } else {
         // Fall back to auto-selection router
-        (auditMapping as any)[section] = selectPagesForSection(section);
-        console.log(`[Smart Audit] Section ${section}: Using auto-selection (${(auditMapping as any)[section].length} pages)`);
+        (auditMapping as any)[section] = defaultPages;
+        console.log(`[Smart Audit] Section ${section}: Using auto-selection (${defaultPages.length} pages)`);
       }
     });
 
@@ -2789,37 +2812,56 @@ export const smartAuditTask = task({
         const pageType = pageClassifications.find(p => p.url === url)?.type || 'other';
         const sectionsToRun = getAuditSectionsForPageType(pageType);
         
+        // Helper function to check if this page should run a section
+        // Returns true if: 1) page type normally includes this section, OR 
+        // 2) user explicitly selected this page for this section via sectionSelections
+        const shouldRunSection = (sectionKey: string): boolean => {
+          // Check if page type normally includes this section
+          if (sectionsToRun.includes(sectionKey)) return true;
+          
+          // Check if user explicitly selected this page for this section
+          if (sectionSelections && sectionSelections[sectionKey]) {
+            const normalizedSectionUrls = sectionSelections[sectionKey].map(u => normalizeUrl(u));
+            if (normalizedSectionUrls.includes(url)) {
+              console.log(`[Smart Audit] Running ${sectionKey} on ${url} - user explicitly selected this page`);
+              return true;
+            }
+          }
+          
+          return false;
+        };
+        
         const results: any = {};
         
-        // Run only relevant analyzers for this page type
-        if (sectionsToRun.includes('localSeo')) {
+        // Run analyzers based on page type OR user selection
+        if (shouldRunSection('localSeo')) {
           results.localSeo = analyzeLocalSEO(pageData);
         }
-        if (sectionsToRun.includes('seo')) {
+        if (shouldRunSection('seo')) {
           results.seo = analyzeSEO(pageData);
         }
-        if (sectionsToRun.includes('content')) {
+        if (shouldRunSection('content')) {
           results.content = analyzeContent(pageData, pageType);
         }
-        if (sectionsToRun.includes('performance')) {
+        if (shouldRunSection('performance')) {
           results.performance = await analyzePerformanceAsync(pageData);
         }
-        if (sectionsToRun.includes('eeat')) {
+        if (shouldRunSection('eeat')) {
           results.eeat = analyzeEEAT(pageData);
         }
-        if (sectionsToRun.includes('social')) {
+        if (shouldRunSection('social')) {
           results.social = analyzeSocial(pageData);
         }
-        if (sectionsToRun.includes('technology')) {
+        if (shouldRunSection('technology')) {
           results.technology = analyzeTechnology(pageData);
         }
-        if (sectionsToRun.includes('links')) {
+        if (shouldRunSection('links')) {
           results.links = analyzeLinks(pageData);
         }
-        if (sectionsToRun.includes('usability')) {
+        if (shouldRunSection('usability')) {
           results.usability = analyzeUsability(pageData);
         }
-        if (sectionsToRun.includes('technicalSeo')) {
+        if (shouldRunSection('technicalSeo')) {
           try {
             results.technicalSeo = await analyzeTechnicalSEO(pageData);
             console.log(`[Smart Audit] TechnicalSEO analyzed for ${url}: score=${results.technicalSeo?.score}`);

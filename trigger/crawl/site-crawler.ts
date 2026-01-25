@@ -34,6 +34,76 @@ interface SiteCrawlOutput {
   topLinkedPages: Array<{ url: string; linkCount: number }>;
 }
 
+// Normalize URL to prevent duplicates (trailing slash, case, etc.)
+function normalizeUrl(urlStr: string, hostname: string): string {
+  try {
+    const urlObj = new URL(urlStr);
+    // Only process same-hostname URLs
+    if (urlObj.hostname !== hostname) return urlStr;
+    
+    // Normalize: lowercase hostname, remove trailing slash (except for root)
+    let pathname = urlObj.pathname;
+    if (pathname !== '/' && pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
+    // Remove default ports, fragments, and unnecessary query params for deduplication
+    return `${urlObj.protocol}//${urlObj.hostname.toLowerCase()}${pathname}`;
+  } catch {
+    return urlStr;
+  }
+}
+
+// Check if URL is a page URL (not an asset like image, script, etc.)
+function isPageUrl(urlStr: string): boolean {
+  try {
+    const urlObj = new URL(urlStr);
+    const pathname = urlObj.pathname.toLowerCase();
+    
+    // Exclude common asset file extensions
+    const assetExtensions = [
+      // Images
+      '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico', '.bmp', '.tiff', '.avif',
+      // Scripts & styles
+      '.js', '.css', '.map',
+      // Documents (non-page)
+      '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar', '.tar', '.gz',
+      // Fonts
+      '.woff', '.woff2', '.ttf', '.eot', '.otf',
+      // Media
+      '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.ogg', '.webm', '.wav',
+      // Data
+      '.json', '.xml', '.csv', '.txt',
+    ];
+    
+    for (const ext of assetExtensions) {
+      if (pathname.endsWith(ext)) return false;
+    }
+    
+    // Exclude common asset paths
+    const assetPaths = [
+      '/wp-content/uploads/',
+      '/wp-includes/',
+      '/wp-admin/',
+      '/assets/',
+      '/static/',
+      '/images/',
+      '/img/',
+      '/css/',
+      '/js/',
+      '/fonts/',
+      '/media/',
+    ];
+    
+    for (const path of assetPaths) {
+      if (pathname.includes(path)) return false;
+    }
+    
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const siteCrawlerTask = task({
   id: "site-crawler",
   retry: {
@@ -47,10 +117,12 @@ export const siteCrawlerTask = task({
 
     try {
       const baseUrl = new URL(url);
-      const hostname = baseUrl.hostname;
+      const hostname = baseUrl.hostname.toLowerCase();
 
       const visited = new Set<string>();
-      const toVisit: Array<{ url: string; depth: number }> = [{ url, depth: 0 }];
+      // Normalize the starting URL
+      const normalizedStartUrl = normalizeUrl(url, hostname);
+      const toVisit: Array<{ url: string; depth: number }> = [{ url: normalizedStartUrl, depth: 0 }];
       const pages: CrawlResult[] = [];
       const errors: string[] = [];
       let sitemapUrls: string[] = [];
@@ -83,12 +155,22 @@ export const siteCrawlerTask = task({
           const sitemapText = await sitemapResponse.text();
           const urlMatches = sitemapText.matchAll(/<loc>([^<]+)<\/loc>/g);
           for (const match of urlMatches) {
-            const sitemapPageUrl = match[1];
-            if (sitemapPageUrl.includes(hostname) && !visited.has(sitemapPageUrl)) {
-              sitemapUrls.push(sitemapPageUrl);
-              if (!toVisit.find(t => t.url === sitemapPageUrl)) {
-                toVisit.push({ url: sitemapPageUrl, depth: 1 });
+            const rawUrl = match[1];
+            // Only process URLs from same hostname and that are page URLs
+            try {
+              const urlObj = new URL(rawUrl);
+              if (urlObj.hostname.toLowerCase() !== hostname) continue;
+              if (!isPageUrl(rawUrl)) continue;
+              
+              const normalizedSitemapUrl = normalizeUrl(rawUrl, hostname);
+              if (!visited.has(normalizedSitemapUrl)) {
+                sitemapUrls.push(normalizedSitemapUrl);
+                if (!toVisit.find(t => t.url === normalizedSitemapUrl)) {
+                  toVisit.push({ url: normalizedSitemapUrl, depth: 1 });
+                }
               }
+            } catch {
+              // Skip invalid URLs
             }
           }
           metadata.set("status", {
@@ -170,7 +252,7 @@ export const siteCrawlerTask = task({
           }
 
           // Extract links and detect navigation
-          const links: string[] = [];
+          const linksSet = new Set<string>(); // Use Set to automatically deduplicate
           const linkMatches = html.matchAll(/href=["']([^"']+)["']/gi);
           const navMatch = html.match(/<nav[^>]*>([\s\S]*?)<\/nav>/i);
           const footerMatch = html.match(/<footer[^>]*>([\s\S]*?)<\/footer>/i);
@@ -180,31 +262,49 @@ export const siteCrawlerTask = task({
           const footerContent = footerMatch?.[1] || "";
           const navLinks = [...navContent.matchAll(/href=["']([^"']+)["']/gi), ...footerContent.matchAll(/href=["']([^"']+)["']/gi)];
           
+          // Track which URLs this page links to (for unique counting per source page)
+          const linkedFromThisPage = new Set<string>();
+          
           for (const match of linkMatches) {
             try {
-              const linkUrl = new URL(match[1], currentUrl);
-              // Only follow internal links
-              if (linkUrl.hostname === hostname &&
-                !linkUrl.pathname.match(/\.(jpg|jpeg|png|gif|svg|pdf|css|js|ico|woff|woff2|ttf|eot)$/i) &&
-                !linkUrl.hash &&
-                !junkPatterns.some(pattern => pattern.test(linkUrl.pathname))) {
-                // Normalize URL by removing trailing slash (except for root)
-                let cleanPath = linkUrl.pathname;
-                if (cleanPath !== '/' && cleanPath.endsWith('/')) {
-                  cleanPath = cleanPath.slice(0, -1);
-                }
-                const cleanUrl = `${linkUrl.protocol}//${linkUrl.hostname}${cleanPath}`;
-                links.push(cleanUrl);
+              const rawHref = match[1];
+              // Skip hash-only links, javascript:, mailto:, tel:, etc.
+              if (rawHref.startsWith('#') || rawHref.startsWith('javascript:') || 
+                  rawHref.startsWith('mailto:') || rawHref.startsWith('tel:')) {
+                continue;
+              }
+              
+              const linkUrl = new URL(rawHref, currentUrl);
+              
+              // Only process internal links (same hostname)
+              if (linkUrl.hostname.toLowerCase() !== hostname) continue;
+              
+              // Skip if it's an asset URL, not a page
+              if (!isPageUrl(linkUrl.href)) continue;
+              
+              // Skip junk patterns
+              if (junkPatterns.some(pattern => pattern.test(linkUrl.pathname))) continue;
+              
+              // Normalize the URL
+              const normalizedLinkUrl = normalizeUrl(linkUrl.href, hostname);
+              
+              // Add to unique links set for this page
+              linksSet.add(normalizedLinkUrl);
+              
+              // Track internal link count (only count each URL once per source page)
+              if (!linkedFromThisPage.has(normalizedLinkUrl)) {
+                linkedFromThisPage.add(normalizedLinkUrl);
+                internalLinkCounts.set(normalizedLinkUrl, (internalLinkCounts.get(normalizedLinkUrl) || 0) + 1);
+              }
 
-                // Track internal link count
-                internalLinkCounts.set(cleanUrl, (internalLinkCounts.get(cleanUrl) || 0) + 1);
-
-                if (!visited.has(cleanUrl) && !toVisit.find(t => t.url === cleanUrl) && visited.size + toVisit.length < maxPages) {
-                  toVisit.push({ url: cleanUrl, depth: currentDepth + 1 });
-                }
+              if (!visited.has(normalizedLinkUrl) && !toVisit.find(t => t.url === normalizedLinkUrl) && visited.size + toVisit.length < maxPages) {
+                toVisit.push({ url: normalizedLinkUrl, depth: currentDepth + 1 });
               }
             } catch {}
           }
+          
+          // Convert Set to Array for the result
+          const links = Array.from(linksSet);
 
           // Check if current page is in navigation
           const isNav = navLinks.some(n => {
@@ -220,7 +320,7 @@ export const siteCrawlerTask = task({
             url: currentUrl,
             status: response.status,
             title,
-            links: [...new Set(links)].slice(0, 50),
+            links: links.slice(0, 50), // Already deduplicated via Set
             depth: currentDepth,
             internalLinkCount: internalLinkCounts.get(currentUrl) || 0,
             isNavigation: navigationLinks.has(currentUrl),
