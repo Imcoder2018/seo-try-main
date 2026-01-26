@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { tasks } from "@trigger.dev/sdk/v3";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,51 @@ export async function GET(request: NextRequest) {
 
     console.log("[Auto-Discovery] Fetching discovery data for crawl:", crawlRequestId);
 
+    // First, try to fetch scraped content from the latest crawl request
+    let scrapedContent = "";
+    try {
+      const latestCrawl = await prisma.crawlRequest.findFirst({
+        where: { userId: user.id, status: "COMPLETED" },
+        orderBy: { completedAt: "desc" },
+        select: { pagesData: true, crawlData: true }
+      });
+      
+      if (latestCrawl) {
+        // Extract text content from crawled pages
+        const pagesData = latestCrawl.pagesData as any;
+        const crawlData = latestCrawl.crawlData as any;
+        
+        // Try to extract content from pagesData first
+        if (pagesData && Array.isArray(pagesData)) {
+          const contentParts = pagesData.slice(0, 3).map((page: any) => {
+            const title = page.title || page.url || '';
+            const content = page.content || page.text || page.bodyText || page.mainContent || '';
+            const truncated = content.substring(0, 500);
+            return `Page: ${title}\n${truncated}${content.length > 500 ? '...' : ''}`;
+          });
+          scrapedContent = contentParts.join('\n\n---\n\n');
+        }
+        
+        // Fallback to crawlData if pagesData didn't have content
+        if (!scrapedContent && crawlData) {
+          const pages = crawlData.pages || crawlData.results || [];
+          if (Array.isArray(pages) && pages.length > 0) {
+            const contentParts = pages.slice(0, 3).map((page: any) => {
+              const title = page.title || page.url || '';
+              const content = page.content || page.text || page.bodyText || page.mainContent || '';
+              const truncated = content.substring(0, 500);
+              return `Page: ${title}\n${truncated}${content.length > 500 ? '...' : ''}`;
+            });
+            scrapedContent = contentParts.join('\n\n---\n\n');
+          }
+        }
+        
+        console.log("[Auto-Discovery] Scraped content length:", scrapedContent.length);
+      }
+    } catch (crawlError) {
+      console.log("[Auto-Discovery] Could not fetch crawl data:", crawlError);
+    }
+
     // Try to get data from latest content analysis
     try {
       // Fetch the latest content analysis
@@ -79,7 +125,27 @@ export async function GET(request: NextRequest) {
           console.log("[Auto-Discovery] Using data from latest content analysis");
           
           // Extract discovery data from content analysis
-          const analysisOutput = latestAnalysis.analysisOutput;
+          // Handle nested json property if present
+          let analysisOutput = latestAnalysis.analysisOutput;
+          if (analysisOutput?.json) {
+            analysisOutput = analysisOutput.json;
+          }
+          
+          // Extract scraped content from pages in analysis output
+          if (!scrapedContent && analysisOutput?.pages && Array.isArray(analysisOutput.pages)) {
+            const topPages = analysisOutput.pages.slice(0, 3);
+            const contentParts = topPages.map((page: any) => {
+              const title = page.title || page.url || '';
+              const content = page.content || page.summary || '';
+              const truncated = content.substring(0, 500);
+              return `Page: ${title}\n${truncated}${content.length > 500 ? '...' : ''}`;
+            }).filter((part: string) => part.length > 10);
+            
+            if (contentParts.length > 0) {
+              scrapedContent = contentParts.join('\n\n---\n\n');
+              console.log("[Auto-Discovery] Scraped content from analysis pages, length:", scrapedContent.length);
+            }
+          }
           
           // Extract services from content analysis
           const services = analysisOutput?.services?.map((s: any) => s.name) || [
@@ -148,7 +214,8 @@ export async function GET(request: NextRequest) {
               phone: "+92-300-1234567",
               address: "123 Business Park, Islamabad, Pakistan"
             },
-            existingPages
+            existingPages,
+            scrapedContent
           };
 
           return NextResponse.json({
@@ -199,7 +266,8 @@ export async function GET(request: NextRequest) {
         { url: "/about", type: "page", title: "About DataTech Consultants" },
         { url: "/contact", type: "page", title: "Contact Us" },
         { url: "/blog", type: "blog", title: "AI and Data Science Blog" }
-      ]
+      ],
+      scrapedContent: scrapedContent || "DataTech Consultants is a premier technology company specializing in cutting-edge AI and data science solutions. We provide comprehensive services including machine learning, computer vision, natural language processing, data visualization, and business automation. Our team of expert data scientists and AI engineers helps enterprises transform their operations through intelligent automation and data-driven decision making."
     };
 
     return NextResponse.json({

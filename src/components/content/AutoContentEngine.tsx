@@ -21,7 +21,11 @@ import {
   Tag,
   User,
   ImageIcon,
+  Download,
+  AlertCircle,
+  ExternalLink,
 } from "lucide-react";
+import LocationSelector from "./LocationSelector";
 
 interface DiscoveryData {
   services: string[];
@@ -442,7 +446,7 @@ export default function AutoContentEngine() {
         return <LocationMappingStep 
           locations={discoveryData?.locations || []}
           selectedLocations={selectedLocations}
-          onToggleLocation={toggleLocationSelection}
+          onLocationsChange={setSelectedLocations}
         />;
       case 6:
         return <GenerationStep 
@@ -1082,11 +1086,11 @@ function KeywordsStep({
 function LocationMappingStep({ 
   locations, 
   selectedLocations, 
-  onToggleLocation 
+  onLocationsChange 
 }: { 
   locations: string[]; 
   selectedLocations: string[]; 
-  onToggleLocation: (location: string) => void;
+  onLocationsChange: (locations: string[]) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -1100,29 +1104,20 @@ function LocationMappingStep({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {locations.map((location) => {
-          const isSelected = selectedLocations.includes(location);
-          return (
-            <button
-              key={location}
-              onClick={() => onToggleLocation(location)}
-              className={`p-3 border rounded-lg transition-all ${
-                isSelected
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-slate-500" />
-                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {location}
-                </span>
-              </div>
-            </button>
-          );
-        })}
+      <div className="max-w-xl mx-auto">
+        <LocationSelector
+          selectedLocations={selectedLocations}
+          onLocationChange={onLocationsChange}
+        />
       </div>
+
+      {selectedLocations.length > 0 && (
+        <div className="text-center">
+          <span className="px-4 py-2 bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium">
+            {selectedLocations.length} location{selectedLocations.length !== 1 ? 's' : ''} selected
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1247,43 +1242,53 @@ function ReviewStep({
   };
 
   const handlePublishToWordPress = async (content: GeneratedContent) => {
+    // Get WordPress connection from localStorage (set by WordPress plugin connection)
+    const wpConnection = localStorage.getItem('wp_connection_global');
+    if (!wpConnection) {
+      alert('WordPress not connected. Please connect WordPress from the Audit Report page first.');
+      return;
+    }
+
+    const { siteUrl, apiKey } = JSON.parse(wpConnection);
+    if (!siteUrl || !apiKey) {
+      alert('WordPress connection incomplete. Please reconnect from the Audit Report page.');
+      return;
+    }
+
     try {
       setPublishing(content.id);
       
-      const response = await fetch('/api/wordpress/publish', {
+      // Use WordPress plugin API directly
+      const response = await fetch(`${siteUrl}/wp-json/seo-autofix/v1/content/publish`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-SEO-AutoFix-Key': apiKey,
+        },
         body: JSON.stringify({
           title: content.title,
           content: content.content,
-          imageUrl: content.imageUrl || content.featuredImage, // Use real image URL from content generator
+          imageUrl: content.imageUrl || content.featuredImage,
+          featured_image: content.imageUrl || content.featuredImage,
           location: content.metadata?.targetLocation || content.location || '',
           contentType: content.metadata?.contentType || content.contentType || 'blog post',
           primaryKeywords: content.metadata?.keywords || selectedTopics[0]?.primaryKeywords || [],
-          status: 'draft', // Default to draft for review
+          status: 'draft',
         }),
       });
 
       const data = await response.json();
+      const postId = data.post?.id || data.postId;
+      const postUrl = data.post?.link || data.url;
       
-      if (data.success && data.post) {
-        // Check image status
-        const imageStatus = data.imageStatus || {};
-        const imageMessage = imageStatus.setAsFeatured 
-          ? `Image set as featured (ID: ${imageStatus.featuredMediaId})`
-          : imageStatus.sent 
-          ? 'Image sent but not set as featured'
-          : 'No image included';
-        
-        alert(`Content "${content.title}" published successfully to WordPress! Post ID: ${data.post.id}\n\nImage Status: ${imageMessage}`);
-      } else if (data.success && !data.post) {
-        alert(`Content "${content.title}" published successfully, but no post data returned.`);
+      if (postId) {
+        alert(`✅ Content "${content.title}" published successfully!\nPost ID: ${postId}${postUrl ? `\nView: ${postUrl}` : ''}`);
       } else {
         alert(`Failed to publish: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Publish error:', error);
-      alert('Failed to publish to WordPress. Check your WordPress configuration.');
+      console.error('[WordPress Publish] Error:', error);
+      alert('Failed to publish to WordPress. Check your connection.');
     } finally {
       setPublishing(null);
     }

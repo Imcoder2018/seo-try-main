@@ -20,6 +20,8 @@ interface ContentCombination {
   targetAudience: string;
   aboutSummary: string;
   generateImages: boolean;
+  customPrompt?: string;
+  scrapedContent?: string;
 }
 
 interface GeneratedContent {
@@ -128,13 +130,38 @@ export const contentGeneratorTask = task({
 
 async function generateContentForCombination(combination: ContentCombination): Promise<string> {
   const prompt = createContentPrompt(combination);
+  const systemPrompt = `You are a professional content writer for a technology company. Write in a ${combination.brandTone} tone for ${combination.targetAudience}.`;
+  
+  // Debug logs for OpenAI prompts
+  console.log("\n========== OPENAI CONTENT GENERATION DEBUG ==========");
+  console.log("[OpenAI Content] Topic:", combination.topic.title);
+  console.log("[OpenAI Content] Location:", combination.location);
+  console.log("[OpenAI Content] Service:", combination.service);
+  console.log("[OpenAI Content] Brand Tone:", combination.brandTone);
+  console.log("[OpenAI Content] Target Audience:", combination.targetAudience);
+  console.log("[OpenAI Content] Content Type:", combination.topic.contentType);
+  console.log("[OpenAI Content] Primary Keywords:", combination.topic.primaryKeywords.join(", "));
+  console.log("[OpenAI Content] Secondary Keywords:", combination.topic.secondaryKeywords.join(", "));
+  console.log("\n[OpenAI Content] SYSTEM PROMPT:");
+  console.log(systemPrompt);
+  console.log("\n[OpenAI Content] USER PROMPT:");
+  console.log(prompt);
+  console.log("======================================================\n");
+  
+  logger.log(`[OpenAI Debug] Sending content prompt for: ${combination.topic.title}`, {
+    systemPrompt: systemPrompt.substring(0, 200),
+    userPrompt: prompt.substring(0, 500) + "...",
+    model: "gpt-4",
+    temperature: 0.7,
+    maxTokens: 2000
+  });
   
   const response = await openai.chat.completions.create({
     model: "gpt-4",
     messages: [
       {
         role: "system",
-        content: `You are a professional content writer for a technology company. Write in a ${combination.brandTone} tone for ${combination.targetAudience}.`
+        content: systemPrompt
       },
       {
         role: "user",
@@ -148,12 +175,29 @@ async function generateContentForCombination(combination: ContentCombination): P
   if (!response.choices[0]?.message.content) {
     throw new Error("Failed to generate content");
   }
+  
+  console.log("[OpenAI Content] Response received, word count:", response.choices[0].message.content.split(/\s+/).length);
 
   return response.choices[0].message.content;
 }
 
 async function generateImageForContent(combination: ContentCombination): Promise<string> {
   const prompt = createImagePrompt(combination);
+  
+  // Debug logs for OpenAI image generation
+  console.log("\n========== OPENAI IMAGE GENERATION DEBUG ==========");
+  console.log("[OpenAI Image] Topic:", combination.topic.title);
+  console.log("[OpenAI Image] Location:", combination.location);
+  console.log("[OpenAI Image] Model: dall-e-3");
+  console.log("\n[OpenAI Image] IMAGE PROMPT:");
+  console.log(prompt);
+  console.log("====================================================\n");
+  
+  logger.log(`[OpenAI Debug] Sending image prompt for: ${combination.topic.title}`, {
+    prompt: prompt.substring(0, 300) + "...",
+    model: "dall-e-3",
+    size: "1024x1024"
+  });
   
   const response = await openai.images.generate({
     model: "dall-e-3",
@@ -167,12 +211,32 @@ async function generateImageForContent(combination: ContentCombination): Promise
   if (!response.data?.[0]?.url) {
     throw new Error("Failed to generate image");
   }
+  
+  console.log("[OpenAI Image] Image generated successfully:", response.data[0].url.substring(0, 100) + "...");
 
   return response.data[0].url;
 }
 
 function createContentPrompt(combination: ContentCombination): string {
-  return `Write a ${combination.topic.contentType} about "${combination.topic.title}" for the location "${combination.location}".
+  // Build location context - only include if location is provided
+  const locationContext = combination.location 
+    ? `for the location "${combination.location}"` 
+    : '';
+  const locationRequirement = combination.location 
+    ? `3. Make it location-specific to ${combination.location}` 
+    : '3. Keep content general without specific location targeting';
+
+  // Build scraped content reference section if available
+  const scrapedContentSection = combination.scrapedContent 
+    ? `\n\nReference Content from Website (use for style and context, do not copy directly):\n${combination.scrapedContent}\n` 
+    : '';
+
+  // Build custom prompt section if available
+  const customPromptSection = combination.customPrompt 
+    ? `\n\nAdditional Writing Instructions:\n${combination.customPrompt}\n` 
+    : '';
+
+  return `Write a ${combination.topic.contentType} about "${combination.topic.title}" ${locationContext}.
 
 Context:
 - Service: ${combination.service}
@@ -181,17 +245,17 @@ Context:
 - Target Audience: ${combination.targetAudience}
 - Content Type: ${combination.topic.contentType}
 - Search Intent: ${combination.topic.searchIntent}
-
+${scrapedContentSection}
 Requirements:
 1. Incorporate these primary keywords naturally: ${combination.topic.primaryKeywords.join(", ")}
 2. Include these secondary keywords where relevant: ${combination.topic.secondaryKeywords.join(", ")}
-3. Make it location-specific to ${combination.location}
+${locationRequirement}
 4. Write in a ${combination.brandTone} tone
 5. Target ${combination.targetAudience}
 6. Length: 800-1200 words
 7. Include a clear call-to-action
 8. Structure with proper headings and paragraphs
-
+${customPromptSection}
 Description: ${combination.topic.description}
 
 Please write compelling, SEO-optimized content that meets these requirements.`;

@@ -29,6 +29,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { TopHeader } from "./TopHeader";
+import OnboardingWalkthrough from "@/components/onboarding/OnboardingWalkthrough";
 
 interface NavItem {
   id: string;
@@ -36,17 +37,18 @@ interface NavItem {
   icon: React.ElementType;
   href: string;
   badge?: string;
+  hidden?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { id: "home", label: "Home", icon: Home, href: "/" },
+  { id: "home", label: "Audit Name", icon: Home, href: "/" },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/content-strategy?view=dashboard" },
   { id: "strategy", label: "Strategy Hub", icon: BarChart3, href: "/content-strategy?view=analysis" },
-  { id: "auto-content", label: "Content Wizard", icon: Wand2, href: "/content-strategy?view=auto-content" },
+  { id: "auto-content", label: "Content Wizard", icon: Wand2, href: "/content-strategy?view=auto-content", hidden: true },
   { id: "production", label: "Quick Writer", icon: Zap, href: "/content-strategy?view=production" },
   { id: "auto-pilot", label: "Auto Pilot", icon: Rocket, href: "/content-strategy?view=auto-pilot", badge: "New" },
   { id: "progress", label: "Progress", icon: TrendingUp, href: "/content-strategy?view=progress" },
-  { id: "planner", label: "Planner", icon: Calendar, href: "/content-strategy?view=planner" },
+  { id: "planner", label: "Planner", icon: Calendar, href: "/content-strategy?view=planner", hidden: true },
   { id: "drafts", label: "Drafts", icon: FileText, href: "/content-strategy?view=drafts" },
   { id: "calendar", label: "Calendar", icon: CalendarDays, href: "/content-strategy?view=calendar" },
   { id: "archives", label: "History", icon: Archive, href: "/history" },
@@ -159,6 +161,7 @@ export default function SidebarLayout({
         <div className="p-3 border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={handleNewStrategy}
+            data-onboarding="new-strategy"
             className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg ${
               isCollapsed ? "px-2" : ""
             }`}
@@ -171,15 +174,25 @@ export default function SidebarLayout({
 
         {/* Navigation */}
         <nav className="p-3 space-y-1">
-          {navItems.map((item) => {
+          {navItems.filter(item => !item.hidden).map((item) => {
             const Icon = item.icon;
             const active = isActive(item);
             
+            // Map nav item ids to onboarding selectors
+            const onboardingId = {
+              "strategy": "strategy-hub",
+              "production": "quick-writer",
+              "auto-pilot": "auto-pilot",
+              "calendar": "calendar",
+              "archives": "history",
+            }[item.id];
+
             return (
               <Link
                 key={item.id}
                 href={item.href}
                 onClick={() => handleNavClick(item)}
+                data-onboarding={onboardingId}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
                   active
                     ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium"
@@ -245,6 +258,9 @@ export default function SidebarLayout({
         </div>
         {children}
       </main>
+
+      {/* Onboarding Walkthrough for new users */}
+      <OnboardingWalkthrough />
     </div>
   );
 }

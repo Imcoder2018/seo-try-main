@@ -16,7 +16,9 @@ export async function POST(request: NextRequest) {
       targetAudience,
       aboutSummary,
       generateImages = false,
-      singlePage = true // New parameter to generate only one page
+      singlePage = true, // New parameter to generate only one page
+      customPrompt = '',
+      scrapedContent = ''
     } = body;
 
     if (!selectedTopics || selectedTopics.length === 0) {
@@ -43,21 +45,35 @@ export async function POST(request: NextRequest) {
     // If singlePage is true, only generate one combination (first topic + first location)
     let combinations = [];
     if (singlePage) {
-      // Generate only one page using the first topic and first location
+      const topic = selectedTopics[0];
+      // Use topic's targetLocations if available, otherwise use selectedLocations
+      // If topic has targetLocations array, use its first location; otherwise use selectedLocations[0]
+      const topicLocations = topic.targetLocations && topic.targetLocations.length > 0 
+        ? topic.targetLocations 
+        : selectedLocations;
+      const location = topicLocations[0] || selectedLocations[0] || '';
+      
       combinations = [{
-        topic: selectedTopics[0],
-        location: selectedLocations[0],
+        topic,
+        location,
         service,
         brandTone,
         targetAudience,
         aboutSummary,
         generateImages,
+        customPrompt,
+        scrapedContent,
       }];
-      console.log("[Bulk Generate] Single page mode: generating 1 piece of content");
+      console.log("[Bulk Generate] Single page mode: generating 1 piece of content for location:", location);
     } else {
       // Create all topic-location combinations (original behavior)
       for (const topic of selectedTopics) {
-        for (const location of selectedLocations) {
+        // Use topic's targetLocations if available, otherwise use selectedLocations
+        const topicLocations = topic.targetLocations && topic.targetLocations.length > 0 
+          ? topic.targetLocations 
+          : selectedLocations;
+        
+        for (const location of topicLocations) {
           combinations.push({
             topic,
             location,
@@ -66,6 +82,8 @@ export async function POST(request: NextRequest) {
             targetAudience,
             aboutSummary,
             generateImages,
+            customPrompt,
+            scrapedContent,
           });
         }
       }

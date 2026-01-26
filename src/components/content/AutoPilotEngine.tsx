@@ -5,7 +5,9 @@ import {
   Rocket, Calendar, Clock, MapPin, Tag, FileText, ChevronRight, ChevronLeft,
   CheckCircle2, Loader2, Sparkles, RefreshCw, Eye, Check, X, Upload, Target,
   Zap, Settings, Play, ExternalLink, Save, Globe, BarChart3, Image as ImageIcon,
+  Download, AlertCircle, Plug,
 } from "lucide-react";
+import LocationSelector from "./LocationSelector";
 
 interface AnalysisData {
   services: string[];
@@ -80,10 +82,139 @@ export default function AutoPilotEngine() {
   
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showWpConnectModal, setShowWpConnectModal] = useState(false);
+  const [wpConnectMode, setWpConnectMode] = useState<"auto" | "manual">("auto");
+  const [wpUrl, setWpUrl] = useState("");
+  const [wpApiKey, setWpApiKey] = useState("");
+  const [isConnectingWp, setIsConnectingWp] = useState(false);
+  const [wpConnectError, setWpConnectError] = useState("");
+  const [handshakeStatus, setHandshakeStatus] = useState<"idle" | "pending" | "approved" | "error">("idle");
+  const [connectToken, setConnectToken] = useState("");
+  const [locationInput, setLocationInput] = useState("");
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [scrapedContent, setScrapedContent] = useState("");
+  const [showPromptTemplates, setShowPromptTemplates] = useState(false);
+  
+  // Pre-written prompt templates
+  const promptTemplates = [
+    { id: 1, name: "SEO-Optimized Blog Post", prompt: "Write a comprehensive, SEO-optimized blog post that includes relevant statistics, expert insights, and actionable tips. Structure with clear headings, bullet points, and a compelling call-to-action." },
+    { id: 2, name: "Local Business Focus", prompt: "Create content that emphasizes local expertise and community involvement. Include location-specific details, local landmarks references, and address common local customer pain points." },
+    { id: 3, name: "Technical Authority", prompt: "Write in-depth technical content that demonstrates industry expertise. Include technical specifications, detailed explanations, and cite authoritative sources to build E-E-A-T." },
+    { id: 4, name: "Problem-Solution Format", prompt: "Structure the content around identifying customer problems and presenting clear solutions. Use real-world examples and case studies to illustrate effectiveness." },
+    { id: 5, name: "Comparison Guide", prompt: "Create a detailed comparison guide that helps readers make informed decisions. Include pros and cons, feature comparisons, and clear recommendations." },
+    { id: 6, name: "How-To Tutorial", prompt: "Write a step-by-step tutorial with numbered instructions, helpful tips, common mistakes to avoid, and visual descriptions for each step." },
+  ];
 
   useEffect(() => {
     loadAnalysisData();
   }, []);
+
+  // Poll for handshake approval
+  useEffect(() => {
+    if (handshakeStatus !== "pending" || !connectToken || !wpUrl) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(
+          `/api/wordpress?action=handshake_status&site_url=${encodeURIComponent(wpUrl)}&connect_token=${connectToken}`
+        );
+        const data = await response.json();
+
+        if (data.status === "approved") {
+          setHandshakeStatus("approved");
+          
+          let apiKey = data.api_key || data.apiKey;
+          let siteName = data.site_name || data.siteName;
+          let returnedSiteUrl = data.site_url || data.siteUrl || wpUrl;
+          
+          if (!apiKey) {
+            const completeResponse = await fetch("/api/wordpress", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                site_url: wpUrl,
+                action: "handshake_complete",
+                options: { connect_token: connectToken },
+              }),
+            });
+            const completeData = await completeResponse.json();
+            apiKey = completeData.api_key || completeData.apiKey || completeData.key;
+            siteName = completeData.site_name || completeData.siteName || completeData.name || siteName;
+            returnedSiteUrl = completeData.site_url || completeData.siteUrl || returnedSiteUrl;
+          }
+          
+          if (apiKey && apiKey.length >= 20) {
+            const conn = {
+              siteUrl: returnedSiteUrl,
+              apiKey: apiKey,
+              connected: true,
+              siteName: siteName || returnedSiteUrl,
+            };
+            localStorage.setItem('wp_connection_global', JSON.stringify(conn));
+            setShowWpConnectModal(false);
+            setHandshakeStatus("idle");
+            window.location.reload();
+          } else {
+            setHandshakeStatus("error");
+            setWpConnectError("Connection approved but failed to retrieve API key. Please use Manual Setup.");
+          }
+        }
+      } catch {
+        // Continue polling
+      }
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [handshakeStatus, connectToken, wpUrl]);
+
+  const handleAutoConnect = async () => {
+    if (!wpUrl) {
+      setWpConnectError("Please enter your WordPress site URL");
+      return;
+    }
+
+    setIsConnectingWp(true);
+    setWpConnectError("");
+
+    try {
+      const response = await fetch("/api/wordpress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          site_url: wpUrl,
+          action: "handshake_init",
+        }),
+      });
+      const data = await response.json();
+
+      const authUrlFromResponse = data.auth_url || data.approval_url;
+      const tokenFromResponse = data.connect_token || data.token;
+      
+      if (data.success && authUrlFromResponse) {
+        setConnectToken(tokenFromResponse);
+        setHandshakeStatus("pending");
+        window.open(authUrlFromResponse, "_blank");
+      } else {
+        const errorMsg = data.error || "Failed to initiate connection";
+        setWpConnectError(`${errorMsg}. Make sure SEO AutoFix Pro plugin is installed and activated.`);
+      }
+    } catch (err) {
+      setWpConnectError(`Connection failed: ${err instanceof Error ? err.message : "Please check your WordPress URL."}`);
+    } finally {
+      setIsConnectingWp(false);
+    }
+  };
+
+  const handleAddLocation = () => {
+    if (locationInput.trim() && !selectedLocations.includes(locationInput.trim())) {
+      setSelectedLocations([...selectedLocations, locationInput.trim()]);
+      setLocationInput("");
+    }
+  };
+
+  const handleRemoveLocation = (location: string) => {
+    setSelectedLocations(selectedLocations.filter(l => l !== location));
+  };
 
   const loadAnalysisData = async () => {
     setIsLoadingAnalysis(true);
@@ -94,6 +225,12 @@ export default function AutoPilotEngine() {
         setAnalysisData(data.data);
         if (data.data.locations?.length > 0) {
           setSelectedLocations(data.data.locations.slice(0, 3));
+        }
+        
+        // Use scraped content from the API response (fetched from database)
+        if (data.data.scrapedContent) {
+          setScrapedContent(data.data.scrapedContent);
+          console.log("[Auto Pilot] Scraped content loaded, length:", data.data.scrapedContent.length);
         }
       }
       
@@ -191,7 +328,7 @@ export default function AutoPilotEngine() {
           userKeywords: userKeywords.slice(0, 3),
           scheduledDate: scheduledDates[index] || new Date(),
           scheduledTime: postingTime,
-          selected: true,
+          selected: index < totalPosts, // Only auto-select up to totalPosts
           contentType: topic.contentType || "blog post",
           description: topic.description || "",
         }));
@@ -284,6 +421,8 @@ export default function AutoPilotEngine() {
             aboutSummary: analysisData?.aboutSummary || "",
             generateImages: true,
             singlePage: true,
+            customPrompt: customPrompt,
+            scrapedContent: scrapedContent,
           }),
         });
         const result = await response.json();
@@ -317,18 +456,61 @@ export default function AutoPilotEngine() {
   const handlePublishNow = async (contentId: string) => {
     const content = generatedContents.find(c => c.id === contentId);
     if (!content) return;
+    
+    // Get WordPress connection from localStorage
+    const wpConnection = localStorage.getItem('wp_connection_global');
+    if (!wpConnection) {
+      alert('WordPress not connected. Please connect WordPress from the Audit Report page first.');
+      return;
+    }
+
+    const { siteUrl, apiKey } = JSON.parse(wpConnection);
+    if (!siteUrl || !apiKey) {
+      alert('WordPress connection incomplete. Please reconnect from the Audit Report page.');
+      return;
+    }
+
     try {
-      const response = await fetch("/api/wordpress/publish", {
+      // Use WordPress plugin API directly
+      const response = await fetch(`${siteUrl}/wp-json/seo-autofix/v1/content/publish`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: content.title, content: content.content, location: selectedLocations[0] || "Pakistan", contentType: "blog post", imageUrl: content.imageUrl, primaryKeywords: content.keywords, status: "publish" }),
+        headers: { 
+          "Content-Type": "application/json",
+          "X-SEO-AutoFix-Key": apiKey,
+        },
+        body: JSON.stringify({ 
+          title: content.title, 
+          content: content.content, 
+          location: selectedLocations[0] || "Pakistan", 
+          contentType: "blog post", 
+          imageUrl: content.imageUrl,
+          featured_image: content.imageUrl,
+          primaryKeywords: content.keywords, 
+          status: "publish" 
+        }),
       });
-      if (response.ok) {
+      
+      const data = await response.json();
+      const postId = data.post?.id || data.postId;
+      
+      if (postId) {
         setGeneratedContents(prev => prev.map(c => c.id === contentId ? { ...c, status: "published" } : c));
+        alert(`✅ Published successfully! Post ID: ${postId}`);
+      } else {
+        alert(`Failed to publish: ${data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      console.error("Failed to publish:", err);
+      console.error("[WordPress Publish] Error:", err);
+      alert('Failed to publish to WordPress. Check your connection.');
     }
+  };
+
+  // Check WordPress connection status
+  const isWordPressConnected = () => {
+    const wpConnection = localStorage.getItem('wp_connection_global');
+    if (!wpConnection) return false;
+    const { siteUrl, apiKey } = JSON.parse(wpConnection);
+    return !!(siteUrl && apiKey);
   };
 
   const handleSaveAllScheduled = async () => {
@@ -377,6 +559,147 @@ export default function AutoPilotEngine() {
 
   return (
     <div className="min-h-screen">
+      {/* WordPress Connection Warning */}
+      {!isWordPressConnected() && (
+        <div className="max-w-4xl mx-auto mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-medium text-amber-800 dark:text-amber-200">WordPress Not Connected</h4>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                Connect your WordPress site to publish content directly. Download the SEO AutoFix plugin and connect.
+              </p>
+              <div className="flex items-center gap-3 mt-3">
+                <a
+                  href="/downloads/seo-auto-fix.zip"
+                  download
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
+                >
+                  <Download className="w-4 h-4" />
+                  Download Plugin
+                </a>
+                <button
+                  onClick={() => setShowWpConnectModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors text-sm font-medium"
+                >
+                  <Plug className="w-4 h-4" />
+                  Connect WordPress
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WordPress Connection Modal */}
+      {showWpConnectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Connect WordPress Site</h3>
+              <button onClick={() => setShowWpConnectModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* Mode Toggle */}
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setWpConnectMode("auto")}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${wpConnectMode === "auto" ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"}`}
+              >
+                🚀 Auto Connect
+              </button>
+              <button
+                onClick={() => setWpConnectMode("manual")}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${wpConnectMode === "manual" ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"}`}
+              >
+                🔧 Manual Setup
+              </button>
+            </div>
+
+            {wpConnectError && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-700 dark:text-red-300">{wpConnectError}</p>
+              </div>
+            )}
+
+            {handshakeStatus === "pending" && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                  <p className="text-sm text-blue-700 dark:text-blue-300">Waiting for approval in WordPress admin... Please approve the connection in the opened tab.</p>
+                </div>
+              </div>
+            )}
+
+            {wpConnectMode === "auto" ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <p className="text-sm text-blue-700 dark:text-blue-300 font-medium">One-Click Connection</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Enter your WordPress URL and click connect. You'll be redirected to approve the connection in your WordPress admin.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">WordPress Site URL</label>
+                  <input
+                    type="url"
+                    value={wpUrl}
+                    onChange={(e) => setWpUrl(e.target.value)}
+                    placeholder="https://yoursite.com"
+                    className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  onClick={handleAutoConnect}
+                  disabled={!wpUrl || isConnectingWp || handshakeStatus === "pending"}
+                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {isConnectingWp ? "Initiating..." : handshakeStatus === "pending" ? "Waiting for approval..." : "Connect Automatically"}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                  <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">Manual Connection</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Enter your WordPress URL and API key from the SEO AutoFix plugin settings.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">WordPress Site URL</label>
+                  <input
+                    type="url"
+                    value={wpUrl}
+                    onChange={(e) => setWpUrl(e.target.value)}
+                    placeholder="https://yoursite.com"
+                    className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Key</label>
+                  <input
+                    type="text"
+                    value={wpApiKey}
+                    onChange={(e) => setWpApiKey(e.target.value)}
+                    placeholder="Enter API key from plugin settings"
+                    className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    if (wpUrl && wpApiKey) {
+                      localStorage.setItem('wp_connection_global', JSON.stringify({ siteUrl: wpUrl.replace(/\/$/, ''), apiKey: wpApiKey }));
+                      setShowWpConnectModal(false);
+                      window.location.reload();
+                    }
+                  }}
+                  disabled={!wpUrl || !wpApiKey}
+                  className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  Save Connection
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-between max-w-4xl mx-auto">
@@ -453,11 +776,31 @@ export default function AutoPilotEngine() {
             </div>
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
               <div className="flex items-center gap-2 mb-4"><MapPin className="w-5 h-5 text-blue-600" /><h3 className="font-semibold text-slate-900 dark:text-slate-100">Target Locations</h3></div>
-              <div className="flex flex-wrap gap-2">
-                {(analysisData?.locations || ["Islamabad", "Rawalpindi", "Lahore", "Karachi", "Peshawar", "Australia", "Sydney"]).map((location) => (
-                  <button key={location} onClick={() => setSelectedLocations(prev => prev.includes(location) ? prev.filter(l => l !== location) : [...prev, location])} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedLocations.includes(location) ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"}`}><MapPin className="w-3 h-3 inline mr-1" />{location}</button>
-                ))}
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Add cities or regions where you want to target your content.</p>
+              <div className="flex gap-2 mb-4">
+                <input
+                  type="text"
+                  value={locationInput}
+                  onChange={(e) => setLocationInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddLocation()}
+                  placeholder="Enter location (e.g., New York, London)"
+                  className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                />
+                <button onClick={handleAddLocation} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Add</button>
               </div>
+              {selectedLocations.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectedLocations.map((location, index) => (
+                    <span key={index} className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-sm">
+                      <MapPin className="w-3 h-3" />
+                      {location}
+                      <button onClick={() => handleRemoveLocation(location)} className="ml-1 hover:text-purple-900 dark:hover:text-purple-100"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400 italic">No locations added yet. Content will be generated without location targeting.</p>
+              )}
             </div>
           </div>
         )}
@@ -529,6 +872,48 @@ export default function AutoPilotEngine() {
                 </div>
               ))}
             </div>
+
+            {/* Custom Prompt Section */}
+            <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Custom Writing Instructions (Optional)</h4>
+                <button
+                  onClick={() => setShowPromptTemplates(!showPromptTemplates)}
+                  className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                >
+                  {showPromptTemplates ? "Hide Templates" : "Choose Template"}
+                </button>
+              </div>
+              
+              {showPromptTemplates && (
+                <div className="mb-4 grid grid-cols-2 gap-2">
+                  {promptTemplates.map((template) => (
+                    <button
+                      key={template.id}
+                      onClick={() => {
+                        setCustomPrompt(template.prompt);
+                        setShowPromptTemplates(false);
+                      }}
+                      className="p-3 text-left bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
+                    >
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{template.name}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{template.prompt.substring(0, 80)}...</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                placeholder="Add specific instructions for content generation (e.g., 'Include statistics about industry trends', 'Focus on beginner-friendly explanations', 'Add comparison tables')..."
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-slate-700 dark:text-slate-100 text-sm resize-none"
+                rows={3}
+              />
+              {customPrompt && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ Custom instructions will be included in content generation</p>
+              )}
+            </div>
           </div>
         )}
 
@@ -544,18 +929,36 @@ export default function AutoPilotEngine() {
                 <div className="mt-2 h-2 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden"><div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${((currentContentIndex + 1) / generatedTopics.filter(t => t.selected).length) * 100}%` }} /></div>
               </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2">
+            <div className="space-y-6">
               {generatedContents.map((content, index) => (
                 <div key={content.id} className={`rounded-xl border overflow-hidden transition-all ${content.status === "completed" || content.status === "approved" ? "border-green-500" : content.status === "generating" ? "border-blue-500" : content.status === "failed" ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}>
-                  <div className="h-40 bg-slate-100 dark:bg-slate-800 relative">
+                  {/* Header with image */}
+                  <div className="h-48 bg-slate-100 dark:bg-slate-800 relative">
                     {content.status === "generating" ? <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" /><p className="text-sm text-slate-600 dark:text-slate-400">Generating...</p></div></div> : content.status === "pending" ? <div className="absolute inset-0 flex items-center justify-center"><div className="text-center"><Clock className="w-8 h-8 text-slate-400 mx-auto mb-2" /><p className="text-sm text-slate-500">Waiting...</p></div></div> : content.imageUrl ? <img src={content.imageUrl} alt={content.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = `https://picsum.photos/400/200?random=${index}`; }} /> : <div className="absolute inset-0 flex items-center justify-center"><ImageIcon className="w-8 h-8 text-slate-400" /></div>}
                     <div className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-medium ${content.status === "completed" ? "bg-green-600 text-white" : content.status === "approved" ? "bg-blue-600 text-white" : content.status === "published" ? "bg-purple-600 text-white" : content.status === "generating" ? "bg-amber-600 text-white" : content.status === "failed" ? "bg-red-600 text-white" : "bg-slate-600 text-white"}`}>{content.status.charAt(0).toUpperCase() + content.status.slice(1)}</div>
                   </div>
-                  <div className="p-4 bg-white dark:bg-slate-800">
-                    <h4 className="font-medium text-slate-900 dark:text-slate-100 mb-1 line-clamp-2">{content.title}</h4>
-                    <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mb-2"><span>{content.wordCount.toLocaleString()} words</span><span>{content.scheduledDate.toLocaleDateString()}</span></div>
-                    {content.status === "completed" && (<div className="flex items-center gap-2 mt-3"><button onClick={() => handleApproveContent(content.id)} className="flex-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors">Approve</button><button onClick={() => handlePublishNow(content.id)} className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors">Publish Now</button></div>)}
-                    {content.status === "failed" && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{content.error || "Generation failed"}</p>}
+                  {/* Content details */}
+                  <div className="p-6 bg-white dark:bg-slate-800">
+                    <h4 className="font-semibold text-lg text-slate-900 dark:text-slate-100 mb-2">{content.title}</h4>
+                    <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400 mb-4">
+                      <span className="flex items-center gap-1"><FileText className="w-4 h-4" />{content.wordCount.toLocaleString()} words</span>
+                      <span className="flex items-center gap-1"><Calendar className="w-4 h-4" />{content.scheduledDate.toLocaleDateString()}</span>
+                    </div>
+                    {/* Full Content Preview - No truncation */}
+                    {content.content && content.status !== "pending" && content.status !== "generating" && (
+                      <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg max-h-[400px] overflow-y-auto border border-slate-200 dark:border-slate-600">
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{content.content}</div>
+                        </div>
+                      </div>
+                    )}
+                    {content.status === "completed" && (
+                      <div className="flex items-center gap-3 mt-4">
+                        <button onClick={() => handleApproveContent(content.id)} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">Approve</button>
+                        <button onClick={() => handlePublishNow(content.id)} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">Publish Now</button>
+                      </div>
+                    )}
+                    {content.status === "failed" && <p className="text-sm text-red-600 dark:text-red-400 mt-4">{content.error || "Generation failed"}</p>}
                   </div>
                 </div>
               ))}

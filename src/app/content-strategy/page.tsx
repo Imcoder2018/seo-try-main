@@ -22,6 +22,7 @@ import PriorityMatrix from "@/components/content/PriorityMatrix";
 import DraftSolutionModal from "@/components/content/DraftSolutionModal";
 import StrategyHeader from "@/components/content/StrategyHeader";
 import WordPressPublishHistory from "@/components/content/WordPressPublishHistory";
+import { StrategySidebarNav } from "@/components/content/StrategySidebarNav";
 import ConfirmationModal from "@/components/ui/ConfirmationModal";
 import { useToast } from "@/components/ui/Toast";
 import { useContentStrategy } from "@/contexts/ContentStrategyContext";
@@ -604,13 +605,17 @@ export default function ContentStrategyPage() {
   const renderAnalysisView = () => {
     if (analysisOutput) {
       return (
-        <ContentStrategyDashboardV2
-          analysisOutput={analysisOutput}
-          isLoading={isLoading}
-          onRefresh={handleRefreshAnalysis}
-          onGenerateContent={handleGenerateFromGap}
-          onOpenPlanner={() => setActiveView("planner")}
-        />
+        <div className="relative">
+          <ContentStrategyDashboardV2
+            analysisOutput={analysisOutput}
+            isLoading={isLoading}
+            onRefresh={handleRefreshAnalysis}
+            onGenerateContent={handleGenerateFromGap}
+            onOpenPlanner={() => setActiveView("planner")}
+          />
+          {/* Right-side navigation sidebar for analysis sections */}
+          <StrategySidebarNav />
+        </div>
       );
     }
 
@@ -910,6 +915,9 @@ export default function ContentStrategyPage() {
           onGenerateContent={handleGenerateFromGap}
           onOpenPlanner={() => setActiveView("planner")}
         />
+
+        {/* Right-side navigation sidebar for dashboard sections */}
+        <StrategySidebarNav />
       </div>
     );
   };
