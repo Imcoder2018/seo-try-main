@@ -803,16 +803,53 @@ export default function ContentStrategyPage() {
   const renderDashboardView = () => {
     if (!analysisOutput) {
       return (
-        <div className="py-8 text-center">
-          <p className="text-slate-600 dark:text-slate-400 mb-4">
-            No analysis data available. Please run an analysis first.
-          </p>
-          <button
-            onClick={() => setActiveView("analysis")}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Go to Strategy Analysis
-          </button>
+        <div className="py-12">
+          <div className="max-w-2xl mx-auto text-center">
+            <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <Sparkles className="w-10 h-10 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">
+              Welcome to Your Strategy Dashboard
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-8 max-w-md mx-auto">
+              Analyze your website to unlock AI-powered content insights, keyword opportunities, and strategic recommendations.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={() => setActiveView("analysis")}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all font-semibold shadow-lg"
+              >
+                <Search className="w-5 h-5" />
+                Run Strategy Analysis
+              </button>
+              <button
+                onClick={() => setActiveView("auto-content")}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold"
+              >
+                <Sparkles className="w-5 h-5" />
+                Try Content Wizard
+              </button>
+            </div>
+            {recentAnalyses.length > 0 && (
+              <div className="mt-10 pt-8 border-t border-slate-200 dark:border-slate-700">
+                <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4">Recent Analyses</h3>
+                <div className="flex flex-wrap gap-3 justify-center">
+                  {recentAnalyses.map((analysis) => (
+                    <button
+                      key={analysis.id}
+                      onClick={() => {
+                        loadLatestAnalysis();
+                        setActiveView("dashboard");
+                      }}
+                      className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      {analysis.url} • {analysis.date}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       );
     }

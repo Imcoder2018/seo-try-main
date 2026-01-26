@@ -2752,10 +2752,8 @@ export const smartAuditTask = task({
     console.log('[Smart Audit] Section selections from frontend:', sectionSelections);
 
     // Apply section selections from frontend if provided, otherwise use Auto-Selection Router
+    // IMPORTANT: When frontend provides sectionSelections, we ONLY use those pages (no merging with defaults)
     Object.keys(auditMapping).forEach(section => {
-      // Get default pages for this section
-      const defaultPages = selectPagesForSection(section);
-      
       // Check if frontend provided selections for this section
       if (sectionSelections && sectionSelections[section] && sectionSelections[section].length > 0) {
         // Normalize the frontend URLs and filter to only include valid selected pages
@@ -2763,13 +2761,12 @@ export const smartAuditTask = task({
           .map(normalizeUrl)
           .filter(url => normalizedUrls.includes(url));
         
-        // MERGE: Use user selections AND add any extra pages user selected
-        // This ensures user-selected pages are always included
-        const mergedPages = [...new Set([...defaultPages, ...normalizedSectionUrls])];
-        (auditMapping as any)[section] = mergedPages;
-        console.log(`[Smart Audit] Section ${section}: Merged ${defaultPages.length} default + ${normalizedSectionUrls.length} user-selected = ${mergedPages.length} pages`);
+        // USE ONLY frontend selections - no merging with defaults
+        (auditMapping as any)[section] = normalizedSectionUrls;
+        console.log(`[Smart Audit] Section ${section}: Using ONLY frontend selections (${normalizedSectionUrls.length} pages)`);
       } else {
-        // Fall back to auto-selection router
+        // Fall back to auto-selection router only when no frontend selection provided
+        const defaultPages = selectPagesForSection(section);
         (auditMapping as any)[section] = defaultPages;
         console.log(`[Smart Audit] Section ${section}: Using auto-selection (${defaultPages.length} pages)`);
       }

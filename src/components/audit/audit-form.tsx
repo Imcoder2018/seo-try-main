@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, Globe, FileSearch, CheckCircle, XCircle } from "lucide-react";
+import { useAuth, SignInButton } from "@clerk/nextjs";
+import { Search, Loader2, Globe, FileSearch, CheckCircle, XCircle, LogIn } from "lucide-react";
 import { PageSelector } from "./page-selector";
 import { runFrontendSmartAudit, type SmartAuditOutput, type FrontendAuditProgress } from "@/lib/frontend-smart-audit";
 
@@ -33,6 +34,7 @@ interface CrawlResult {
 }
 
 export function AuditForm() {
+  const { isSignedIn, isLoaded } = useAuth();
   const [url, setUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isCrawling, setIsCrawling] = useState(false);
@@ -47,6 +49,7 @@ export function AuditForm() {
   const [isRunningAudit, setIsRunningAudit] = useState(false);
   const [error, setError] = useState("");
   const [auditMode, setAuditMode] = useState<"quick" | "deep">("quick");
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,6 +70,12 @@ export function AuditForm() {
       new URL(cleanUrl);
     } catch {
       setError("Please enter a valid URL");
+      return;
+    }
+
+    // Check if user is authenticated before running audit
+    if (!isSignedIn) {
+      setShowAuthPrompt(true);
       return;
     }
 
@@ -543,6 +552,42 @@ export function AuditForm() {
         </div>
         {error && <p className="mt-3 text-destructive text-sm">{error}</p>}
       </form>
+
+      {/* Auth Prompt Modal */}
+      {showAuthPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <LogIn className="w-8 h-8 text-blue-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+                Sign In Required
+              </h3>
+              <p className="text-slate-600 dark:text-slate-400 mb-6">
+                Create a free account to analyze your website and save your audit history.
+              </p>
+              <div className="flex flex-col gap-3">
+                <SignInButton mode="modal">
+                  <button className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+                    <LogIn className="w-5 h-5" />
+                    Sign In / Sign Up
+                  </button>
+                </SignInButton>
+                <button
+                  onClick={() => setShowAuthPrompt(false)}
+                  className="w-full px-6 py-3 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
+                It&apos;s free! No credit card required.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

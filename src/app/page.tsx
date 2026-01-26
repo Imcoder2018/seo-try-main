@@ -1,7 +1,5 @@
-import { Header } from "@/components/shared/header";
-import { Footer } from "@/components/shared/footer";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import { AuditForm } from "@/components/audit/audit-form";
-import { Features } from "@/components/home/features";
 import { 
   Search, 
   BarChart3, 
@@ -22,9 +20,8 @@ import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1">
+    <SidebarLayout>
+      <div className="min-h-screen">
         {/* Hero Section */}
         <section className="relative py-20 lg:py-32 px-4 bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-blue-950/20 dark:to-indigo-950/30 overflow-hidden">
           {/* Animated background elements */}
@@ -73,7 +70,7 @@ export default function HomePage() {
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
                 <Link
-                  href="/content-strategy?view=history"
+                  href="/history"
                   className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-semibold text-slate-900 dark:text-slate-100 shadow-lg hover:-translate-y-0.5"
                 >
                   View History
@@ -411,9 +408,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <Features />
-      </main>
-      <Footer />
-    </div>
+      </div>
+    </SidebarLayout>
   );
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ const historyStorage = new Map<string, HistoryEntry[]>();
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
     const { searchParams } = new URL(request.url);
     const domain = searchParams.get("domain");
     const limit = parseInt(searchParams.get("limit") || "30");
@@ -35,12 +37,19 @@ export async function GET(request: NextRequest) {
 
     // Try to get from database first
     try {
+      const whereClause: any = { 
+        domain: domain,
+        status: "COMPLETED",
+        overallScore: { not: null }
+      };
+      
+      // Filter by userId if user is authenticated
+      if (user) {
+        whereClause.userId = user.id;
+      }
+
       const audits = await prisma.audit.findMany({
-        where: { 
-          domain: domain,
-          status: "COMPLETED",
-          overallScore: { not: null }
-        },
+        where: whereClause,
         orderBy: { createdAt: "desc" },
         take: limit,
         select: {

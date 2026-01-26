@@ -47,17 +47,17 @@ interface PageSelectorProps {
   auditStatus?: string;
 }
 
-// Audit section configurations
+// Audit section configurations - Updated to match optimal page selection per section
 const AUDIT_SECTIONS = [
-  { id: 'performance', label: '⚡ Performance', description: 'PageSpeed & Core Web Vitals', defaultTypes: ['home', 'service', 'product'] },
-  { id: 'seo', label: '🔍 On-Page SEO', description: 'Title, Meta, Headings, Keywords', defaultTypes: ['service', 'product', 'blog'] },
-  { id: 'technicalSeo', label: '🔧 Technical SEO', description: 'Sitemap, Robots, Indexing', defaultTypes: ['home', 'blog', 'about'] },
-  { id: 'localSeo', label: '📍 Local SEO', description: 'NAP, Schema, Google Maps', defaultTypes: ['home', 'contact'] },
-  { id: 'content', label: '📝 Content Quality', description: 'Word Count, Structure', defaultTypes: ['blog', 'service'] },
+  { id: 'performance', label: '⚡ Performance', description: 'PageSpeed & Core Web Vitals', defaultTypes: ['home', 'service'] },
+  { id: 'seo', label: '🔍 On-Page SEO', description: 'Title, Meta, Headings, Keywords', defaultTypes: ['service'] },
+  { id: 'technicalSeo', label: '🔧 Technical SEO', description: 'Sitemap, Robots, Indexing', defaultTypes: ['home', 'service'] },
+  { id: 'localSeo', label: '📍 Local SEO', description: 'NAP, Schema, Google Maps', defaultTypes: ['contact'] },
+  { id: 'content', label: '📝 Content Quality', description: 'Word Count, Structure', defaultTypes: ['service'] },
   { id: 'usability', label: '👥 Usability', description: 'Mobile, Forms, Accessibility', defaultTypes: ['home', 'contact'] },
   { id: 'links', label: '🔗 Links', description: 'Internal & External Links', defaultTypes: ['home', 'service', 'about'] },
-  { id: 'social', label: '📱 Social', description: 'Open Graph, Twitter Cards', defaultTypes: ['home', 'blog'] },
-  { id: 'eeat', label: '🏆 E-E-A-T', description: 'Expertise & Authority', defaultTypes: ['about', 'blog'] },
+  { id: 'social', label: '📱 Social', description: 'Open Graph, Twitter Cards', defaultTypes: ['home', 'contact'] },
+  { id: 'eeat', label: '🏆 E-E-A-T', description: 'Expertise & Authority', defaultTypes: ['about'] },
 ];
 
 export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRunningAudit, auditProgress = 0, auditStatus = "" }: PageSelectorProps) {
@@ -110,7 +110,7 @@ export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRun
     const initialSectionSelections: Record<string, Set<string>> = {};
     const autoSelectedArray = Array.from(autoSelected);
     
-    // Helper to get URLs matching default types
+    // Helper to get URLs matching default types - includes ALL matching pages, not just auto-selected
     const getUrlsForTypes = (types: string[]): string[] => {
       const urls: string[] = [];
       types.forEach(type => {
@@ -123,11 +123,27 @@ export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRun
             } catch { return false; }
           }).forEach(u => urls.push(u));
         } else if (type === 'contact') {
-          autoSelectedArray.filter(u => u.toLowerCase().includes('contact')).forEach(u => urls.push(u));
+          // Contact page - include all contact pages from crawl
+          crawlResult.pages
+            .filter(p => p.url.toLowerCase().includes('contact'))
+            .forEach(p => {
+              urls.push(p.url);
+              autoSelected.add(p.url); // Also add to main selection
+            });
         } else if (type === 'about') {
-          autoSelectedArray.filter(u => u.toLowerCase().includes('about')).forEach(u => urls.push(u));
+          // About page - include all about pages from crawl
+          crawlResult.pages
+            .filter(p => p.url.toLowerCase().includes('about'))
+            .forEach(p => {
+              urls.push(p.url);
+              autoSelected.add(p.url); // Also add to main selection
+            });
         } else if (type === 'service') {
-          crawlResult.urlGroups.service.filter(u => autoSelected.has(u)).forEach(u => urls.push(u));
+          // ALL service pages - not just sample
+          crawlResult.urlGroups.service.forEach(u => {
+            urls.push(u);
+            autoSelected.add(u); // Also add to main selection
+          });
         } else if (type === 'product') {
           crawlResult.urlGroups.product.filter(u => autoSelected.has(u)).forEach(u => urls.push(u));
         } else if (type === 'blog') {

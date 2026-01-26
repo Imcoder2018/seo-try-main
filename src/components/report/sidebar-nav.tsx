@@ -60,8 +60,8 @@ export function SidebarNav() {
   };
 
   return (
-    <nav className="fixed left-0 top-1/2 -translate-y-1/2 z-50 hidden lg:block">
-      <div className="bg-card/95 backdrop-blur-sm border border-l-0 rounded-r-xl shadow-lg py-4 px-2">
+    <nav className="fixed right-0 top-1/2 -translate-y-1/2 z-50 hidden lg:block">
+      <div className="bg-card/95 backdrop-blur-sm border border-r-0 rounded-l-xl shadow-lg py-4 px-2">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const isActive = activeSection === item.id;

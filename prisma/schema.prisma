@@ -15,16 +15,32 @@ model User {
   password         String?           // Hashed password for email/password auth (deprecated, kept for migration)
   plan             Plan              @default(FREE)
   role             UserRole          @default(CLIENT)
+  accountType      AccountType       @default(INDIVIDUAL)
+  
+  // Agency relationships
+  ownedAgency      Agency?           @relation("AgencyOwner")
+  agencyMemberships AgencyMember[]
+  
+  // Active client for agency users (for client switching)
+  activeClientId   String?
+  
   audits           Audit[]
   sessions         Session[]
   scheduledContent ScheduledContent[]
   contentAnalyses  ContentAnalysis[]
   crawlRequests    CrawlRequest[]
   wordpressPublishes WordPressPublish[]
+  activities       UserActivity[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+  onboardingCompleted Boolean        @default(false)
 
   @@index([clerkUserId])
+}
+
+enum AccountType {
+  INDIVIDUAL
+  AGENCY
 }
 
 enum UserRole {
@@ -32,6 +48,151 @@ enum UserRole {
   AGENCY_ADMIN
   AGENCY_MEMBER
   ADMIN
+}
+
+// ==================== AGENCY MANAGEMENT MODELS ====================
+
+model Agency {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  logo            String?
+  website         String?
+  description     String?
+  
+  // Owner relation
+  ownerId         String   @unique
+  owner           User     @relation("AgencyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  // Agency settings
+  maxClients      Int      @default(10)
+  maxTeamMembers  Int      @default(5)
+  
+  // Relationships
+  members         AgencyMember[]
+  clients         AgencyClient[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([slug])
+  @@index([ownerId])
+}
+
+model AgencyMember {
+  id              String   @id @default(cuid())
+  
+  agencyId        String
+  agency          Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  role            AgencyMemberRole @default(MEMBER)
+  permissions     String[]  // Array of permission strings
+  
+  invitedAt       DateTime @default(now())
+  acceptedAt      DateTime?
+  status          InviteStatus @default(PENDING)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([agencyId, userId])
+  @@index([agencyId])
+  @@index([userId])
+}
+
+enum AgencyMemberRole {
+  OWNER
+  ADMIN
+  MANAGER
+  MEMBER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model AgencyClient {
+  id              String   @id @default(cuid())
+  
+  agencyId        String
+  agency          Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  
+  // Client details
+  name            String
+  email           String?
+  phone           String?
+  company         String?
+  website         String?
+  logo            String?
+  notes           String?
+  
+  // Status
+  status          ClientStatus @default(ACTIVE)
+  
+  // Associated resources
+  audits          ClientAudit[]
+  contentAnalyses ClientContentAnalysis[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([agencyId])
+  @@index([status])
+}
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+model ClientAudit {
+  id              String   @id @default(cuid())
+  
+  clientId        String
+  client          AgencyClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  // Audit reference
+  auditId         String
+  
+  // Audit snapshot data
+  domain          String
+  url             String
+  overallScore    Int?
+  overallGrade    String?
+  status          String
+  
+  createdAt       DateTime @default(now())
+
+  @@index([clientId])
+  @@index([auditId])
+}
+
+model ClientContentAnalysis {
+  id              String   @id @default(cuid())
+  
+  clientId        String
+  client          AgencyClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  // Analysis reference
+  analysisId      String
+  
+  // Analysis snapshot data
+  domain          String
+  baseUrl         String
+  status          String
+  pagesAnalyzed   Int?
+  
+  createdAt       DateTime @default(now())
+
+  @@index([clientId])
+  @@index([analysisId])
 }
 
 model Session {
@@ -456,4 +617,34 @@ model WordPressPublish {
   @@index([wordpressPostId])
   @@index([publishedAt])
   @@index([wordpressUrl])
+}
+
+// ==================== USER ACTIVITY TRACKING ====================
+
+model UserActivity {
+  id          String   @id @default(cuid())
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Activity details
+  action      String   // audit_created, content_generated, client_added, etc.
+  entityType  String?  // audit, content, client, etc.
+  entityId    String?  // ID of the related entity
+  
+  // Metadata
+  description String?
+  metadata    Json?    // Additional data about the activity
+  ipAddress   String?
+  userAgent   String?
+  
+  // For agency client tracking
+  clientId    String?  // If activity was for a specific client
+  
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([clientId])
 }

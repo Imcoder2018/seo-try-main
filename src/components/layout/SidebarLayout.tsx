@@ -28,6 +28,7 @@ import {
   Rocket,
   TrendingUp,
 } from "lucide-react";
+import { TopHeader } from "./TopHeader";
 
 interface NavItem {
   id: string;
@@ -48,7 +49,7 @@ const navItems: NavItem[] = [
   { id: "planner", label: "Planner", icon: Calendar, href: "/content-strategy?view=planner" },
   { id: "drafts", label: "Drafts", icon: FileText, href: "/content-strategy?view=drafts" },
   { id: "calendar", label: "Calendar", icon: CalendarDays, href: "/content-strategy?view=calendar" },
-  { id: "archives", label: "History", icon: Archive, href: "/content-strategy?view=history" },
+  { id: "archives", label: "History", icon: Archive, href: "/history" },
 ];
 
 interface SidebarLayoutProps {
@@ -238,6 +239,10 @@ export default function SidebarLayout({
           isCollapsed ? "lg:pl-16" : "lg:pl-64"
         } pt-16 lg:pt-0`}
       >
+        {/* Top Header with Agency Tab & Client Switcher */}
+        <div className="hidden lg:block sticky top-0 z-40">
+          <TopHeader />
+        </div>
         {children}
       </main>
     </div>

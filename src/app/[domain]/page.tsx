@@ -2,8 +2,7 @@
 
 import { useEffect, useState, use, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { Header } from "@/components/shared/header";
-import { Footer } from "@/components/shared/footer";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import { ReportHeader } from "@/components/report/report-header";
 import { CategoryScores } from "@/components/report/category-scores";
 import { CategorySection } from "@/components/report/category-section";
@@ -281,24 +280,21 @@ export default function ReportPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Header />
-        <main className="flex-1 flex items-center justify-center">
+      <SidebarLayout>
+        <div className="min-h-screen flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
             <p className="mt-4 text-lg">Loading audit results...</p>
           </div>
-        </main>
-        <Footer />
-      </div>
+        </div>
+      </SidebarLayout>
     );
   }
 
   if (error || !audit) {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Header />
-        <main className="flex-1 flex items-center justify-center">
+      <SidebarLayout>
+        <div className="min-h-screen flex items-center justify-center">
           <div className="text-center max-w-md">
             <p className="text-destructive text-lg mb-4">{error || "Audit not found"}</p>
             <a 
@@ -308,17 +304,15 @@ export default function ReportPage({
               Run New Audit
             </a>
           </div>
-        </main>
-        <Footer />
-      </div>
+        </div>
+      </SidebarLayout>
     );
   }
 
   if (audit.status === "PENDING" || audit.status === "RUNNING") {
     return (
-      <div className="min-h-screen flex flex-col">
-        <Header />
-        <main className="flex-1 flex items-center justify-center">
+      <SidebarLayout>
+        <div className="min-h-screen flex items-center justify-center">
           <div className="text-center max-w-md">
             <Loader2 className="h-16 w-16 animate-spin mx-auto text-primary" />
             <h2 className="mt-6 text-2xl font-semibold">Analyzing {domain}</h2>
@@ -330,16 +324,14 @@ export default function ReportPage({
               <div className="bg-primary h-2 rounded-full animate-pulse w-2/3"></div>
             </div>
           </div>
-        </main>
-        <Footer />
-      </div>
+        </div>
+      </SidebarLayout>
     );
   }
 
   return (
     <ViewModeProvider>
-    <div className="min-h-screen flex flex-col">
-      <Header />
+    <SidebarLayout>
       <SidebarNav />
       <main className="flex-1 py-8">
         <div className="container mx-auto px-4 max-w-6xl lg:ml-32 lg:mr-4 lg:max-w-5xl">
@@ -664,8 +656,7 @@ export default function ReportPage({
           )}
         </div>
       </main>
-      <Footer />
-    </div>
+    </SidebarLayout>
     </ViewModeProvider>
   );
 }

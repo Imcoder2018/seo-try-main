@@ -139,6 +139,7 @@ export async function POST(request: NextRequest) {
 // PUT: Update scheduled content
 export async function PUT(request: NextRequest) {
   try {
+    const user = await requireAuth();
     const body = await request.json();
     const { id, ...updateData } = body;
 
@@ -146,6 +147,19 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(
         { error: "Content ID is required" },
         { status: 400 }
+      );
+    }
+
+    // Verify ownership before updating
+    const existingContent = await prisma.scheduledContent.findUnique({
+      where: { id },
+      select: { userId: true }
+    });
+
+    if (!existingContent || existingContent.userId !== user.id) {
+      return NextResponse.json(
+        { error: "Content not found or access denied" },
+        { status: 403 }
       );
     }
 
@@ -175,6 +189,7 @@ export async function PUT(request: NextRequest) {
 // DELETE: Delete scheduled content
 export async function DELETE(request: NextRequest) {
   try {
+    const user = await requireAuth();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -182,6 +197,19 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { error: "Content ID is required" },
         { status: 400 }
+      );
+    }
+
+    // Verify ownership before deleting
+    const existingContent = await prisma.scheduledContent.findUnique({
+      where: { id },
+      select: { userId: true }
+    });
+
+    if (!existingContent || existingContent.userId !== user.id) {
+      return NextResponse.json(
+        { error: "Content not found or access denied" },
+        { status: 403 }
       );
     }
 

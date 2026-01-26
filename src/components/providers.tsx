@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { AuthGate } from "@/components/auth-gate";
 import { ContentStrategyProvider } from "@/contexts/ContentStrategyContext";
 import { ToastProvider } from "@/components/ui/Toast";
+import { OnboardingCheck } from "@/components/auth/OnboardingCheck";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -25,7 +26,9 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <ContentStrategyProvider>
           <ToastProvider>
-            <AuthGate>{children}</AuthGate>
+            <AuthGate>
+              <OnboardingCheck>{children}</OnboardingCheck>
+            </AuthGate>
           </ToastProvider>
         </ContentStrategyProvider>
       </QueryClientProvider>

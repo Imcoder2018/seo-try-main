@@ -5,9 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 const PUBLIC_PATHS = [
+  "/",
   "/sign-in",
   "/sign-up",
   "/sso-callback",
+  "/onboarding",
 ];
 
 function isPublicPath(pathname: string) {
