@@ -47,17 +47,13 @@ interface PageSelectorProps {
   auditStatus?: string;
 }
 
-// Audit section configurations - Updated to match optimal page selection per section
+// Big 5 Audit section configurations - Consolidated categories
 const AUDIT_SECTIONS = [
-  { id: 'performance', label: '⚡ Performance', description: 'PageSpeed & Core Web Vitals', defaultTypes: ['home', 'service'] },
-  { id: 'seo', label: '🔍 On-Page SEO', description: 'Title, Meta, Headings, Keywords', defaultTypes: ['service'] },
-  { id: 'technicalSeo', label: '🔧 Technical SEO', description: 'Sitemap, Robots, Indexing', defaultTypes: ['home', 'service'] },
   { id: 'localSeo', label: '📍 Local SEO', description: 'NAP, Schema, Google Maps', defaultTypes: ['contact'] },
-  { id: 'content', label: '📝 Content Quality', description: 'Word Count, Structure', defaultTypes: ['service'] },
-  { id: 'usability', label: '👥 Usability', description: 'Mobile, Forms, Accessibility', defaultTypes: ['home', 'contact'] },
-  { id: 'links', label: '🔗 Links', description: 'Internal & External Links', defaultTypes: ['home', 'service', 'about'] },
-  { id: 'social', label: '📱 Social', description: 'Open Graph, Twitter Cards', defaultTypes: ['home', 'contact'] },
-  { id: 'eeat', label: '🏆 E-E-A-T', description: 'Expertise & Authority', defaultTypes: ['about'] },
+  { id: 'onPageContent', label: '� On-Page & Content', description: 'Title, Meta, Headings, Word Count', defaultTypes: ['service', 'blog'] },
+  { id: 'technicalHealth', label: '⚙️ Technical Health', description: 'Indexing, SSL, Mobile, Sitemaps', defaultTypes: ['home', 'service', 'contact'] },
+  { id: 'performance', label: '⚡ Performance & Speed', description: 'Core Web Vitals, PageSpeed', defaultTypes: ['home', 'service'] },
+  { id: 'authorityTrust', label: '�️ Authority & Trust', description: 'Links, Social, E-E-A-T', defaultTypes: ['home', 'about', 'service'] },
 ];
 
 export function PageSelector({ crawlResult, onSelectionChange, onRunAudit, isRunningAudit, auditProgress = 0, auditStatus = "" }: PageSelectorProps) {

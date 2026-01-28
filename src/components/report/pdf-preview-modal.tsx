@@ -6,14 +6,15 @@ import {
   Download,
   Loader2,
   X,
-  Eye,
   CheckCircle2,
   Circle,
   Sparkles,
   FileBarChart,
-  Link2,
+  Shield,
   Settings2,
   Zap,
+  MapPin,
+  Link2,
 } from "lucide-react";
 
 interface PDFPreviewModalProps {
@@ -43,29 +44,29 @@ export function PDFPreviewModal({ isOpen, onClose, auditData }: PDFPreviewModalP
     },
     {
       id: "categoryPerformance",
-      label: "Category Performance",
-      description: "Detailed breakdown by SEO category",
+      label: "Big 5 Categories",
+      description: "Local SEO, On-Page, Technical, Performance, Authority",
       icon: <FileBarChart className="h-4 w-4" />,
       enabled: true,
     },
     {
       id: "recommendations",
-      label: "Detailed Recommendations",
-      description: "Prioritized list of improvements",
+      label: "Prioritized Recommendations",
+      description: "High, Medium, and Low priority improvements",
       icon: <Zap className="h-4 w-4" />,
       enabled: true,
     },
     {
-      id: "linkAnalysis",
-      label: "Link Analysis",
-      description: "Internal, external, and broken links breakdown",
-      icon: <Link2 className="h-4 w-4" />,
+      id: "authorityTrust",
+      label: "Authority & Trust Details",
+      description: "Links, Social profiles, E-E-A-T signals",
+      icon: <Shield className="h-4 w-4" />,
       enabled: true,
     },
     {
       id: "technicalDetails",
-      label: "Technical Details",
-      description: "Advanced technical SEO information",
+      label: "Technical Health Details",
+      description: "Indexing, SSL, Mobile, Sitemaps analysis",
       icon: <Settings2 className="h-4 w-4" />,
       enabled: false,
     },
@@ -148,18 +149,38 @@ export function PDFPreviewModal({ isOpen, onClose, auditData }: PDFPreviewModalP
     const data = auditData as Record<string, unknown>;
     let passed = 0, warnings = 0, failed = 0;
     
-    const categories = ['localSeo', 'seo', 'links', 'usability', 'performance', 'social', 'content', 'eeat', 'technology'];
-    categories.forEach(cat => {
-      const catData = data[cat] as { checks?: Array<{ status?: string }> } | undefined;
-      if (catData?.checks) {
-        catData.checks.forEach((check: { status?: string }) => {
-          if (check.status === 'passed' || check.status === 'good') passed++;
-          else if (check.status === 'warning' || check.status === 'moderate') warnings++;
-          else if (check.status === 'failed' || check.status === 'poor' || check.status === 'error') failed++;
-        });
-      }
-    });
+    // Try Big 5 merged categories first
+    const merged = data.mergedCategories as Record<string, { checks?: Array<{ status?: string }> }> | undefined;
+    if (merged) {
+      const big5 = ['localSeo', 'onPageContent', 'technicalHealth', 'performanceSpeed', 'authorityTrust'];
+      big5.forEach(cat => {
+        const catData = merged[cat];
+        if (catData?.checks) {
+          catData.checks.forEach((check: { status?: string }) => {
+            if (check.status === 'pass' || check.status === 'passed' || check.status === 'good') passed++;
+            else if (check.status === 'warning' || check.status === 'moderate') warnings++;
+            else if (check.status === 'fail' || check.status === 'failed' || check.status === 'poor' || check.status === 'error') failed++;
+          });
+        }
+      });
+    }
     
+    // Fallback to legacy categories
+    if (passed === 0 && warnings === 0 && failed === 0) {
+      const legacyCategories = ['localSeo', 'seo', 'links', 'usability', 'performance', 'social', 'content', 'eeat', 'technology'];
+      legacyCategories.forEach(cat => {
+        const catData = data[cat] as { checks?: Array<{ status?: string }> } | undefined;
+        if (catData?.checks) {
+          catData.checks.forEach((check: { status?: string }) => {
+            if (check.status === 'pass' || check.status === 'passed' || check.status === 'good') passed++;
+            else if (check.status === 'warning' || check.status === 'moderate') warnings++;
+            else if (check.status === 'fail' || check.status === 'failed' || check.status === 'poor' || check.status === 'error') failed++;
+          });
+        }
+      });
+    }
+    
+    // Final fallback - estimate from score
     if (passed === 0 && warnings === 0 && failed === 0) {
       const score = (data.overallScore as number) || 50;
       passed = Math.round(score / 10);
@@ -176,7 +197,7 @@ export function PDFPreviewModal({ isOpen, onClose, auditData }: PDFPreviewModalP
       const counts = computeCheckCounts();
       const includeSections = {
         technicalDetails: sections.find(s => s.id === "technicalDetails")?.enabled,
-        linkAnalysis: sections.find(s => s.id === "linkAnalysis")?.enabled,
+        authorityTrust: sections.find(s => s.id === "authorityTrust")?.enabled,
       };
       
       // Map audit data fields to PDF expected fields

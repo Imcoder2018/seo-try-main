@@ -43,6 +43,7 @@ export async function GET(
         contentResults: true,
         eeatResults: true,
         technicalSeoResults: true,
+        mergedCategories: true,
         createdAt: true,
         completedAt: true,
         recommendations: {

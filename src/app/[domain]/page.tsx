@@ -43,6 +43,14 @@ interface Audit {
   technicalSeoResults: Record<string, unknown> | null;
   contentResults: Record<string, unknown> | null;
   eeatResults: Record<string, unknown> | null;
+  // Big 5 merged categories
+  mergedCategories?: {
+    localSeo: { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>>; sourcePages?: string[] };
+    onPageContent: { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>>; sourcePages?: string[] };
+    technicalHealth: { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>>; sourcePages?: string[] };
+    performanceSpeed: { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>>; sourcePages?: string[] };
+    authorityTrust: { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>>; sourcePages?: string[] };
+  };
   recommendations: Array<{
     id: string;
     title: string;
@@ -334,7 +342,7 @@ export default function ReportPage({
     <SidebarLayout>
       <SidebarNav />
       <main className="flex-1 py-8">
-        <div className="container mx-auto px-4 max-w-6xl lg:ml-32 lg:mr-4 lg:max-w-5xl">
+        <div className="container mx-auto px-4 lg:px-8 max-w-7xl">
           <ReportHeader
             domain={audit.domain}
             score={audit.overallScore || 0}
@@ -359,12 +367,6 @@ export default function ReportPage({
 
           {/* Report Export Actions */}
           <ReportActions auditData={audit as unknown as Record<string, unknown>} />
-
-          {/* Historical Tracking */}
-          <HistoryChart 
-            domain={audit.domain} 
-            currentAudit={audit as unknown as Record<string, unknown>} 
-          />
 
           {/* WordPress Auto-Fix Section */}
           <div className={`rounded-2xl p-6 mb-8 border-2 transition-all ${
@@ -449,191 +451,114 @@ export default function ReportPage({
             contentScore={audit.contentScore ?? undefined}
             eeatScore={audit.eeatScore ?? undefined}
             technicalSeoScore={audit.technicalSeoScore ?? undefined}
+            mergedCategories={audit.mergedCategories}
           />
 
           {/* Recommendations */}
           {audit.recommendations && audit.recommendations.length > 0 && (
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden mb-8">
-              <div className="bg-gradient-to-r from-amber-500 to-orange-500 h-1.5"></div>
               <div className="p-6 lg:p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center">
-                      <Zap className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1">Recommendations</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{audit.recommendations.length} improvements suggested</p>
+                
+                {/* Table-style recommendations matching screenshot */}
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {audit.recommendations.map((rec) => (
+                    <div 
+                      key={rec.id}
+                      className="flex items-center justify-between py-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 -mx-4 px-4 transition-colors"
+                    >
+                      {/* Recommendation title */}
+                      <p className="flex-1 text-sm font-medium text-slate-800 dark:text-slate-200 pr-4">
+                        {rec.title}
+                      </p>
+                      
+                      {/* Category badge */}
+                      <span className="flex-shrink-0 px-3 py-1 text-xs font-medium rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 mr-4">
+                        {rec.category}
+                      </span>
+                      
+                      {/* Priority badge */}
+                      <span className={`flex-shrink-0 px-3 py-1 text-xs font-semibold rounded-md ${
+                        rec.priority === "high" 
+                          ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" 
+                          : rec.priority === "medium"
+                          ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
+                          : "bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400"
+                      }`}>
+                        {rec.priority === "high" ? "High Priority" : rec.priority === "medium" ? "Medium Priority" : "Low Priority"}
+                      </span>
                     </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Recommendations</h2>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">{audit.recommendations.length} improvements suggested</p>
-                    </div>
-                  </div>
-                  {wpConnected && (
-                    <span className="px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium rounded-full flex items-center gap-1">
-                      <Zap className="h-3 w-3" />
-                      Auto-Fix Available
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  {audit.recommendations.map((rec) => {
-                    const fix = checkToFixAction[rec.checkId];
-                    return (
-                      <div 
-                        key={rec.id}
-                        className="flex items-start justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600 transition-colors group"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`px-2.5 py-1 text-xs font-bold rounded-lg uppercase tracking-wide ${
-                              rec.priority === "high" 
-                                ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" 
-                                : rec.priority === "medium"
-                                ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
-                                : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                            }`}>
-                              {rec.priority}
-                            </span>
-                            <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">{rec.category}</span>
-                          </div>
-                          <h4 className="font-semibold mt-2 text-slate-900 dark:text-slate-100">{rec.title}</h4>
-                          {rec.description && (
-                            <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{rec.description}</p>
-                          )}
-                        </div>
-                        {wpConnected && fix && (
-                          <div className="opacity-80 group-hover:opacity-100 transition-opacity">
-                            <AutoFixButton
-                              domain={domain}
-                              fixType={fix.action}
-                              label={fix.label}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  ))}
                 </div>
               </div>
             </div>
           )}
 
-          {audit.localSeoResults && (
+          {/* Big 5 Category Sections */}
+          {/* 1. Local SEO */}
+          {(audit.mergedCategories?.localSeo || audit.localSeoResults) && (
             <CategorySectionWithFix
               id="local-seo"
-              title="Local SEO Results"
-              data={audit.localSeoResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              title="📍 Local SEO"
+              data={(audit.mergedCategories?.localSeo || audit.localSeoResults) as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
               fixAction="fix_local_seo"
-              sampleSizeExplanation={getSampleSizeExplanation('local-seo')}
+              sampleSizeExplanation="NAP consistency, Map Embeds, Local Schema, Phone & Address visibility"
             />
           )}
 
-          {audit.seoResults && (
+          {/* 2. On-Page & Content (merged: SEO + Content) */}
+          {(audit.mergedCategories?.onPageContent || audit.seoResults) && (
             <CategorySectionWithFix
-              id="seo"
-              title="On-Page SEO Results"
-              data={audit.seoResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              id="on-page-content"
+              title="📝 On-Page & Content"
+              data={(audit.mergedCategories?.onPageContent || audit.seoResults) as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
               fixAction="fix_onpage"
-              sampleSizeExplanation={getSampleSizeExplanation('seo')}
+              sampleSizeExplanation="Titles, Meta Descriptions, Headings, Word Count, OG Tags, Keyword Consistency"
             />
           )}
 
-          {audit.technicalSeoResults && (
+          {/* 3. Technical Health (merged: Technical SEO + Technology + Usability) */}
+          {(audit.mergedCategories?.technicalHealth || audit.technicalSeoResults) && (
             <CategorySectionWithFix
-              id="technical-seo"
-              title="Technical SEO"
-              data={audit.technicalSeoResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              id="technical-health"
+              title="⚙️ Technical Health"
+              data={(audit.mergedCategories?.technicalHealth || audit.technicalSeoResults) as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
               fixAction="fix_technical_seo"
-              sampleSizeExplanation={getSampleSizeExplanation('technical-seo')}
+              sampleSizeExplanation="Indexing, SSL, Mobile Usability, Sitemaps, Canonical Tags, Structured Data"
               showGoogleSearchConsole={true}
             />
           )}
 
-          {audit.linksResults && (
-            <CategorySectionWithFix
-              id="links"
-              title="Links Analysis"
-              data={audit.linksResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
-              domain={domain}
-              wpConnected={wpConnected}
-              fixAction="fix_links"
-              sampleSizeExplanation={getSampleSizeExplanation('links')}
-            />
-          )}
-
-          {audit.usabilityResults && (
-            <CategorySectionWithFix
-              id="usability"
-              title="Usability Results"
-              data={audit.usabilityResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
-              domain={domain}
-              wpConnected={wpConnected}
-              fixAction="fix_usability"
-              sampleSizeExplanation={getSampleSizeExplanation('usability')}
-            />
-          )}
-
-          {audit.performanceResults && (
+          {/* 4. Performance & Speed */}
+          {(audit.mergedCategories?.performanceSpeed || audit.performanceResults) && (
             <CategorySectionWithFix
               id="performance"
-              title="Performance Results"
-              data={audit.performanceResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              title="⚡ Performance & Speed"
+              data={(audit.mergedCategories?.performanceSpeed || audit.performanceResults) as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
               fixAction="fix_performance"
-              sampleSizeExplanation={getSampleSizeExplanation('performance')}
+              sampleSizeExplanation="Core Web Vitals (LCP, FCP, CLS), Resource Counts, Caching, Minification"
             />
           )}
 
-          {audit.socialResults && (
+          {/* 5. Authority & Trust (merged: Links + Social + E-E-A-T) */}
+          {(audit.mergedCategories?.authorityTrust || audit.linksResults) && (
             <CategorySectionWithFix
-              id="social"
-              title="Social Results"
-              data={audit.socialResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
+              id="authority-trust"
+              title="🛡️ Authority & Trust"
+              data={(audit.mergedCategories?.authorityTrust || audit.linksResults) as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
               domain={domain}
               wpConnected={wpConnected}
-              fixAction="fix_social"
-              sampleSizeExplanation={getSampleSizeExplanation('social')}
-            />
-          )}
-
-          {audit.technologyResults && (
-            <CategorySectionWithFix
-              id="technology"
-              title="Technology Results"
-              data={audit.technologyResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
-              domain={domain}
-              wpConnected={wpConnected}
-              fixAction="fix_technology"
-              sampleSizeExplanation={getSampleSizeExplanation('technology')}
-            />
-          )}
-
-          {audit.contentResults && (
-            <CategorySectionWithFix
-              id="content"
-              title="Content Quality"
-              data={audit.contentResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
-              domain={domain}
-              wpConnected={wpConnected}
-              fixAction="fix_content"
-              sampleSizeExplanation={getSampleSizeExplanation('content')}
-            />
-          )}
-
-          {audit.eeatResults && (
-            <CategorySectionWithFix
-              id="eeat"
-              title="E-E-A-T Signals"
-              data={audit.eeatResults as { score: number; grade: string; message?: string; checks: Array<Record<string, unknown>> }}
-              domain={domain}
-              wpConnected={wpConnected}
-              fixAction="fix_eeat"
-              sampleSizeExplanation={getSampleSizeExplanation('eeat')}
+              fixAction="fix_links"
+              sampleSizeExplanation="Internal/External Links, Social Profiles, E-E-A-T Signals, Contact Info Visibility"
             />
           )}
 
@@ -654,6 +579,12 @@ export default function ReportPage({
               </a>
             </div>
           )}
+
+          {/* Historical Tracking - Moved to end of page */}
+          <HistoryChart 
+            domain={audit.domain} 
+            currentAudit={audit as unknown as Record<string, unknown>} 
+          />
         </div>
       </main>
     </SidebarLayout>
@@ -661,13 +592,18 @@ export default function ReportPage({
   );
 }
 
-// Sample size explanations for each audit section
+// Sample size explanations for Big 5 audit sections
 const getSampleSizeExplanation = (sectionId: string): string => {
   const explanations: Record<string, string> = {
-    'performance': 'We audit Homepage, Service Pages, and Product Pages using Google PageSpeed Insights API for comprehensive Core Web Vitals analysis.',
+    // Big 5 Categories
+    'local-seo': 'NAP consistency, Map Embeds, Local Schema, Phone & Address visibility',
+    'on-page-content': 'Titles, Meta Descriptions, Headings, Word Count, OG Tags, Keyword Consistency',
+    'technical-health': 'Indexing, SSL, Mobile Usability, Sitemaps, Canonical Tags, Structured Data',
+    'performance': 'Core Web Vitals (LCP, FCP, CLS), Resource Counts, Caching, Minification',
+    'authority-trust': 'Internal/External Links, Social Profiles, E-E-A-T Signals, Contact Info Visibility',
+    // Legacy (for backward compatibility)
     'technology': 'We audit the Homepage and Contact page as they represent your site\'s technical foundation.',
     'technical-seo': 'We analyze all pages for indexing, sitemaps, page speed indicators, mobile-friendliness, security, broken links, URL structure, canonical tags, and redirects.',
-    'local-seo': 'We check the Header, Footer, and Contact page where contact info is critical.',
     'seo': 'We analyze content pages (excluding category/tag pages) to assess your SEO efforts.',
     'content': 'We analyze blog and content pages for depth and structure.',
     'links': 'We analyze all pages for internal and external link patterns.',
@@ -818,12 +754,12 @@ function CategorySectionWithFix({ id, title, data, domain, wpConnected, sampleSi
         {/* Checks list - collapsible */}
         {isExpanded && (
           <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-4 animate-in slide-in-from-top-2 duration-200">
-            {checks.map((check) => {
+            {checks.map((check, index) => {
               const fix = checkToFixAction[check.id];
               const isPassed = check.status === "pass" || check.status === "info";
               
               return (
-                <div key={check.id} className="relative group">
+                <div key={`${check.id}-${index}`} className="relative group">
                   <CheckItem
                     id={check.id}
                     name={check.name}

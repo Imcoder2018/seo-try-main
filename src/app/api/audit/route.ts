@@ -338,6 +338,7 @@ export async function GET(request: NextRequest) {
                 contentResults: (cats.content || data.content) as any,
                 eeatResults: (cats.eeat || data.eeat) as any,
                 technicalSeoResults: (cats.technicalSeo || data.technicalSeo) as any,
+                mergedCategories: data.mergedCategories as any,
                 completedAt: new Date(),
               },
             });
@@ -384,6 +385,7 @@ export async function GET(request: NextRequest) {
           eeatResults: resCats.eeat || data.eeat,
           technicalSeoScore: resCats.technicalSeo?.score ?? data.technicalSeo?.score,
           technicalSeoResults: resCats.technicalSeo || data.technicalSeo,
+          mergedCategories: data.mergedCategories,
           recommendations: data.recommendations,
           pageClassifications: data.pageClassifications,
           auditMapping: data.auditMapping,

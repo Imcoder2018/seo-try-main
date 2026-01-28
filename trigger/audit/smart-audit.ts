@@ -249,6 +249,7 @@ interface CategoryResult {
 interface SmartAuditOutput {
   overallScore: number;
   overallGrade: string;
+  // Legacy individual categories (kept for backward compatibility)
   localSeo: CategoryResult;
   seo: CategoryResult;
   links: CategoryResult;
@@ -259,6 +260,14 @@ interface SmartAuditOutput {
   technicalSeo: CategoryResult;
   content: CategoryResult;
   eeat: CategoryResult;
+  // New Big 5 merged categories
+  mergedCategories: {
+    localSeo: CategoryResult;           // Local SEO (standalone)
+    onPageContent: CategoryResult;      // On-Page SEO + Content
+    technicalHealth: CategoryResult;    // Technical SEO + Technology + Usability
+    performanceSpeed: CategoryResult;   // Performance
+    authorityTrust: CategoryResult;     // Links + Social + E-E-A-T
+  };
   recommendations: Array<{
     id: string;
     title: string;
@@ -447,7 +456,7 @@ function analyzeSEO(pageData: any): CategoryResult {
     message: titleLength > 0 
       ? `Title tag found (${titleLength} chars): "${title.substring(0, 50)}${title.length > 50 ? '...' : ''}"`
       : 'No title tag found',
-    recommendation: titleLength === 0 ? 'Add a descriptive title tag (30-60 characters)' : titleLength < 30 || titleLength > 60 ? 'Optimize title length to 30-60 characters' : undefined,
+    recommendation: titleLength === 0 ? 'Missing Title: Add a descriptive title tag (30-60 chars) for SEO visibility.' : titleLength < 30 || titleLength > 60 ? 'Optimize title length to 30-60 characters to prevent SERP truncation.' : undefined,
   });
   
   // 2. Meta description
@@ -473,7 +482,7 @@ function analyzeSEO(pageData: any): CategoryResult {
     message: metaDescLength > 0 
       ? `Meta description found (${metaDescLength} chars)`
       : 'No meta description found',
-    recommendation: metaDescLength === 0 ? 'Add a compelling meta description (120-160 characters)' : metaDescLength < 120 ? 'Expand meta description to 120-160 characters' : metaDescLength > 160 ? 'Shorten meta description to 160 characters max' : undefined,
+    recommendation: metaDescLength === 0 ? 'Write a compelling meta description (120-160 chars) to boost click-through rates.' : metaDescLength < 120 ? 'Expand meta description (120-160 chars) to fully utilize SERP space.' : metaDescLength > 160 ? 'Shorten meta description to 160 chars max to avoid truncation in search results.' : undefined,
   });
   
   // 3. H1-H3 Structure Analysis
@@ -502,7 +511,7 @@ function analyzeSEO(pageData: any): CategoryResult {
       htmlSnippet: h1FullMatch ? h1FullMatch[0] : 'No H1 tag found'
     },
     message: `Found ${h1Count} H1, ${h2Count} H2, ${h3Count} H3 tags${h1Text ? `. H1: "${h1Text.substring(0, 40)}..."` : ''}`,
-    recommendation: h1Count === 0 ? 'Add exactly one H1 tag' : h1Count > 1 ? 'Use only one H1 tag per page' : h2Count === 0 ? 'Add H2 subheadings to structure content' : h3Count === 0 ? 'Consider adding H3 tags for better content hierarchy' : undefined,
+    recommendation: h1Count === 0 ? 'Critical: Add exactly one H1 tag containing your primary keyword.' : h1Count > 1 ? 'SEO Fix: Restrict page to a single H1 tag for clear topic signals.' : h2Count === 0 ? 'Structure content with H2 subheadings to improve readability.' : h3Count === 0 ? 'Use H3 tags to create a logical, deep content hierarchy.' : undefined,
   });
   
   // 4. Keyword Placement Analysis with STEMMING support
@@ -557,7 +566,7 @@ function analyzeSEO(pageData: any): CategoryResult {
     message: keywordConsistency >= 50 
       ? `Good keyword consistency: ${keywordConsistency}% match between title, H1, and meta (with stemming)`
       : `Low keyword consistency (${keywordConsistency}%): Align keywords across title, H1, and meta description`,
-    recommendation: keywordConsistency < 50 ? 'Use your primary keyword (or variations) in the title, H1, and meta description for better relevance' : undefined,
+    recommendation: keywordConsistency < 50 ? 'Boost Relevance: Include primary keyword in Title, H1, and Meta Description.' : undefined,
   });
   
   // 5. URL Optimization
@@ -581,7 +590,7 @@ function analyzeSEO(pageData: any): CategoryResult {
     weight: 6,
     value: { url: url, issues: urlIssues },
     message: urlIssues.length === 0 ? 'URL is well-optimized' : `URL issues: ${urlIssues.join(', ')}`,
-    recommendation: urlIssues.length > 0 ? 'Use lowercase, hyphen-separated URLs without parameters or file extensions' : undefined,
+    recommendation: urlIssues.length > 0 ? 'Standardize URLs: Use lowercase, hyphen-separated slugs (clean URLs) for better crawlability.' : undefined,
   });
   
   // 6. Internal Linking
@@ -597,7 +606,7 @@ function analyzeSEO(pageData: any): CategoryResult {
     weight: 8,
     value: { count: totalInternalLinks, relativeLinks: internalLinks, absoluteLinks: sameHostLinks },
     message: `Found ${totalInternalLinks} internal links`,
-    recommendation: totalInternalLinks < 5 ? 'Add more internal links to improve site navigation and pass link equity' : undefined,
+    recommendation: totalInternalLinks < 5 ? 'Increase internal linking (5+) to distribute link equity and guide crawlers.' : undefined,
   });
   
   // 7. Image Alt Tags - improved detection filtering out icons, logos, and UI elements
@@ -682,9 +691,9 @@ function analyzeSEO(pageData: any): CategoryResult {
         ? `All ${images.length} content images have alt attributes (${imagesWithAlt} with text, ${imagesWithEmptyAlt} decorative)`
         : `${imagesWithAlt}/${images.length} content images have alt text (${altPercentage}%), ${imagesWithEmptyAlt} empty alt, ${imagesWithoutAlt} missing alt`,
     recommendation: imagesWithoutAlt > 0 
-      ? `Add alt attributes to ${imagesWithoutAlt} images: Use descriptive text for content images, or alt="" for decorative images`
+      ? 'Accessibility Alert: Add descriptive alt text to ${imagesWithoutAlt} images for SEO and screen readers.'
       : imagesWithAlt === 0 && imagesWithEmptyAlt > 0
-        ? 'Review images marked as decorative (empty alt) - ensure content images have descriptive alt text'
+        ? 'Audit Alt Text: Ensure images with empty alt="" are truly decorative, not informational.'
         : undefined,
   });
   
@@ -715,7 +724,7 @@ function analyzeSEO(pageData: any): CategoryResult {
       ? `Content appears unique within this page (${duplicationRatio}% unique paragraphs). Note: Cross-page duplication not checked.`
       : `Possible duplicate content detected within page (${duplicationRatio}% unique)`,
     recommendation: duplicationRatio < 90 
-      ? 'Review and remove or rewrite duplicate content blocks. Also check for cross-page duplication using Google Search Console.'
+      ? 'Resolve content duplication. Rewrite copied blocks or use canonical tags to consolidate authority.'
       : undefined,
   });
   
@@ -770,7 +779,7 @@ function analyzeSEO(pageData: any): CategoryResult {
     message: isThinContent 
       ? `Thin content: Only ${mainContentWordCount} main content words (${boilerplatePercent}% was nav/footer/boilerplate)`
       : `Good content length: ${mainContentWordCount} main content words`,
-    recommendation: isThinContent ? 'Expand main content to at least 300 words for better SEO performance' : undefined,
+    recommendation: isThinContent ? 'Fix Thin Content: Expand page body to at least 300 words to demonstrate topical depth.' : undefined,
   });
   
   // 10. Canonical URL
@@ -785,7 +794,7 @@ function analyzeSEO(pageData: any): CategoryResult {
     weight: 6,
     value: { canonical: canonicalMatch?.[1] || null, currentUrl: url },
     message: hasCanonical ? `Canonical URL set: ${canonicalMatch![1]}` : 'No canonical URL defined',
-    recommendation: !hasCanonical ? 'Add a canonical URL to prevent duplicate content issues' : undefined,
+    recommendation: !hasCanonical ? 'Implement self-referencing canonical tag to protect against duplicate content penalties.' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -826,7 +835,7 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
     weight: 15,
     value: { phone: phoneMatch?.[0] || null },
     message: hasPhone ? `Phone number found: ${phoneMatch![0]}` : 'No phone number detected',
-    recommendation: !hasPhone ? 'Add a visible phone number for local SEO' : undefined,
+    recommendation: !hasPhone ? 'Display a local phone number visibly to improve trust and Local SEO signals.' : undefined,
   });
   
   // IMPROVED Address detection - supports international formats
@@ -858,7 +867,7 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
     weight: 15,
     value: { hasAddress },
     message: hasAddress ? 'Address schema detected' : 'No structured address found',
-    recommendation: !hasAddress ? 'Add LocalBusiness schema with address data for Google Maps integration' : undefined,
+    recommendation: !hasAddress ? 'Embed address data within LocalBusiness Schema for better Google Maps ranking.' : undefined,
   });
   
   // Schema.org LocalBusiness - with JSON-LD validation
@@ -909,7 +918,7 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
         : schemaError 
           ? `JSON-LD found but invalid: ${schemaError}`
           : 'No local business schema markup',
-    recommendation: !schemaData ? 'Add valid LocalBusiness JSON-LD schema markup for rich results' : undefined,
+    recommendation: !schemaData ? 'Inject valid LocalBusiness JSON-LD structured data to trigger Rich Results.' : undefined,
   });
   
   // Google Maps embed - improved detection with verification levels
@@ -999,9 +1008,9 @@ function analyzeLocalSEO(pageData: any): CategoryResult {
             ? 'No Google Maps embed found on contact page'
             : 'ℹ️ Google Maps not required on this page type',
     recommendation: !hasVerifiedMap && hasMapMarker 
-      ? 'Verify your map element actually loads Google Maps, or add a proper Google Maps iframe embed'
+      ? 'Fix broken map element: Ensure Google Maps API or iframe loads correctly.'
       : !hasVerifiedMap && isContactPage && hasLocalBusinessIndicators
-        ? 'Add a Google Maps embed to your contact page to help customers find your business'
+        ? 'Embed a functional Google Map on the contact page for user convenience and local signals.'
         : undefined, // Don't recommend map for non-contact pages
   });
   
@@ -1040,7 +1049,7 @@ function analyzeContent(pageData: any, pageType: PageType = 'other'): CategoryRe
       weight: 15,
       value: { wordCount },
       message: `Page contains ${wordCount} words`,
-      recommendation: wordCount < 300 ? 'Add more content (aim for 300+ words for informational pages)' : undefined,
+      recommendation: wordCount < 300 ? 'Expand Content: Aim for 300+ substantive words to improve ranking potential.' : undefined,
     });
     
     // Heading structure - use parsed data for consistency
@@ -1099,11 +1108,11 @@ function analyzeContent(pageData: any, pageType: PageType = 'other'): CategoryRe
           ? skippedLevelMessage
           : `Found ${h1Count} H1, ${h2Count} H2, ${h3Count} H3, ${h4Count} H4 tags`,
       recommendation: !hasH1 
-        ? 'Add exactly one H1 tag per page' 
+        ? 'Critical: Add one H1 tag.' 
         : skippedLevels 
           ? isTerminalPage 
-            ? 'Consider fixing skipped heading levels for better accessibility, though less critical on this page type'
-            : 'Fix skipped heading levels - maintain proper hierarchy (H1 -> H2 -> H3 -> H4)'
+            ? 'Reorder headings logically (H1 -> H2 -> H3) for accessibility.'
+            : 'Fix skipped heading levels (e.g., do not jump from H1 to H3).'
           : undefined,
     });
   }
@@ -1145,7 +1154,7 @@ function analyzeContent(pageData: any, pageType: PageType = 'other'): CategoryRe
           ? `Found ${internalLinks} contextual internal links (terminal page, no minimum required)`
           : `Found ${internalLinks} contextual internal links (short content, no minimum required)`
       : `Found ${internalLinks} contextual internal links`,
-    recommendation: shouldCheckInternalLinks && internalLinks < 3 ? 'Add more contextual internal links within your content to improve user experience and SEO' : undefined,
+    recommendation: shouldCheckInternalLinks && internalLinks < 3 ? 'Add 3+ contextual internal links to keep users engaged and lower bounce rate.' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1186,8 +1195,8 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         debugInfo: pageSpeedResult.debugInfo
       },
       message: `📊 PageSpeed Score: ${pageSpeedResult.score}/100`,
-      recommendation: pageSpeedResult.score < 50 ? 'Critical: Improve page performance. Score below 50 significantly impacts user experience and SEO.' : 
-                      pageSpeedResult.score < 90 ? 'Optimize for better PageSpeed score (aim for 90+)' : undefined,
+      recommendation: pageSpeedResult.score < 50 ? 'Critical: Performance Score < 50. Aggressive optimization required to prevent ranking drops.' : 
+                      pageSpeedResult.score < 90 ? 'Tune Performance: Aim for a score of 90+ to pass Core Web Vitals assessments.' : undefined,
     });
     
     // Core Web Vitals - LCP
@@ -1205,7 +1214,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         threshold: { good: '<2.5s', needsImprovement: '2.5s-4s', poor: '>4s' }
       },
       message: `🎯 LCP: ${cwv.lcpDisplay} ${lcpGood ? '(Good)' : lcpNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
-      recommendation: !lcpGood ? 'Optimize LCP: Reduce server response time, optimize images, remove render-blocking resources' : undefined,
+      recommendation: !lcpGood ? 'Fix LCP (Loading): Optimize hero images, implement caching, and preload critical assets.' : undefined,
     });
     
     // Core Web Vitals - FCP
@@ -1223,7 +1232,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         threshold: { good: '<1.8s', needsImprovement: '1.8s-3s', poor: '>3s' }
       },
       message: `🎯 FCP: ${cwv.fcpDisplay} ${fcpGood ? '(Good)' : fcpNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
-      recommendation: !fcpGood ? 'Optimize FCP: Eliminate render-blocking resources, reduce server response time' : undefined,
+      recommendation: !fcpGood ? 'Fix FCP (First Paint): Eliminate render-blocking CSS/JS and reduce initial server response time.' : undefined,
     });
     
     // Core Web Vitals - CLS
@@ -1241,7 +1250,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         threshold: { good: '<0.1', needsImprovement: '0.1-0.25', poor: '>0.25' }
       },
       message: `🎯 CLS: ${cwv.clsDisplay} ${clsGood ? '(Good)' : clsNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
-      recommendation: !clsGood ? 'Optimize CLS: Set explicit dimensions on images/videos, avoid inserting content above existing content' : undefined,
+      recommendation: !clsGood ? 'Fix CLS (Stability): Reserve space for images/ads with aspect-ratio CSS to stop layout shifts.' : undefined,
     });
     
     // Core Web Vitals - TBT
@@ -1259,7 +1268,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         threshold: { good: '<200ms', needsImprovement: '200ms-600ms', poor: '>600ms' }
       },
       message: `🎯 TBT: ${cwv.tbtDisplay} ${tbtGood ? '(Good)' : tbtNeedsImprovement ? '(Needs Improvement)' : '(Poor)'}`,
-      recommendation: !tbtGood ? 'Optimize TBT: Reduce JavaScript execution time, break up long tasks' : undefined,
+      recommendation: !tbtGood ? 'Fix TBT (Interactivity): Defer unused JS and break up long tasks to improve responsiveness.' : undefined,
     });
     
     // TTFB from PageSpeed
@@ -1276,7 +1285,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         threshold: { good: '<800ms', poor: '>800ms' }
       },
       message: `🎯 TTFB: ${cwv.ttfbDisplay}`,
-      recommendation: !ttfbGood ? 'Optimize server response time: Use CDN, optimize server configuration, implement caching' : undefined,
+      recommendation: !ttfbGood ? 'Fix TTFB (Server Speed): Implement server-side caching or use a CDN to reduce latency.' : undefined,
     });
     
     // Top Opportunities
@@ -1293,7 +1302,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
           count: topOpportunities.length
         },
         message: `💡 Top ${topOpportunities.length} opportunities: ${topOpportunities.map(o => o.title + (o.savings ? ` (${o.savings} saved)` : '')).join(', ')}`,
-        recommendation: topOpportunities[0]?.title || undefined,
+        recommendation: undefined,
       });
     }
     
@@ -1314,7 +1323,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         forAccurateMetrics: 'Configure GOOGLE_PAGESPEED_API_KEY or PAGESPEED_API_KEY for real Core Web Vitals'
       },
       message: `⚠️ PageSpeed API: ${pageSpeedResult.error || 'Unavailable'}. Using server-side metrics only.`,
-      recommendation: 'Configure Google PageSpeed API key for accurate Core Web Vitals (LCP, FCP, CLS, TBT)',
+      recommendation: 'Setup: Add Google PageSpeed API key to unlock accurate Core Web Vitals data.',
     });
     
     // Fallback: Server response time
@@ -1330,7 +1339,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
         note: 'Server-side measurement (not real user experience)'
       },
       message: `Server responded in ${responseTime}ms (server-side only)`,
-      recommendation: responseTime >= 1000 ? 'Improve server response time' : undefined,
+      recommendation: responseTime >= 1000 ? 'Slow Server: Reduce response time to <600ms (currently >1s).' : undefined,
     });
   }
   
@@ -1346,7 +1355,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
     weight: 10,
     value: { bytes: pageSize, megabytes: pageSizeMB },
     message: `Page size: ${pageSizeMB}MB`,
-    recommendation: pageSizeMB >= 2 ? 'Optimize images, minify CSS/JS, consider lazy loading' : undefined,
+    recommendation: pageSizeMB >= 2 ? 'Heavy Page (>2MB): Compress images and minify assets to improve mobile load times.' : undefined,
   });
   
   // HTTPS
@@ -1358,7 +1367,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
     weight: 8,
     value: { isHttps: pageData.isHttps },
     message: pageData.isHttps ? 'Page served over HTTPS' : 'Page not served over HTTPS',
-    recommendation: !pageData.isHttps ? 'Enable HTTPS for security and SEO' : undefined,
+    recommendation: !pageData.isHttps ? 'Security Risk: Enforce HTTPS immediately to ensure user trust and ranking eligibility.' : undefined,
   });
   
   // Compression
@@ -1373,7 +1382,7 @@ async function analyzePerformanceAsync(pageData: any): Promise<CategoryResult> {
     weight: 7,
     value: { encoding: pageData.headers['content-encoding'] || 'none' },
     message: hasCompression ? `Compression enabled: ${pageData.headers['content-encoding']}` : 'No compression detected',
-    recommendation: !hasCompression ? 'Enable Gzip or Brotli compression' : undefined,
+    recommendation: !hasCompression ? 'Enable text compression (Brotli/Gzip) on server to reduce transfer size by up to 70%.' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1434,7 +1443,7 @@ function analyzePerformance(pageData: any): CategoryResult {
     weight: 20,
     value: { bytes: pageSize, megabytes: pageSizeMB },
     message: `Page size: ${pageSizeMB}MB`,
-    recommendation: pageSizeMB >= 2 ? 'Optimize page size' : undefined,
+    recommendation: pageSizeMB >= 2 ? 'Reduce Total Page Size: Target <2MB for optimal bandwidth usage.' : undefined,
   });
   
   // HTTPS
@@ -1488,7 +1497,7 @@ function analyzeEEAT(pageData: any): CategoryResult {
     weight: 15,
     value: { hasAuthor },
     message: hasAuthor ? 'Author information detected' : 'No author information found',
-    recommendation: !hasAuthor ? 'Add author bylines to establish expertise' : undefined,
+    recommendation: !hasAuthor ? 'E-E-A-T: Add clearly visible author bylines to establish expertise and authority.' : undefined,
   });
   
   // Trust signals
@@ -1504,7 +1513,7 @@ function analyzeEEAT(pageData: any): CategoryResult {
     weight: 15,
     value: { hasTrustSignals },
     message: hasTrustSignals ? 'Trust signals detected (certifications, awards, etc.)' : 'Limited trust signals found',
-    recommendation: !hasTrustSignals ? 'Add trust signals like certifications, awards, testimonials' : undefined,
+    recommendation: !hasTrustSignals ? 'Conversion Optimization: Display trust badges, certifications, or testimonials.' : undefined,
   });
   
   // About/Team page link
@@ -1518,7 +1527,7 @@ function analyzeEEAT(pageData: any): CategoryResult {
     weight: 10,
     value: { hasAboutLink },
     message: hasAboutLink ? 'About/Team page link found' : 'No about page link detected',
-    recommendation: !hasAboutLink ? 'Link to your About page to establish authority' : undefined,
+    recommendation: !hasAboutLink ? 'Brand Authority: Link prominently to an "About Us" page.' : undefined,
   });
   
   // Contact information
@@ -1533,7 +1542,7 @@ function analyzeEEAT(pageData: any): CategoryResult {
     weight: 15,
     value: { hasContactInfo },
     message: hasContactInfo ? 'Contact information available' : 'Limited contact information',
-    recommendation: !hasContactInfo ? 'Add clear contact information for trustworthiness' : undefined,
+    recommendation: !hasContactInfo ? 'User Trust: Ensure contact methods (Email/Phone/Chat) are easily accessible.' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1568,7 +1577,7 @@ function analyzeSocial(pageData: any): CategoryResult {
       : ogScore === 0 
         ? 'Missing: og:title, og:description, og:image'
         : `Found: ${[hasOGTitle ? 'og:title' : '', hasOGDescription ? 'og:description' : '', hasOGImage ? 'og:image' : ''].filter(Boolean).join(', ')}. Missing: ${[!hasOGTitle ? 'og:title' : '', !hasOGDescription ? 'og:description' : '', !hasOGImage ? 'og:image' : ''].filter(Boolean).join(', ')}`,
-    recommendation: ogScore < 3 ? `Add missing Open Graph tag${ogScore < 2 ? 's' : ''}: ${[!hasOGTitle ? 'og:title' : '', !hasOGDescription ? 'og:description' : '', !hasOGImage ? 'og:image' : ''].filter(Boolean).join(', ')}` : undefined,
+    recommendation: ogScore < 3 ? `Social Visibility: Add missing Open Graph tags for better sharing previews: ${[!hasOGTitle ? 'og:title' : '', !hasOGDescription ? 'og:description' : '', !hasOGImage ? 'og:image' : ''].filter(Boolean).join(', ')}` : undefined,
   });
   
   // Twitter Card
@@ -1583,7 +1592,7 @@ function analyzeSocial(pageData: any): CategoryResult {
     weight: 15,
     value: { hasCard: hasTwitterCard, hasTitle: hasTwitterTitle },
     message: hasTwitterCard ? 'Twitter Card tags found' : 'No Twitter Card tags',
-    recommendation: !hasTwitterCard ? 'Add Twitter Card meta tags for better social sharing' : undefined,
+    recommendation: !hasTwitterCard ? 'Implement Twitter Card meta tags to enable rich media snippets on X/Twitter.' : undefined,
   });
   
   // Social links - improved detection with actual URL extraction
@@ -1639,9 +1648,9 @@ function analyzeSocial(pageData: any): CategoryResult {
         }).join(', ')}`
       : 'No social media profile links detected',
     recommendation: uniquePlatforms.length < 2 
-      ? `Add social media links to improve trust and engagement. Suggested: ${suggestedPlatforms.join(', ')}`
+      ? `Boost Engagement: Link to active social profiles. Suggested: ${suggestedPlatforms.join(', ')}`
       : uniquePlatforms.length < 4 && missingSocialPlatforms.length > 0
-        ? `Consider adding: ${suggestedPlatforms.slice(0, 2).join(', ')}`
+        ? `Expand Social Footprint: Consider adding ${suggestedPlatforms.slice(0, 2).join(', ')}`
         : undefined,
   });
   
@@ -1670,7 +1679,7 @@ function analyzeTechnology(pageData: any): CategoryResult {
     weight: 15,
     value: { hasViewport },
     message: hasViewport ? 'Viewport meta tag found' : 'No viewport meta tag',
-    recommendation: !hasViewport ? 'Add viewport meta tag for mobile responsiveness' : undefined,
+    recommendation: !hasViewport ? 'Mobile Critical: Add viewport meta tag to enable responsive design scaling.' : undefined,
   });
   
   // Doctype - check anywhere in HTML, not just at start
@@ -1684,7 +1693,7 @@ function analyzeTechnology(pageData: any): CategoryResult {
     weight: 20, // Increased weight since this is critical
     value: { hasDoctype },
     message: hasDoctype ? 'HTML5 doctype declared' : 'No HTML5 doctype found - browsers will render in quirks mode',
-    recommendation: !hasDoctype ? 'Add <!DOCTYPE html> at the very top of your HTML document to ensure proper rendering' : undefined,
+    recommendation: !hasDoctype ? 'Standards Mode: specific <!DOCTYPE html> at the very top of the document.' : undefined,
   });
   
   // Language attribute
@@ -1698,7 +1707,7 @@ function analyzeTechnology(pageData: any): CategoryResult {
     weight: 8,
     value: { hasLang },
     message: hasLang ? 'Language attribute set' : 'No language attribute on HTML tag',
-    recommendation: !hasLang ? 'Add lang attribute to HTML tag for accessibility' : undefined,
+    recommendation: !hasLang ? 'Accessibility: Define language in HTML tag (e.g., lang="en") for screen readers.' : undefined,
   });
   
   // Structured data
@@ -1713,7 +1722,7 @@ function analyzeTechnology(pageData: any): CategoryResult {
     weight: 15,
     value: { hasStructuredData },
     message: hasStructuredData ? 'Structured data (Schema.org) found' : 'No structured data detected',
-    recommendation: !hasStructuredData ? 'Add Schema.org structured data for rich results' : undefined,
+    recommendation: !hasStructuredData ? 'Rich Results: Implement Schema.org structured data to stand out in SERPs.' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1860,7 +1869,7 @@ function analyzeLinks(pageData: any): CategoryResult {
       note: 'Counts unique internal page URLs only (excludes images, assets, anchors)'
     },
     message: `Found ${internalCount} unique internal page links`,
-    recommendation: internalCount < 5 ? 'Add more internal links for better navigation and SEO' : undefined,
+    recommendation: internalCount < 5 ? 'Link Structure: Increase internal links to improve page authority distribution.' : undefined,
   });
   
   checks.push({
@@ -1888,7 +1897,7 @@ function analyzeLinks(pageData: any): CategoryResult {
     weight: 10,
     value: { count: emptyLinks },
     message: emptyLinks === 0 ? 'No empty links found' : `Found ${emptyLinks} empty href attributes`,
-    recommendation: emptyLinks > 0 ? 'Fix empty href attributes in links' : undefined,
+    recommendation: emptyLinks > 0 ? 'Code Quality: Remove or fix anchors with empty href attributes to prevent crawl errors.' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -1916,7 +1925,7 @@ function analyzeUsability(pageData: any): CategoryResult {
     weight: 20,
     value: { hasViewport },
     message: hasViewport ? 'Page appears mobile-friendly' : 'Page may not be mobile-friendly',
-    recommendation: !hasViewport ? 'Add proper viewport meta tag for mobile devices' : undefined,
+    recommendation: !hasViewport ? 'Mobile: Define a viewport meta tag for proper device rendering.' : undefined,
   });
   
   // Favicon
@@ -1931,7 +1940,7 @@ function analyzeUsability(pageData: any): CategoryResult {
     weight: 5,
     value: { hasFavicon },
     message: hasFavicon ? 'Favicon detected' : 'No favicon found',
-    recommendation: !hasFavicon ? 'Add a favicon for better brand recognition' : undefined,
+    recommendation: !hasFavicon ? 'Branding: Upload a favicon to improve user recognition in browser tabs.' : undefined,
   });
   
   // Form labels - improved detection
@@ -1967,7 +1976,7 @@ function analyzeUsability(pageData: any): CategoryResult {
       ? 'No form input fields requiring labels found'
       : `${totalAccessibleLabels} labels for ${totalFormFields} form fields (${labelRatio}%)`,
     recommendation: !hasProperLabels && totalFormFields > 0 
-      ? `Add <label> elements or aria-label attributes to ${totalFormFields - totalAccessibleLabels} unlabeled form fields for accessibility (WCAG 2.1 compliance)`
+      ? `WCAG Compliance: Add labels or aria-labels to ${totalFormFields - totalAccessibleLabels} form fields.`
       : undefined,
   });
   
@@ -2023,7 +2032,7 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
     message: isNoIndex 
       ? `Page is blocked from indexing (noindex)` 
       : `Page is indexable by search engines`,
-    recommendation: isNoIndex ? 'Remove noindex directive if this page should appear in search results' : undefined,
+    recommendation: isNoIndex ? 'Indexing Blocked: Remove "noindex" tag if you want this page to appear in Google.' : undefined,
   });
   
   // 2. Sitemap & Robots.txt Check - Actually fetch and verify both files
@@ -2127,9 +2136,9 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
     },
     message: sitemapMessage,
     recommendation: !sitemapExists 
-      ? 'Create a sitemap.xml and submit it to Google Search Console' 
+      ? 'Crawlability: Generate sitemap.xml and submit to Google Search Console.' 
       : !robotsTxtHasSitemap 
-        ? 'Add "Sitemap: ' + sitemapUrl + '" to your robots.txt file'
+        ? 'Robots.txt: Add "Sitemap: ' + sitemapUrl + '" to ensure crawlers find your pages.'
         : undefined,
   });
   
@@ -2189,8 +2198,8 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
     message: `Found ${scripts} scripts, ${stylesheets} stylesheets (${totalResources} total resources)`,
     recommendation: totalResources > warnThreshold 
       ? isWordPress 
-        ? 'Consider using a caching plugin (WP Rocket, W3 Total Cache) and minifying CSS/JS. Disable unused plugin scripts.'
-        : 'Reduce render-blocking resources. Consider bundling CSS/JS files and using async/defer for scripts.'
+        ? 'WP Speed: Install a caching plugin (WP Rocket/Autoptimize) and minify assets.'
+        : 'Performance: Bundle CSS/JS and use async/defer attributes to unblock rendering.'
       : undefined,
   });
   
@@ -2259,9 +2268,9 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
       ? `Mobile-friendly: viewport set${hasResponsiveImages ? ', responsive images' : ''}${hasResponsiveCSS ? ', responsive CSS' : ''}`
       : `Mobile issues detected: ${mobileIssues.slice(0, 2).join(', ')}${mobileIssues.length > 2 ? '...' : ''}`,
     recommendation: !hasProperViewport 
-      ? 'Add viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1">'
+      ? 'Mobile Standard: Add standard viewport tag: <meta name="viewport" content="width=device-width, initial-scale=1">'
       : mobileIssues.length > 0 
-        ? `Fix mobile issues: ${mobileIssues.join('; ')}. Consider using Google Mobile-Friendly Test for comprehensive analysis.`
+        ? `Mobile Usability: Resolve issues: ${mobileIssues.join('; ')}.`
         : undefined,
   });
   
@@ -2341,11 +2350,11 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
           ? `✅ HTTPS enabled with ${securityHeadersPresent}/4 security headers (${presentHeaders.join(', ')})`
           : `HTTPS enabled. ${presentHeaders.length > 0 ? `Headers: ${presentHeaders.join(', ')}` : 'Consider adding security headers'}`,
     recommendation: !isHttps 
-      ? 'Enable HTTPS immediately for security and SEO benefits' 
+      ? 'Security: Enable HTTPS to protect user data.' 
       : missingHeaders.length > 0 && securityHeadersPresent < 2
         ? isWPSite
-          ? 'Install a security plugin (Wordfence, Sucuri, iThemes) to add security headers easily'
-          : `Consider adding security headers: ${missingHeaders.slice(0, 2).join(', ')}`
+          ? 'Hardening: Use a plugin (Wordfence/Sucuri) to inject security headers.'
+          : `Security Headers: Implement missing headers: ${missingHeaders.slice(0, 2).join(', ')}`
         : undefined,
   });
   
@@ -2368,7 +2377,7 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
     message: emptyLinks === 0 
       ? `${allLinks.length} links found, no empty or broken links detected`
       : `Found ${emptyLinks} empty/placeholder links that need fixing`,
-    recommendation: emptyLinks > 0 ? 'Fix empty href attributes and placeholder links' : undefined,
+    recommendation: emptyLinks > 0 ? 'UX/SEO: Fix links with empty href attributes to improve navigation.' : undefined,
   });
   
   // 7. URL Structure Analysis
@@ -2422,7 +2431,7 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
     message: urlIssues.length === 0 
       ? `Clean URL structure: ${pathname}`
       : `URL issues: ${urlIssues.join(', ')}`,
-    recommendation: urlIssues.length > 0 ? 'Use lowercase, hyphen-separated, parameter-free URLs for best SEO' : undefined,
+    recommendation: urlIssues.length > 0 ? 'URL Structure: Use clean, lowercase, hyphen-separated URLs.' : undefined,
   });
   
   // 8. Canonical Tag Analysis
@@ -2448,7 +2457,7 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
     message: hasCanonical 
       ? `Canonical URL: ${canonical}${isSelfReferencing ? ' (self-referencing)' : ' (points to different URL)'}`
       : 'No canonical tag found - may cause duplicate content issues',
-    recommendation: !hasCanonical ? 'Add a canonical tag to prevent duplicate content issues' : undefined,
+    recommendation: !hasCanonical ? 'Canonicalization: Add tag to specify the master version of this page.' : undefined,
   });
   
   // 9. Redirect Detection (check for meta refresh)
@@ -2508,7 +2517,7 @@ async function analyzeTechnicalSEO(pageData: any, allPagesData?: any[]): Promise
     message: cwvScore >= 60 
       ? `CWV optimizations: ${[hasLazyLoading && 'lazy loading', hasPreload && 'preload', hasDeferredScripts && 'defer'].filter(Boolean).join(', ')}`
       : 'Missing Core Web Vitals optimizations',
-    recommendation: cwvScore < 60 ? 'Add lazy loading for images, defer/async for scripts, and preload critical resources' : undefined,
+    recommendation: cwvScore < 60 ? 'Core Web Vitals: Lazy load off-screen images and defer non-critical JS.' : undefined,
   });
   
   const totalScore = Math.round(checks.reduce((sum, c) => sum + c.score * c.weight, 0) / checks.reduce((sum, c) => sum + c.weight, 0));
@@ -3089,6 +3098,60 @@ export const smartAuditTask = task({
     const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
     recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 
+    // Helper function to merge multiple CategoryResults into one
+    const mergeCategories = (categories: CategoryResult[], name: string): CategoryResult => {
+      if (categories.length === 0) {
+        return { score: 0, grade: 'F', message: 'No data', checks: [], sourcePages: [] };
+      }
+      
+      // Calculate weighted average score
+      const totalScore = categories.reduce((sum, cat) => sum + cat.score, 0);
+      const avgScore = Math.round(totalScore / categories.length);
+      
+      // Merge all checks
+      const allChecks: Check[] = [];
+      const allSourcePages: string[] = [];
+      
+      categories.forEach(cat => {
+        cat.checks.forEach(check => {
+          allChecks.push(check);
+        });
+        if (cat.sourcePages) {
+          cat.sourcePages.forEach(page => {
+            if (!allSourcePages.includes(page)) {
+              allSourcePages.push(page);
+            }
+          });
+        }
+      });
+      
+      return {
+        score: avgScore,
+        grade: calculateGrade(avgScore),
+        message: `${name} analysis complete`,
+        checks: allChecks,
+        sourcePages: allSourcePages,
+      };
+    };
+
+    // Create Big 5 merged categories
+    const mergedCategories = {
+      // 1. Local SEO (standalone)
+      localSeo: localSeo,
+      
+      // 2. On-Page & Content (On-Page SEO + Content)
+      onPageContent: mergeCategories([seo, content], 'On-Page & Content'),
+      
+      // 3. Technical Health (Technical SEO + Technology + Usability)
+      technicalHealth: mergeCategories([technicalSeo, technology, usability], 'Technical Health'),
+      
+      // 4. Performance & Speed (Performance - already comprehensive)
+      performanceSpeed: performance,
+      
+      // 5. Authority & Trust (Links + Social + E-E-A-T)
+      authorityTrust: mergeCategories([links, social, eeat], 'Authority & Trust'),
+    };
+
     metadata.set("status", {
       progress: 100,
       label: "Audit complete!",
@@ -3109,6 +3172,7 @@ export const smartAuditTask = task({
       technicalSeo,
       content,
       eeat,
+      mergedCategories,
       recommendations,
       pageClassifications,
       pagesAnalyzed,

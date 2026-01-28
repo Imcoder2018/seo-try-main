@@ -1,42 +1,88 @@
-import { ScoreRing } from "./score-ring";
 import { calculateGrade } from "@/lib/utils";
-import { MapPin, Search, Link2, Users, Zap, Share2, FileText, Award, Settings, Shield } from "lucide-react";
 
 interface CategoryScoresProps {
+  // Legacy props (for backward compatibility)
   localSeoScore?: number;
-  seoScore: number;
-  linksScore: number;
-  usabilityScore: number;
-  performanceScore: number;
-  socialScore: number;
+  seoScore?: number;
+  linksScore?: number;
+  usabilityScore?: number;
+  performanceScore?: number;
+  socialScore?: number;
   contentScore?: number;
   eeatScore?: number;
   technicalSeoScore?: number;
+  // New Big 5 merged categories
+  mergedCategories?: {
+    localSeo?: { score: number };
+    onPageContent?: { score: number };
+    technicalHealth?: { score: number };
+    performanceSpeed?: { score: number };
+    authorityTrust?: { score: number };
+  };
 }
 
-const categoryIcons: Record<string, typeof Search> = {
-  "Local SEO": MapPin,
-  "On-Page SEO": Search,
-  "Technical SEO": Shield,
-  "Links": Link2,
-  "Usability": Users,
-  "Performance": Zap,
-  "Social": Share2,
-  "Content": FileText,
-  "E-E-A-T": Award,
+// Grade color mapping for the circular rings
+const getGradeColors = (grade: string): { ring: string; text: string; bg: string } => {
+  if (grade.startsWith('A')) return { ring: '#ec4899', text: '#be185d', bg: 'rgba(236, 72, 153, 0.1)' }; // Pink
+  if (grade.startsWith('B')) return { ring: '#22c55e', text: '#15803d', bg: 'rgba(34, 197, 94, 0.1)' }; // Green
+  if (grade.startsWith('C')) return { ring: '#eab308', text: '#a16207', bg: 'rgba(234, 179, 8, 0.1)' }; // Yellow
+  if (grade.startsWith('D')) return { ring: '#8b5cf6', text: '#6d28d9', bg: 'rgba(139, 92, 246, 0.1)' }; // Purple
+  return { ring: '#22c55e', text: '#15803d', bg: 'rgba(34, 197, 94, 0.1)' }; // Default green for F
 };
 
-const categoryColors: Record<string, string> = {
-  "Local SEO": "from-purple-500 to-indigo-500",
-  "On-Page SEO": "from-blue-500 to-cyan-500",
-  "Technical SEO": "from-slate-600 to-slate-800",
-  "Links": "from-green-500 to-emerald-500",
-  "Usability": "from-amber-500 to-orange-500",
-  "Performance": "from-yellow-500 to-amber-500",
-  "Social": "from-pink-500 to-rose-500",
-  "Content": "from-indigo-500 to-purple-500",
-  "E-E-A-T": "from-teal-500 to-cyan-500",
-};
+// Simple circular score ring component matching the screenshot style
+function CategoryRing({ score, grade, label }: { score: number; grade: string; label: string }) {
+  const colors = getGradeColors(grade);
+  const size = 100;
+  const strokeWidth = 6;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = (score / 100) * circumference;
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          className="transform -rotate-90"
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+        >
+          {/* Background circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={colors.bg}
+            strokeWidth={strokeWidth}
+          />
+          {/* Progress circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={colors.ring}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference - progress}
+            strokeLinecap="round"
+            className="transition-all duration-1000 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-2xl font-bold" style={{ color: colors.text }}>
+            {grade}
+          </span>
+        </div>
+      </div>
+      <p className="mt-3 text-sm font-medium text-slate-600 dark:text-slate-400 text-center">
+        {label}
+      </p>
+    </div>
+  );
+}
 
 export function CategoryScores({
   localSeoScore,
@@ -48,66 +94,57 @@ export function CategoryScores({
   contentScore,
   eeatScore,
   technicalSeoScore,
+  mergedCategories,
 }: CategoryScoresProps) {
-  const categories = [
+  // Use Big 5 merged categories if available, otherwise fall back to legacy
+  const useBig5 = mergedCategories && (
+    mergedCategories.localSeo || 
+    mergedCategories.onPageContent || 
+    mergedCategories.technicalHealth || 
+    mergedCategories.performanceSpeed || 
+    mergedCategories.authorityTrust
+  );
+
+  const categories = useBig5 ? [
+    // Big 5 Categories
+    ...(mergedCategories?.localSeo ? [{ label: "Local SEO", score: mergedCategories.localSeo.score, href: "#local-seo" }] : []),
+    ...(mergedCategories?.onPageContent ? [{ label: "On-Page & Content", score: mergedCategories.onPageContent.score, href: "#on-page-content" }] : []),
+    ...(mergedCategories?.technicalHealth ? [{ label: "Technical Health", score: mergedCategories.technicalHealth.score, href: "#technical-health" }] : []),
+    ...(mergedCategories?.performanceSpeed ? [{ label: "Performance", score: mergedCategories.performanceSpeed.score, href: "#performance" }] : []),
+    ...(mergedCategories?.authorityTrust ? [{ label: "Authority & Trust", score: mergedCategories.authorityTrust.score, href: "#authority-trust" }] : []),
+  ] : [
+    // Legacy categories fallback
     ...(localSeoScore !== undefined ? [{ label: "Local SEO", score: localSeoScore, href: "#local-seo" }] : []),
-    { label: "On-Page SEO", score: seoScore, href: "#seo" },
+    ...(seoScore !== undefined ? [{ label: "On-Page SEO", score: seoScore, href: "#seo" }] : []),
     ...(technicalSeoScore !== undefined ? [{ label: "Technical SEO", score: technicalSeoScore, href: "#technical-seo" }] : []),
-    { label: "Links", score: linksScore, href: "#links" },
-    { label: "Usability", score: usabilityScore, href: "#usability" },
-    { label: "Performance", score: performanceScore, href: "#performance" },
-    { label: "Social", score: socialScore, href: "#social" },
+    ...(linksScore !== undefined ? [{ label: "Links", score: linksScore, href: "#links" }] : []),
+    ...(usabilityScore !== undefined ? [{ label: "Usability", score: usabilityScore, href: "#usability" }] : []),
+    ...(performanceScore !== undefined ? [{ label: "Performance", score: performanceScore, href: "#performance" }] : []),
+    ...(socialScore !== undefined ? [{ label: "Social", score: socialScore, href: "#social" }] : []),
     ...(contentScore !== undefined ? [{ label: "Content", score: contentScore, href: "#content" }] : []),
     ...(eeatScore !== undefined ? [{ label: "E-E-A-T", score: eeatScore, href: "#eeat" }] : []),
   ];
 
   return (
-    <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 mb-8 shadow-lg">
-      <h2 className="text-xl font-bold text-center mb-6 text-slate-900 dark:text-slate-100">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-8 mb-8">
+      <h2 className="text-xl font-bold text-center mb-8 text-slate-900 dark:text-slate-100">
         Category Scores
       </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-4">
+      <div className="flex flex-wrap justify-center gap-8 lg:gap-12">
         {categories.map((cat) => {
-          const Icon = categoryIcons[cat.label] || Search;
-          const gradient = categoryColors[cat.label] || "from-blue-500 to-cyan-500";
           const grade = calculateGrade(cat.score);
           
           return (
             <a 
               key={cat.label} 
               href={cat.href} 
-              className="group relative bg-white dark:bg-slate-800 rounded-xl p-4 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-slate-100 dark:border-slate-700"
+              className="group transition-transform duration-200 hover:-translate-y-1"
             >
-              {/* Icon badge */}
-              <div className={`absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 bg-gradient-to-r ${gradient} rounded-lg flex items-center justify-center shadow-lg`}>
-                <Icon className="w-4 h-4 text-white" />
-              </div>
-              
-              {/* Score ring */}
-              <div className="mt-4 flex justify-center">
-                <ScoreRing
-                  score={cat.score}
-                  grade={grade}
-                  size="sm"
-                />
-              </div>
-              
-              {/* Label */}
-              <p className="mt-3 text-xs font-medium text-center text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">
-                {cat.label}
-              </p>
-              
-              {/* Score badge */}
-              <div className="mt-2 text-center">
-                <span className={`inline-block px-2 py-0.5 text-xs font-bold rounded-full ${
-                  cat.score >= 80 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                  cat.score >= 60 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                  cat.score >= 40 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                }`}>
-                  {cat.score}/100
-                </span>
-              </div>
+              <CategoryRing
+                score={cat.score}
+                grade={grade}
+                label={cat.label}
+              />
             </a>
           );
         })}

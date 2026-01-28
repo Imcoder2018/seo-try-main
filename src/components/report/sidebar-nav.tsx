@@ -10,16 +10,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: "local-seo", label: "Local SEO", shortLabel: "Local" },
-  { id: "seo", label: "On-Page SEO", shortLabel: "SEO" },
-  { id: "technical-seo", label: "Technical SEO", shortLabel: "Tech SEO" },
-  { id: "links", label: "Links Analysis", shortLabel: "Links" },
-  { id: "usability", label: "Usability", shortLabel: "Usability" },
-  { id: "performance", label: "Performance", shortLabel: "Perf" },
-  { id: "social", label: "Social", shortLabel: "Social" },
-  { id: "technology", label: "Technology", shortLabel: "Tech" },
-  { id: "content", label: "Content Quality", shortLabel: "Content" },
-  { id: "eeat", label: "E-E-A-T Signals", shortLabel: "E-E-A-T" },
+  { id: "local-seo", label: "📍 Local SEO", shortLabel: "Local" },
+  { id: "on-page-content", label: "📝 On-Page & Content", shortLabel: "Content" },
+  { id: "technical-health", label: "⚙️ Technical Health", shortLabel: "Technical" },
+  { id: "performance", label: "⚡ Performance", shortLabel: "Speed" },
+  { id: "authority-trust", label: "🛡️ Authority & Trust", shortLabel: "Authority" },
 ];
 
 export function SidebarNav() {

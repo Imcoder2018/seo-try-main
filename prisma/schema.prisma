@@ -244,6 +244,9 @@ model Audit {
   eeatResults        Json?
   accessibilityResults Json?
   technicalSeoResults Json?
+  
+  // Big 5 merged categories
+  mergedCategories   Json?
 
   recommendations Recommendation[]
 

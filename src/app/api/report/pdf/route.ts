@@ -12,6 +12,7 @@ interface AuditData {
   crawlType?: string;
   pagesScanned?: number;
   createdAt?: string;
+  // Legacy category scores
   localSeoScore?: number;
   seoScore?: number;
   linksScore?: number;
@@ -21,7 +22,15 @@ interface AuditData {
   contentScore?: number;
   eeatScore?: number;
   technologyScore?: number;
-  technicalSeoScore?: number; // Add Technical SEO score
+  technicalSeoScore?: number;
+  // Big 5 merged categories
+  mergedCategories?: {
+    localSeo?: { score: number };
+    onPageContent?: { score: number };
+    technicalHealth?: { score: number };
+    performanceSpeed?: { score: number };
+    authorityTrust?: { score: number };
+  };
   passedChecks?: number;
   warningChecks?: number;
   failedChecks?: number;
@@ -815,33 +824,41 @@ class PDFReportV2 {
     
     this.drawSectionTitle("Performance by Category");
     
-    // Build categories array - include all major categories
-    const categories: { name: string; score: number }[] = [];
+    // Build categories array - use Big 5 merged categories if available, otherwise legacy
+    const categories: { name: string; score: number; icon: string }[] = [];
+    const merged = this.auditData.mergedCategories;
     
-    if (this.auditData.localSeoScore !== undefined && this.auditData.localSeoScore !== null) {
-      categories.push({ name: "Local SEO", score: this.auditData.localSeoScore });
+    if (merged && (merged.localSeo || merged.onPageContent || merged.technicalHealth || merged.performanceSpeed || merged.authorityTrust)) {
+      // Big 5 Categories
+      if (merged.localSeo) {
+        categories.push({ name: "Local SEO", score: merged.localSeo.score, icon: "LOC" });
+      }
+      if (merged.onPageContent) {
+        categories.push({ name: "On-Page & Content", score: merged.onPageContent.score, icon: "SEO" });
+      }
+      if (merged.technicalHealth) {
+        categories.push({ name: "Technical Health", score: merged.technicalHealth.score, icon: "TEC" });
+      }
+      if (merged.performanceSpeed) {
+        categories.push({ name: "Performance", score: merged.performanceSpeed.score, icon: "SPD" });
+      }
+      if (merged.authorityTrust) {
+        categories.push({ name: "Authority & Trust", score: merged.authorityTrust.score, icon: "TRS" });
+      }
+    } else {
+      // Legacy categories fallback
+      if (this.auditData.localSeoScore !== undefined && this.auditData.localSeoScore !== null) {
+        categories.push({ name: "Local SEO", score: this.auditData.localSeoScore, icon: "LOC" });
+      }
+      categories.push({ name: "On-Page SEO", score: this.auditData.seoScore ?? 0, icon: "SEO" });
+      
+      if (this.auditData.technicalSeoScore !== undefined && this.auditData.technicalSeoScore !== null) {
+        categories.push({ name: "Technical SEO", score: this.auditData.technicalSeoScore, icon: "TEC" });
+      }
+      
+      categories.push({ name: "Performance", score: this.auditData.performanceScore ?? 0, icon: "SPD" });
+      categories.push({ name: "Links", score: this.auditData.linksScore ?? 0, icon: "LNK" });
     }
-    categories.push({ name: "On-Page SEO", score: this.auditData.seoScore ?? 0 });
-    
-    // Add Technical SEO score
-    if (this.auditData.technicalSeoScore !== undefined && this.auditData.technicalSeoScore !== null) {
-      categories.push({ name: "Technical SEO", score: this.auditData.technicalSeoScore });
-    }
-    
-    categories.push({ name: "Usability", score: this.auditData.usabilityScore ?? 0 });
-    
-    if (this.auditData.contentScore !== undefined && this.auditData.contentScore !== null) {
-      categories.push({ name: "Content", score: this.auditData.contentScore });
-    }
-    
-    categories.push({ name: "Performance", score: this.auditData.performanceScore ?? 0 });
-    
-    if (this.auditData.eeatScore !== undefined && this.auditData.eeatScore !== null) {
-      categories.push({ name: "E-E-A-T", score: this.auditData.eeatScore });
-    }
-    
-    categories.push({ name: "Links", score: this.auditData.linksScore ?? 0 });
-    categories.push({ name: "Social", score: this.auditData.socialScore ?? 0 });
     
     // 2x3 Grid of Scorecards
     const cardWidth = (CONTENT_WIDTH - 10) / 3; // 3 cards per row with gaps
